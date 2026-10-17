@@ -88,7 +88,7 @@ This is the heart of Honeyd. Sequence diagrams for each case are in [04-packet-f
 
 **Arriving:**
 1. **Capture.** libpcap hands Honeyd a raw packet. ARP and DHCP replies go to their own handlers. Everything else goes on.
-2. **Which fake host?** Honeyd looks up the destination IP and finds the template bound to it.
+2. **Which fake host?** Honeyd looks up the destination IP and finds the template bound to it. This happens for every packet. If that template is dynamic, Honeyd checks its conditions, such as the attacker's guessed OS or the time of day, and swaps in the matching template (`template_dynamic()` in config.c). The same address can therefore look different depending on what Honeyd has learned about the sender.
 3. **Simulate the network path.** If routers are configured, Honeyd walks the packet hop by hop through the fake topology. It adds up delay, applies packet loss and counts down the *TTL*. If the TTL runs out, it sends back a "time exceeded" message from the fake router's address, just as a real router would. That's how `traceroute` works against it.
 4. **Wait.** Honeyd sets a timer for the total delay rather than replying instantly, so timings look real.
 5. **Hand to the protocol.** TCP, UDP and ICMP (ping) each have a handler. Other protocols are only logged.
