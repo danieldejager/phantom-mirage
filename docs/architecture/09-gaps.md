@@ -37,5 +37,5 @@ All references are to `master` @ `a0f3d64`, the default branch. Other branches d
 
 1. **Make it safe to run:** fix the known defects and the control socket (items 5 and 6), and run it in a container.
 2. **Make it visible:** JSON output and an alert path into the SIEM (items 3 and 4).
-3. **Make it believable:** refresh fingerprints and add modern and OT decoy services (items 2, 8 and 10). OT decoys fit DP World's port environment.
+3. **Make it believable:** refresh fingerprints and add modern and OT decoy services (items 2, 8 and 10). OT decoys suit customers running industrial, port and utility networks.
 4. **IPv6** (item 1): review the unmerged `ipv6` branch before writing anything new.

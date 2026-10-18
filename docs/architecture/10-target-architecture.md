@@ -1,6 +1,6 @@
 # 10 – Target deployment architecture (proposal)
 
-This is the proposed way to deploy Honeyd at DP World Oceania, as discussed on 19 Oct 2026. It's a **recommendation, not the current state**. Dashed boxes are planned features that depend on open issues. Issue numbers are shown in brackets.
+This is the proposed product architecture for a Honeyd-based deception sensor, sold to customers. It isn't tied to any one organisation. It's a **recommendation, not the current state**. Dashed boxes are planned features that depend on open issues. Issue numbers are shown in brackets.
 
 ![Target architecture](images/10-target-architecture.png)
 
@@ -10,22 +10,26 @@ This is the proposed way to deploy Honeyd at DP World Oceania, as discussed on 1
 2. **Container on the Pi.** Honeyd runs in one Docker container (#20), attached to each decoy VLAN through macvlan so it sees raw traffic and answers ARP. The container gets only the network capabilities it needs, a read-only filesystem and a locked control socket (#14).
 3. **One container per Honeyd, not per fake host.** A single Honeyd process simulates every decoy on every attached VLAN.
 4. **High-interaction decoys as sidecars.** Honeyd proxies selected ports to purpose-built containers: Cowrie for SSH (#33) and Conpot for Modbus and S7 (#34). Honeyd fakes everything else.
-5. **Visibility.** Honeyd writes JSON events (#24). A log shipper sends them, together with a heartbeat (#30), to Microsoft Sentinel over an outbound-only management VLAN.
-6. **Response.** Any decoy hit is a high-fidelity alert (#26), and a missing heartbeat means a sensor is down. Alerts go to Oceania Cyber. ConnectWise tickets are raised manually because there's no integration.
+5. **Visibility.** Honeyd writes JSON events (#24). A log shipper sends them, together with a heartbeat (#30), to the customer's SIEM (Sentinel, Splunk, Elastic or similar) over an outbound-only management VLAN.
+6. **Response.** Any decoy hit is a high-fidelity alert (#26), and a missing heartbeat means a sensor is down. Alerts go to the customer's SOC, and tickets are raised through the customer's own SIEM integration or a webhook.
 7. **Supply chain.** CI builds a signed multi-arch image (x86_64 + arm64) from `master` with sanitizers (#18, #38). Sensors pull the image and their site config, so updating the fleet doesn't need reflashing.
 
 ## Constraints and assumptions
 
 - Nothing has been built on ARM yet; that's untested.
-- A Pi on an OT network needs DP World change control and sign-off from the OT owner first.
+- A Pi on an OT network needs the customer's change control and sign-off from the OT owner first.
 - Decoy VLANs must use IP ranges that are genuinely unused.
-- The Pi's management interface reaches only Sentinel, the registry and the config repo, and never accepts inbound connections.
+- The Pi's management interface reaches only the SIEM, the registry and the config repo, and never accepts inbound connections.
 - No secrets are stored on the device, because a Pi in a comms room can be stolen or opened.
 - Sensors refuse to run any image whose signature doesn't verify.
 - Cowrie and Conpot sit on an internal Docker network that only Honeyd can reach, and have no direct presence on the decoy VLANs.
-- The log shipper buffers events on disk while Sentinel is unreachable, and the Pi keeps time with NTP over the management VLAN so alert timestamps line up.
+- The log shipper buffers events on disk while the SIEM is unreachable, and the Pi keeps time with NTP over the management VLAN so alert timestamps line up.
 
 ## Diagram source
+
+## Commercial note: licence
+
+Honeyd is licensed under the GNU GPL version 2 (see `LICENSE` in the repository root). Selling it is allowed. However, anyone who receives a binary or a sensor image must also be offered the source code of Honeyd and of your changes to it, under the same GPL v2 terms. Get advice on how this affects the business model before shipping. For example, decide which parts stay as separate programs and which are modifications to Honeyd itself.
 
 ```mermaid
 flowchart TB
@@ -66,7 +70,7 @@ flowchart TB
                 end
                 cowrie["Cowrie container<br/>high-interaction SSH (#33)<br/>internal Docker network only"]
                 conpot["Conpot container<br/>Modbus / S7 decoy (#34)<br/>internal Docker network only"]
-                ship["Log shipper container<br/>Fluent Bit / AMA<br/>on-disk buffer if Sentinel unreachable"]
+                ship["Log shipper container<br/>Fluent Bit / Vector<br/>on-disk buffer if SIEM unreachable"]
                 agent["Health agent<br/>heartbeat, image version (#30)"]
             end
         end
@@ -95,13 +99,13 @@ flowchart TB
     atk2 -- "Modbus / S7 / scan" --> vot
 
     %% ---------- Central ----------
-    subgraph CENTRAL["3. Central monitoring and response (DP World Oceania Cyber)"]
+    subgraph CENTRAL["3. Customer monitoring and response (any SIEM / SOC)"]
         direction LR
-        sentinel[("Microsoft Sentinel<br/>Log Analytics workspace")]
-        rule["Analytics rule: any decoy hit = high-fidelity alert (#26)<br/>Heartbeat-missing rule: sensor down"]
-        notify["Notification<br/>email / Teams to Oceania Cyber"]
-        team["Analysts: Amos Winter, Ravi Paramanathan"]
-        cw["ConnectWise ticket<br/>raised manually (no integration)"]
+        sentinel[("Customer SIEM<br/>Sentinel, Splunk, Elastic, etc.")]
+        rule["Detection rule: any decoy hit = high-fidelity alert (#26)<br/>Heartbeat-missing rule: sensor down"]
+        notify["Notification<br/>email / chat / webhook to customer SOC"]
+        team["Customer SOC analysts"]
+        cw["Customer ticketing<br/>via SIEM integration or webhook"]
         fleet["Fleet update<br/>sensors pull image + config<br/>refuse unless signature verifies"]
         sentinel --> rule --> notify --> team --> cw
     end
