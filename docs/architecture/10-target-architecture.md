@@ -21,6 +21,9 @@ This is the proposed way to deploy Honeyd at DP World Oceania, as discussed on 1
 - Decoy VLANs must use IP ranges that are genuinely unused.
 - The Pi's management interface reaches only Sentinel, the registry and the config repo, and never accepts inbound connections.
 - No secrets are stored on the device, because a Pi in a comms room can be stolen or opened.
+- Sensors refuse to run any image whose signature doesn't verify.
+- Cowrie and Conpot sit on an internal Docker network that only Honeyd can reach, and have no direct presence on the decoy VLANs.
+- The log shipper buffers events on disk while Sentinel is unreachable, and the Pi keeps time with NTP over the management VLAN so alert timestamps line up.
 
 ## Diagram source
 
@@ -50,7 +53,7 @@ flowchart TB
 
         subgraph PI["Raspberry Pi 4/5 sensor, 2 GB+ RAM, PoE HAT"]
             direction TB
-            os["Raspberry Pi OS 64-bit, hardened<br/>read-only root, encrypted storage<br/>no console, SSH off, no secrets on device"]
+            os["Raspberry Pi OS 64-bit, hardened<br/>read-only root, encrypted storage<br/>no console, SSH off, no secrets on device<br/>NTP over management VLAN"]
             subgraph DOCKER["Docker engine"]
                 direction TB
                 hc["Honeyd container (#20)<br/>caps: NET_RAW, NET_ADMIN, SETUID, SETGID<br/>read-only rootfs, tmpfs /var/run<br/>control socket 0600 (#14)"]
@@ -61,9 +64,9 @@ flowchart TB
                     scr["Service scripts<br/>sandboxed (#16)"]
                     jlog["JSON event log (#24)"]
                 end
-                cowrie["Cowrie container<br/>high-interaction SSH (#33)"]
-                conpot["Conpot container<br/>Modbus / S7 decoy (#34)"]
-                ship["Log shipper container<br/>Fluent Bit / AMA"]
+                cowrie["Cowrie container<br/>high-interaction SSH (#33)<br/>internal Docker network only"]
+                conpot["Conpot container<br/>Modbus / S7 decoy (#34)<br/>internal Docker network only"]
+                ship["Log shipper container<br/>Fluent Bit / AMA<br/>on-disk buffer if Sentinel unreachable"]
                 agent["Health agent<br/>heartbeat, image version (#30)"]
             end
         end
@@ -99,7 +102,7 @@ flowchart TB
         notify["Notification<br/>email / Teams to Oceania Cyber"]
         team["Analysts: Amos Winter, Ravi Paramanathan"]
         cw["ConnectWise ticket<br/>raised manually (no integration)"]
-        fleet["Fleet update<br/>sensors pull image + config"]
+        fleet["Fleet update<br/>sensors pull image + config<br/>refuse unless signature verifies"]
         sentinel --> rule --> notify --> team --> cw
     end
 
