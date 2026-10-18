@@ -44,7 +44,7 @@ flowchart TB
     end
 
     %% ---------- Site ----------
-    subgraph SITE["2. Site (terminal, warehouse or office), one per segment group"]
+    subgraph SITE["2. Site (customer site), one per segment group"]
         direction TB
         subgraph NET["Site switch"]
             direction TB
