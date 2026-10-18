@@ -27,6 +27,7 @@ All diagrams are Mermaid and render directly on GitHub.
 | [07-security-and-modernisation-notes.md](07-security-and-modernisation-notes.md) | Unsafe areas, privileges, Docker notes |
 | [08-glossary.md](08-glossary.md) | Plain-English definitions of terms and acronyms |
 | [09-gaps.md](09-gaps.md) | What Honeyd does not do: gaps proven in code, and open questions for a live test |
+| [10-target-architecture.md](10-target-architecture.md) | Proposed deployment: Raspberry Pi sensors running Honeyd in Docker, feeding Sentinel |
 | [NOTES-for-writers.md](NOTES-for-writers.md) | Entry points, key structs and functions with file:line refs |
 
 All references are to the `master` branch (commit `a0f3d64`).
