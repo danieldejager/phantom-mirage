@@ -149,3 +149,4 @@ From [07](07-security-and-modernisation-notes.md). That page separates verified 
 | Build it | [06-build-and-dependencies.md](06-build-and-dependencies.md) |
 | Decide how to run it safely | [07-security-and-modernisation-notes.md](07-security-and-modernisation-notes.md) |
 | Look up a term | [08-glossary.md](08-glossary.md) |
+| See what is missing | [09-gaps.md](09-gaps.md) |
