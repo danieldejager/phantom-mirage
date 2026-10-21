@@ -110,7 +110,7 @@ rt_file(const char *path, const char *content)
  * (and that a user namespace may not clear) are kept.
  */
 static int
-rt_bind(const char *src, int rw)
+rt_bind_at(const char *src, const char *path, int rw)
 {
 	char dst[PATH_MAX];
 	struct stat st;
@@ -119,12 +119,12 @@ rt_bind(const char *src, int rw)
 
 	if (stat(src, &st) == -1)
 		return (0);
-	if (snprintf(dst, sizeof(dst), NR "%s", src) >= (int)sizeof(dst))
+	if (snprintf(dst, sizeof(dst), NR "%s", path) >= (int)sizeof(dst))
 		return (-1);
 	if (S_ISDIR(st.st_mode)) {
-		if (rt_mkdirs(src) == -1)
+		if (rt_mkdirs(path) == -1)
 			return (-1);
-	} else if (rt_touch(src) == -1)
+	} else if (rt_touch(path) == -1)
 		return (-1);
 	if (mount(src, dst, NULL, MS_BIND | MS_REC, NULL) == -1)
 		return (-1);
@@ -137,6 +137,12 @@ rt_bind(const char *src, int rw)
 	if (!rw)
 		fl |= MS_RDONLY;
 	return (mount(NULL, dst, NULL, fl, NULL));
+}
+
+static int
+rt_bind(const char *src, int rw)
+{
+	return (rt_bind_at(src, src, rw));
 }
 
 /* bin, lib, ...: a symlink like the host's (merged /usr), or a bind */
@@ -209,7 +215,8 @@ sandbox_script_root(char * const argv[])
 		}
 	}
 	if (havecwd && strcmp(cwd, "/") != 0 && strncmp(cwd, "/tmp", 4) != 0)
-		TRY(rt_bind(cwd, 0), cwd);
+		/* via ".": its parents may not be searchable for us */
+		TRY(rt_bind_at(".", cwd, 0), cwd);
 	nw = sandbox_write_paths(&wp);
 	for (i = 0; i < nw; i++)
 		TRY(rt_bind(wp[i], 1), wp[i]);
