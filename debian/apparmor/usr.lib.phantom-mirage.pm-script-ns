@@ -1,6 +1,6 @@
 # AppArmor profile for the phantom-mirage --sandbox-scripts launcher (#16).
 #
-# phantom-mirage execs /usr/lib/phantom-mirage/pm-script-ns, which creates
+# phantom-mirage execs /usr/lib[/<multiarch>]/phantom-mirage/pm-script-ns, which creates
 # a user/mount/PID/IPC/UTS/network namespace and a private /tmp for every
 # service script. Ubuntu 24.04+ (kernel.apparmor_restrict_unprivileged_userns=1)
 # only lets confined programs whose profile says "userns," create user
@@ -21,7 +21,8 @@ abi <abi/4.0>,
 
 include <tunables/global>
 
-profile pm-script-ns /usr/lib/phantom-mirage/pm-script-ns {
+# /usr/lib/<multiarch>/phantom-mirage with Debian's libdir
+profile pm-script-ns /usr/lib{,/*}/phantom-mirage/pm-script-ns {
   include <abstractions/base>
 
   # The reason for this profile.
@@ -35,7 +36,7 @@ profile pm-script-ns /usr/lib/phantom-mirage/pm-script-ns {
   mount fstype=tmpfs options=(rw, nosuid, nodev) tmpfs -> /tmp/,
   mount fstype=proc options=(rw, nosuid, nodev, noexec) proc -> /proc/,
 
-  /usr/lib/phantom-mirage/pm-script-ns mr,
+  /usr/lib{,/*}/phantom-mirage/pm-script-ns mr,
   @{PROC}/@{pid}/uid_map w,
   @{PROC}/@{pid}/gid_map w,
   @{PROC}/@{pid}/setgroups w,

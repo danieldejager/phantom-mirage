@@ -497,7 +497,7 @@ jobs:
           # install above must still have succeeded (#16)
           test -f /etc/apparmor.d/usr.lib.phantom-mirage.pm-script-ns
           test -f /etc/apparmor.d/abstractions/phantom-mirage-script
-          test -x /usr/lib/phantom-mirage/pm-script-ns
+          ls /usr/lib/*/phantom-mirage/pm-script-ns
           ! command -v apparmor_parser
           # log dir from debian/phantom-mirage.dirs, owned by the daemon user
           test "$(stat -c '%U' /var/log/phantom-mirage)" = phantom-mirage
@@ -560,7 +560,7 @@ jobs:
         # stays on: the shipped profile grants userns to the launcher
         run: |
           sysctl kernel.apparmor_restrict_unprivileged_userns
-          ls -l /etc/apparmor.d/usr.lib.phantom-mirage.pm-script-ns /etc/apparmor.d/abstractions/phantom-mirage-script /usr/lib/phantom-mirage/pm-script-ns
+          ls -l /etc/apparmor.d/usr.lib.phantom-mirage.pm-script-ns /etc/apparmor.d/abstractions/phantom-mirage-script /usr/lib/*/phantom-mirage/pm-script-ns
           sudo apparmor_parser -Q -K /etc/apparmor.d/usr.lib.phantom-mirage.pm-script-ns
           sudo aa-status | grep -E 'pm-script-ns|phantom-mirage-script'
 

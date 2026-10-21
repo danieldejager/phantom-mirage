@@ -274,7 +274,7 @@ installs the .deb and runs the unit with its defaults:
 
 ## AppArmor profile (Debian package)
 
-The launcher is exec'd as `/usr/lib/phantom-mirage/pm-script-ns`, the
+The launcher is exec'd as `/usr/lib/<multiarch>/phantom-mirage/pm-script-ns` (the package's lib dir), the
 phantom-mirage binary installed a second time under that name. It
 recognises the name and runs only the launcher. This gives it a path of
 its own, so AppArmor can confine it alone. The package ships
