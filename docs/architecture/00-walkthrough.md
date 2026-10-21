@@ -122,7 +122,7 @@ Honeyd uses fingerprints in both directions, and the two are easy to confuse:
 
 ## 10. Building it today
 
-The code is from 2002 to 2007, with later DataSoft/Nova additions. Version string: 1.6d. It does build and run on current Linux (tested on Debian 13 with GCC 14), but only with two compiler workarounds, `-fpermissive` and `-fcommon`, and a non-parallel `make`. The Python features don't build at all on a modern distribution. Details and the working recipe are in [06-build-and-dependencies.md](06-build-and-dependencies.md).
+The code is from 2002 to 2007, with later DataSoft/Nova additions. Version string: 1.6d. It does build and run on current Linux (tested on Debian 13 with GCC 14), Until [PR #44](https://github.com/danieldejager/honeyd/pull/44) is merged it needs two compiler workarounds (`-fpermissive` and `-fcommon`) and a non-parallel `make`; after it, a plain `./configure && make -j` works. The Python features don't build at all on a modern distribution. Details and the working recipe are in [06-build-and-dependencies.md](06-build-and-dependencies.md).
 
 ## 11. What to worry about
 
