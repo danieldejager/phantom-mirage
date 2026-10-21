@@ -631,21 +631,26 @@ static void
 cmd_subsystem_connect_cb(int fd, short what, void *arg)
 {
 	struct port_encapsulate *tmp = arg;
+	struct tuple *hdr = tmp->hdr;
+	struct command *cmd = tmp->cmd;
 	struct port *port = tmp->port;
+	void *con = tmp->con;
 
-	TAILQ_REMOVE(&port->pending, tmp, next);
+	/*
+	 * The callback owns tmp once it fires: unlink it from the port and
+	 * the connection and free it (and its event) before acting, so
+	 * nothing below can reach it again.
+	 */
+	port_encapsulation_free(tmp);
 
 	if (what != EV_WRITE) {
 		/* We encountered some error with this */
-		if (tmp->hdr->type == SOCK_STREAM)
-			tcp_connectfail(tmp->con);
-		goto out;
+		if (hdr->type == SOCK_STREAM)
+			tcp_connectfail(con);
+		return;
 	}
 
-	cmd_subsystem_connect(tmp->hdr, tmp->cmd, port, tmp->con);
-
- out:
-	port_encapsulation_free(tmp);
+	cmd_subsystem_connect(hdr, cmd, port, con);
 }
 
 int
@@ -663,13 +668,18 @@ cmd_subsystem_schedule_connect(struct tuple *hdr, struct command *cmd,
 	tmp->port = port;
 	tmp->con = con;
 
-	/* Tell the connection that it has a pending connection */
-	tmp->hdr->pending = tmp;
+	TRACE(port->sub_fd,
+	    tmp->ev = event_new(libevent_base, port->sub_fd, EV_WRITE,
+		cmd_subsystem_connect_cb, tmp));
+	if (tmp->ev == NULL) {
+		free(tmp);
+		return (-1);
+	}
 
+	/* Tell the connection that it has a pending connection */
+	hdr->pending = tmp;
 	TAILQ_INSERT_TAIL(&port->pending, tmp, next);
 
-	TRACE(port->sub_fd,
-		event_new(libevent_base, port->sub_fd, EV_WRITE, cmd_subsystem_connect_cb, tmp));
 	TRACE(event_get_fd(tmp->ev),
 		event_add(tmp->ev, NULL));
 

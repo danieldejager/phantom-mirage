@@ -1719,7 +1719,8 @@ tcp_send(struct tcp_con *con, uint8_t flags, u_char *payload, u_int len)
 	    dontfragment ? IP_DF : 0, ttl,
 	    IP_PROTO_TCP, con->con_ipdst, con->con_ipsrc);
 
-	memcpy(pkt + IP_HDR_LEN + (tcp->th_off << 2), payload, len);
+	if (len > 0)
+		memcpy(pkt + IP_HDR_LEN + (tcp->th_off << 2), payload, len);
 
 	hooks_dispatch(IP_PROTO_TCP, HD_OUTGOING, &con->conhdr,
 	    pkt, iplen);
