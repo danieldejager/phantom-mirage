@@ -397,6 +397,13 @@ jobs:
         shell: bash
         run: |
           bash ci/sandbox_daemon.sh
+          # Again as under debian/honeyd.service: no_new_privs, the unit's
+          # capability bounding set, writable state only below /run.
+          # (ProtectSystem=strict needs mounts, which the CI container
+          # refuses; it was checked by hand, see docs/sandboxing.md.)
+          mkdir -p unit-logs
+          HD_WRAP="setpriv --no-new-privs --inh-caps=-all --bounding-set=-all,+net_raw,+net_admin,+setuid,+setgid" \
+            HD_WORK=/run/hdsd HD_LOGDIR=$PWD/unit-logs bash ci/sandbox_daemon.sh
           cd regress
           bad=0
           for t in general.py detect.py routing.py nmap.py; do
@@ -423,6 +430,7 @@ jobs:
             regress-*.log
             regress/nmap.log
             sandbox-daemon-*.log
+            unit-logs/*.log
             honeyd-py*.log
             honeyd-py-ctl.out
           if-no-files-found: ignore

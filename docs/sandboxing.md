@@ -116,6 +116,27 @@ x86_64). If the filter can't be installed, honeyd exits.
   makes honeyd exit with "cannot install seccomp filter".
 * On start-up the daemon logs `sandbox-daemon: seccomp allowlist active
   (<n> syscalls)`.
+* **Under systemd** (`debian/honeyd.service`, not enabled by default):
+  add `--sandbox-daemon` to `OPTIONS` in `/etc/default/honeyd`. The unit
+  sets no `SystemCallFilter`, so this allowlist is the only syscall
+  filter. It does not conflict with the unit's other settings:
+  * `NoNewPrivileges=yes`: `--sandbox-daemon` sets no_new_privs anyway,
+    which an unprivileged seccomp filter requires.
+  * `ProtectSystem=strict` with only `/var/log/honeypot` and `/run`
+    writable: the allowlist is about syscalls, not paths. A write
+    elsewhere fails with `EROFS` as usual, with no SIGSYS.
+  * `RestrictAddressFamilies=` and `LockPersonality=` are seccomp
+    filters systemd installs itself. They stack with ours, and the
+    stricter answer wins.
+  * The capability bounding set (`CAP_NET_RAW CAP_NET_ADMIN CAP_SETUID
+    CAP_SETGID`) covers what honeyd does before the filter. The filter
+    is installed after the drop.
+
+  CI runs `ci/sandbox_daemon.sh` a second time under `setpriv
+  --no-new-privs` with the unit's bounding set and state under `/run`.
+  The read-only root (`ProtectSystem=strict`) was checked by hand in a
+  user and mount namespace with `/` remounted read-only. The CI
+  container refuses mounts.
 
 ## Known gaps (why this is opt-in)
 

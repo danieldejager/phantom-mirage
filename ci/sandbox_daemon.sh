@@ -10,20 +10,20 @@
 #   HD_WRAP   command prefix for honeyd (e.g. strace)
 set -uo pipefail
 D=$PWD
-W=/tmp/hdsd
+W=${HD_WORK:-/tmp/hdsd}
 rm -rf $W; install -d -m 1777 $W $W/rw
 ip route replace 10.99.0.0/24 dev lo
 cp ci/svc_escape.sh $W/svc_escape.sh
 rm -rf $W/htdocs; cp -r webserver/htdocs $W/htdocs
 chown -R ${HD_OWNER:-65534:65534} $W/htdocs/graphs
-cat > $W/sd.conf <<'CONF'
+cat > $W/sd.conf <<CONF
 create default
 set default default tcp action block
 create linux
 set linux personality "Linux 2.6.32"
 set linux default tcp action reset
 add linux subsystem "/tmp/subsys_echo"
-add linux tcp port 2323 "/bin/sh /tmp/hdsd/svc_escape.sh"
+add linux tcp port 2323 "/bin/sh $W/svc_escape.sh"
 add linux tcp port 7 internal "echo_banner"
 bind 10.99.0.10 linux
 CONF
@@ -31,7 +31,7 @@ mkdir -p /var/run
 rc=0
 run() {
   mode=$1; shift
-  log=$D/sandbox-daemon-$mode.log
+  log=${HD_LOGDIR:-$D}/sandbox-daemon-$mode.log
   PYTHONPATH=$D/scripts/python timeout 90 ${HD_WRAP:-} ./honeyd -d \
     -f $W/sd.conf -i lo --sandbox-daemon \
     --webserver-port=8080 --webserver-root=$W/htdocs \
@@ -88,7 +88,7 @@ run scripts --sandbox-scripts --sandbox-allow-write=$W/rw
 
 # Negative check: a syscall off the list (mount, via honeydctl "!") must
 # be reported and kill the daemon with SIGSYS.
-log=$D/sandbox-daemon-deny.log
+log=${HD_LOGDIR:-$D}/sandbox-daemon-deny.log
 PYTHONPATH=$D/scripts/python timeout 60 ${HD_WRAP:-} ./honeyd -d \
   -f $W/sd.conf -i lo --sandbox-daemon --disable-webserver \
   -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \

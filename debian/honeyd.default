@@ -28,6 +28,9 @@ NETWORK=10.0.0.0/8
 # information (and provide a remote user to edit honeyd's
 # configuration).
 OPTIONS="--disable-webserver"
+
+# Optional syscall/filesystem sandboxing (see docs/sandboxing.md):
+#OPTIONS="--disable-webserver --sandbox-daemon --sandbox-scripts"
  
 # Remove --disable-webserver if you want
 # to start up the web server. You will need to ask honeyd
