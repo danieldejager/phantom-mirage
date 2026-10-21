@@ -2898,7 +2898,7 @@ icmp_recv_cb(struct template *tmpl, u_char *pkt, u_short pktlen)
 	if (cksum != icmp->icmp_cksum)
 		return;
 
-	dlen = pktlen - IP_HDR_LEN - ICMP_HDR_LEN;
+	dlen = pktlen - (ip->ip_hl << 2) - ICMP_HDR_LEN;
 	dlen -= 4;
 
 	if (dlen < 0)
