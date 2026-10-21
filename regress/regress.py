@@ -38,8 +38,10 @@ NETS = (("192.0.2.0", 24), ("192.18.0.0", 15))
 # config.2) or via the kernel's route for 192.0.2.0/24 out HD_IF (plain
 # mode, honeyd sends through a raw IP socket). 192.0.2.0/24 is not
 # configured anywhere: an ARP responder below answers who-has for it.
-# Forwarding is disabled on both ends and 192.18.0.0/15 is blackholed so
-# the kernel never forwards probes or replies anywhere else.
+# Anything the kernel would forward from either end hits a blackhole
+# (policy rule iif hdt0/hdt1 -> table 74), so probes and replies never
+# leave the pair or loop back; this works even with a read-only
+# /proc/sys and forwarding enabled (CI containers).
 HD_IF = "hdt0"
 TEST_IF = "hdt1"
 
@@ -197,24 +199,14 @@ class regress:
             ("ip", "link", "set", HD_IF, "up"),
             ("ip", "link", "set", TEST_IF, "up"),
             ("ip", "route", "replace", "192.0.2.0/24", "dev", HD_IF),
-            ("ip", "route", "replace", "blackhole", "192.18.0.0/15"),
+            ("ip", "route", "replace", "blackhole", "default", "table", "74"),
+            ("ip", "rule", "add", "iif", HD_IF, "lookup", "74", "pref", "74"),
+            ("ip", "rule", "add", "iif", TEST_IF, "lookup", "74", "pref", "75"),
         ]
         for st in steps:
             if self._cmd(*st):
                 sys.stderr.write("failed: %s\n" % " ".join(st))
                 return 1
-        for ifname in (HD_IF, TEST_IF):
-            path = "/proc/sys/net/ipv4/conf/%s/forwarding" % ifname
-            try:
-                with open(path, "w") as f:
-                    f.write("0")
-            except OSError:
-                # read-only /proc/sys (containers): fine if forwarding is off
-                with open(path) as f:
-                    if f.read().strip() != "0":
-                        sys.stderr.write("cannot disable forwarding on %s\n"
-                                         % ifname)
-                        return 1
         self.test_mac = self._mac(TEST_IF)
         self.hd_mac = self._mac(HD_IF)
         self._start_arp_responder()
@@ -226,7 +218,9 @@ class regress:
             return bytes.fromhex(f.read().strip().replace(":", ""))
 
     def RemoveAllRoutes(self):
-        self._cmd("ip", "route", "del", "blackhole", "192.18.0.0/15")
+        self._cmd("ip", "rule", "del", "pref", "74")
+        self._cmd("ip", "rule", "del", "pref", "75")
+        self._cmd("ip", "route", "flush", "table", "74")
         self._cmd("ip", "link", "del", HD_IF)
 
     def _start_arp_responder(self):
