@@ -66,7 +66,87 @@ The Docker host can't reach its own macvlan containers through the same parent i
 docker exec -it <container> phantom-mirage-ctl
 ```
 
+## Published images (GHCR, private)
+
+`.github/workflows/publish.yml` publishes
+`ghcr.io/danieldejager/phantom-mirage` as a **private** package.
+
+* **When it pushes:** on pushes to `master` and on `v*` tags only. On pull
+  requests it only builds, for both architectures, and never logs in or
+  pushes. Nothing is pushed from a developer machine.
+* **Auth:** only the workflow's own `GITHUB_TOKEN`, with
+  `packages: write`; no personal access token. `id-token: write` is
+  granted only for the optional keyless mode below.
+* **Tags:**
+  * `sha-<short>`: always.
+  * `edge`: on `master`.
+  * `X.Y.Z`, `X.Y` and `X` (no `0`): on `vX.Y.Z` tags.
+* **Labels:** `org.opencontainers.image.source` points to the repository,
+  so the package links to the private repo and its permissions.
+* **SBOM and provenance:** buildx `sbom: true` and `provenance: mode=max`.
+  They are stored as attestation manifests in the image index, in the same
+  private registry, and are not sent to Sigstore or Rekor. CI checks they
+  are there (`docker buildx imagetools inspect`).
+* **Visibility check:** right after every push (the first one too, which
+  creates the package) the job reads the package's visibility through the
+  API. It fails loudly if the visibility is not `private` or can't be
+  read.
+
+### Signing (cosign, private key)
+
+Images are signed by digest (`--recursive`: the index and every platform
+manifest) with a cosign key pair, with `--tlog-upload=false`.
+* **What is recorded:** nothing goes to the public Rekor transparency log.
+  The signature lives next to the image in GHCR.
+* **CI checks:**
+  * It verifies the signature with the public half of the key
+    (`--insecure-ignore-tlog=true`, since there is no log entry by
+    design).
+  * It checks that the signature carries no transparency-log bundle.
+* **No key, no image:** if the key secrets are missing, the job fails
+  before anything is pushed (`No signing key`).
+
+Repository secrets to create (Settings → Secrets and variables →
+Actions):
+
+| Secret | Contents |
+|---|---|
+| `COSIGN_PRIVATE_KEY` | the encrypted private key (the whole `cosign.key` PEM) |
+| `COSIGN_PASSWORD` | its password |
+
+Create the key pair on your own machine, never in CI or on a shared
+host:
+
+```sh
+cosign generate-key-pair        # asks for the password; writes cosign.key and cosign.pub
+gh secret set COSIGN_PRIVATE_KEY -R danieldejager/phantom-mirage < cosign.key
+gh secret set COSIGN_PASSWORD   -R danieldejager/phantom-mirage   # paste the password
+```
+
+Keep `cosign.key` offline (or delete it once the secret is set). Verify an
+image with the public key:
+
+```sh
+cosign verify --key cosign.pub --insecure-ignore-tlog=true ghcr.io/danieldejager/phantom-mirage:edge
+docker buildx imagetools inspect ghcr.io/danieldejager/phantom-mirage:edge --format '{{ json .Provenance }}'
+```
+
+### Option: keyless signing
+
+`cosign sign` without `--key` uses the workflow's OIDC identity
+(`id-token: write`) and Fulcio. It needs no key secret, but **it records
+the signing certificate in Sigstore's public Rekor log**. That certificate
+contains the repository name, workflow path and ref. Because this repo and
+its packages are private, keyless is not the default. To switch, drop
+`--key`/`--tlog-upload=false` from the sign step and verify with
+`--certificate-identity-regexp` and `--certificate-oidc-issuer
+https://token.actions.githubusercontent.com`.
+
+GitHub artifact attestations (`actions/attest-build-provenance`) would use
+GitHub's own Sigstore instance for private repositories, not the public
+one. They are not used here: on a personal account they aren't available
+for private repositories.
+
 ## Not done yet
 
-- Image signing and publishing to a private registry. CI builds both architectures but doesn't push anywhere.
 - Python extensions and the web UI (#36).
