@@ -50,7 +50,7 @@ pool_init(size_t size)
 {
 	struct pool *pool;
 
-	if (POOL_PAGE_SIZE / (sizeof(struct pool_entry) + size) < 1)
+	if (POOL_PAGE_SIZE / POOL_STRIDE(size) < 1)
 	{
 		syslog(LOG_ERR, "%s: object size too large for pool", __func__);
 		exit(EXIT_FAILURE);
@@ -74,14 +74,14 @@ pool_alloc_size(struct pool *pool, size_t size)
 	struct pool_entry *entry = NULL;
 
 	if (size) {
-		entry = malloc(size + sizeof(struct pool_entry));
+		entry = malloc(POOL_HDR_SIZE + size);
 		if (entry == NULL)
 		{
 			syslog(LOG_ERR, "%s: malloc", __func__);
 			exit(EXIT_FAILURE);
 		}
 		
-		entry->data = (void *)entry + sizeof(struct pool_entry);;
+		entry->data = (char *)entry + POOL_HDR_SIZE;
 		entry->size = size;
 		pool->nalloc++;
 	} else {
@@ -95,17 +95,17 @@ pool_alloc_size(struct pool *pool, size_t size)
 		}
 
 		size = pool->size;
-		max = POOL_PAGE_SIZE / (sizeof(struct pool_entry) + size);
+		max = POOL_PAGE_SIZE / POOL_STRIDE(size);
 		pool->nalloc += max;
 		for (i = 0; i < max; i++) {
 			entry = p;
-			entry->data = (void *)entry+ sizeof(struct pool_entry);
+			entry->data = (char *)entry + POOL_HDR_SIZE;
 			entry->size = size;
 
 			/* We want to use the last one as return */
 			if (i < max - 1) {
 				SLIST_INSERT_HEAD(&pool->entries, entry, next);
-				p += sizeof(struct pool_entry) + size;
+				p = (char *)p + POOL_STRIDE(size);
 			}
 		}
 	}

@@ -33,6 +33,7 @@
 #ifndef _POOL_
 #define _POOL_
 
+#include <stddef.h>
 #include <syslog.h>
 
 #define POOL_PAGE_SIZE	4096
@@ -42,6 +43,17 @@ struct pool_entry {
 	void *data;
 	size_t size;
 };
+
+/*
+ * Every entry header and the object that follows it must be suitably
+ * aligned for any type.  The header is padded to POOL_ALIGN and each
+ * slot stride is rounded up to POOL_ALIGN so page-carved entries stay
+ * aligned regardless of the pool's element size (#54).
+ */
+#define POOL_ALIGN	_Alignof(max_align_t)
+#define POOL_ROUNDUP(x)	(((x) + POOL_ALIGN - 1) & ~((size_t)POOL_ALIGN - 1))
+#define POOL_HDR_SIZE	POOL_ROUNDUP(sizeof(struct pool_entry))
+#define POOL_STRIDE(sz)	(POOL_HDR_SIZE + POOL_ROUNDUP(sz))
 
 struct pool {
 	SLIST_HEAD(poolq, pool_entry) entries;
@@ -72,7 +84,7 @@ pool_alloc(struct pool *pool)
 static __inline void
 pool_free(struct pool *pool, void *addr)
 {
-	struct pool_entry *entry = addr - sizeof(struct pool_entry);
+	struct pool_entry *entry = (void *)((char *)addr - POOL_HDR_SIZE);
 
 	if (entry->data != addr)
 	{

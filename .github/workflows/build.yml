@@ -194,9 +194,7 @@ jobs:
         # times over lo.
         # After honeyd drops privileges the sanitizer runtime cannot read
         # /proc/self/environ, so UBSAN_OPTIONS (halt_on_error, suppressions)
-        # do not apply to later reports; the log is grepped instead. The
-        # pool.c/pool.h misaligned-access reports are a separate,
-        # pre-existing finding (#54) and are the only lines excluded.
+        # do not apply to later reports; the log is grepped instead.
         run: |
           D=$PWD
           apt-get install -y --no-install-recommends iproute2 python3 >/dev/null
@@ -226,8 +224,7 @@ jobs:
           kill -INT %1 || true
           wait %1 || true
           cat honeyd-sub.log
-          if grep -E 'runtime error|ERROR: AddressSanitizer' honeyd-sub.log |
-             grep -vE '^pool\.[ch]:[0-9]+:[0-9]+: runtime error: member access within misaligned address'; then
+          if grep -E 'runtime error|ERROR: AddressSanitizer' honeyd-sub.log; then
             exit 1
           fi
           test "$ok" = 3
