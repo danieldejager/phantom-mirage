@@ -46,7 +46,6 @@ int sandbox_daemon_landlock(void);
 void sandbox_ns_start(void);
 void sandbox_ns_exec(const char *execcmd, char * const argv[], uid_t uid,
     gid_t gid, int nofiles);
-int sandbox_add_net_script(const char *path);
 /* set in a script child that has its own private /tmp */
 extern int sandbox_script_private_tmp;
 /* the daemon's allowlist in a script started by the launcher, quietly */
