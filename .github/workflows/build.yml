@@ -511,6 +511,54 @@ jobs:
             src/lintian.txt
           if-no-files-found: error
 
+  systemd:
+    name: Ubuntu 24.04 / ${{ matrix.arch }} .deb under systemd
+    # The packaged unit under real systemd (PID 1 on the runner), with its
+    # defaults: --sandbox-daemon --sandbox-scripts, ProtectSystem=strict,
+    # RestrictNamespaces=user mnt pid ipc uts net (#16).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            os: ubuntu-24.04
+          - arch: arm64
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src/phantom-mirage
+
+      - name: Build the .deb on this release
+        working-directory: src/phantom-mirage
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential devscripts equivs
+          sudo mk-build-deps -i -r -t 'apt-get -y --no-install-recommends' debian/control
+          dpkg-buildpackage -us -uc -b
+
+      - name: Install it
+        working-directory: src
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ./phantom-mirage_*.deb ./phantom-mirage-common_*.deb
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends iproute2 python3
+          systemctl cat phantom-mirage
+
+      - name: Allow unprivileged user namespaces
+        # Ubuntu 24.04 restricts them for unconfined programs by default;
+        # see docs/sandboxing.md
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Run the service (ci/systemd_unit.sh)
+        run: sudo bash src/phantom-mirage/ci/systemd_unit.sh
+
+      - name: Journal
+        if: always()
+        run: sudo journalctl -u phantom-mirage --no-pager | tail -n 200
+
   arm64:
     name: Debian 13 / arm64 --sandbox-daemon
     # Native arm64 runner: under QEMU user emulation (the Docker job)

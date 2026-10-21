@@ -4318,6 +4318,23 @@ main(int argc, char *argv[])
 	//Start sending DHCP discoveries that have been queue'd up
 	dhcp_send_discover();
 
+	/* Under systemd (#16) the unit relaxes RestrictNamespaces= for the
+	 * sandbox and expects both flags; say so loudly if one is gone. */
+	if (getenv("INVOCATION_ID") != NULL &&
+	    (!honeyd_sandbox_daemon || !honeyd_sandbox_scripts)) {
+		const char *miss = !honeyd_sandbox_daemon ?
+		    (!honeyd_sandbox_scripts ?
+			"--sandbox-daemon and --sandbox-scripts" :
+			"--sandbox-daemon") : "--sandbox-scripts";
+		syslog(LOG_CRIT, "WARNING: running under systemd WITHOUT %s: "
+		    "the daemon and/or its scripts are NOT sandboxed. The "
+		    "unit's RestrictNamespaces= is relaxed for the sandbox; "
+		    "set RestrictNamespaces=yes or restore SANDBOX (see "
+		    "docs/sandboxing.md)", miss);
+		fprintf(stderr, "phantom-mirage: WARNING: running under "
+		    "systemd WITHOUT %s; see docs/sandboxing.md\n", miss);
+	}
+
 	/* Refuse to run twice; a stale pid file is fine */
 	honeyd_pidfile_check();
 
