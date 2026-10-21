@@ -1,7 +1,7 @@
 Source: honeyd
 Section: net
 Priority: optional
-Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Maintainer: Daniel de Jager <ddejager@dandejager.com>
 Build-Depends: debhelper-compat (= 13), autoconf, automake, libtool, bison, flex, pkg-config,
  libpcap-dev, libevent-dev, libdumbnet-dev, zlib1g-dev, libedit-dev, sharutils
 Rules-Requires-Root: no

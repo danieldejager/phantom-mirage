@@ -5,7 +5,7 @@ This page separates **Facts** (verified in the code or in the build run on 2026-
 ## Facts
 
 ### Age and maintenance
-- Code base is Niels Provos' Honeyd 1.5/1.6 (copyright 2002–2007) plus DataSoft/Nova additions (nmap 2nd-gen fingerprint parser in personality.c, broadcast scripts `bcast_insert`/`bcast_trigger` config.c:539–600, DHCP-assigned templates, `HONEYD_TEMPLATE_NAME`/`HONEYD_INTERFACE` env vars command.c:249–253, `~/.config/honeyd` handling honeyd.c :550–585). Version string: 1.6d.
+- Code base is Niels Provos' Honeyd 1.5/1.6 (copyright 2002–2007) plus DataSoft/Nova additions (nmap 2nd-gen fingerprint parser in personality.c, broadcast scripts `bcast_insert`/`bcast_trigger` config.c:539–600, DHCP-assigned templates, `HONEYD_TEMPLATE_NAME`/`HONEYD_INTERFACE` env vars command.c:249–253, `~/.config/honeyd` handling honeyd.c :550–585). Version string: 1.7.0 (set in `configure.ac` `AC_INIT`; 1.6d before 1.7.0).
 - Build needs `-fpermissive -fcommon` on GCC 14 (see [06](06-build-and-dependencies.md)). Python support was Python 2 only. Since #36 pyextend.c uses the Python 3 C API behind `--with-python` (off by default, [docs/python.md](../python.md)), and the web UI scripts are still Python 2. debian/control depends on `python-support` and `libpcre3-dev`, both gone from current Debian.
 
 ### Privileges

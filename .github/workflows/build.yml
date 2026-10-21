@@ -471,7 +471,14 @@ jobs:
           dpkg -L honeyd
           test "$(command -v honeyd)" = /usr/bin/honeyd
           dpkg -S /usr/bin/honeyd
-          honeyd --version
+          # Version comes from AC_INIT in configure.ac only
+          want=$(sed -n 's/^AC_INIT(\[honeyd\], \[\([^]]*\)\]).*/\1/p' honeyd/configure.ac)
+          test -n "$want"
+          honeyd --version 2>&1 | tee version.txt
+          grep -q "Version $want\$" version.txt
+          test "$(dpkg-query -W -f='${Version}' honeyd)" = "$want-1"
+          test "$(dpkg-query -W -f='${Version}' honeyd-common)" = "$want-1"
+          test "$want" = 1.7.0
           test -e /etc/honeypot/honeyd.conf
           test -e /usr/share/honeyd/nmap-os-db
           getent passwd honeyd
