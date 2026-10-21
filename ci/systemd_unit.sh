@@ -29,6 +29,7 @@ create linux
 set linux personality "Linux 2.6.32"
 set linux default tcp action reset
 add linux tcp port 2424 "/bin/sh /etc/phantom-mirage/ns_probe.sh"
+add linux tcp port 2525 "/nonexistent/pm-missing-script"
 bind 10.99.0.12 linux
 CONF
 sed -i 's/^INTERFACE=.*/INTERFACE="lo"/; s#^NETWORK=.*#NETWORK=10.99.0.0/24#' /etc/default/phantom-mirage
@@ -84,6 +85,11 @@ systemctl show -p ProtectSystem -p RestrictNamespaces -p NoNewPrivileges $U
 [ "$(systemctl show -p ProtectSystem --value $U)" = strict ] || fail "ProtectSystem is not strict"
 
 systemctl start $U; wait_up; check_running start
+# A script whose exec fails: the launcher logs from inside its user
+# namespace (where it holds capabilities). That error path used to fall
+# back to /dev/console (LOG_CONS) and trip the profile's
+# "deny capability dac_override" (see the AppArmor checks below).
+python3 -c 'import socket; s=socket.create_connection(("10.99.0.12",2525),timeout=10); s.settimeout(5); s.recv(64)' 2>/dev/null; sleep 1
 old=$(cat /run/$U/$U.pid)
 systemctl restart $U; wait_up; check_running restart
 [ "$(cat /run/$U/$U.pid)" != "$old" ] || fail "restart: pid file not updated"
@@ -96,6 +102,7 @@ echo "=== journal"; jr
 jr | grep -q 'sandbox-daemon: seccomp allowlist active' || fail "seccomp allowlist not reported"
 jr | grep -q 'sandbox-daemon: Landlock ABI' || fail "daemon Landlock not active"
 jr | grep -q 'scripts run in their own user, mount, PID, IPC, UTS and network namespaces' || fail "script namespaces not active"
+jr | grep -q 'sandbox: execv(/nonexistent/pm-missing-script)' || fail "launcher exec-failure path not exercised"
 if jr | grep -E 'denied syscall|killed by SIGSYS|WITHOUT|Landlock unavailable|namespaces unavailable'; then fail "denial or warning in the journal"; fi
 
 # Without the sandbox flags: loud warning (and still runs)
@@ -117,6 +124,10 @@ if [ "${HD_APPARMOR:-}" = require ]; then
   [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1 ] || fail "userns restriction is not on, the test proves nothing"
   if journalctl -k --since "$since0" --no-pager | grep -E 'apparmor="(DENIED|ALLOWED)"'; then fail "AppArmor denials in the kernel log"; fi
   if dmesg | grep -E 'apparmor="(DENIED|ALLOWED)"'; then fail "AppArmor denials in dmesg"; fi
+  # explicitly: the launcher never needs DAC overrides (#93 follow-up)
+  if { journalctl -k --since "$since0" --no-pager; dmesg; } | grep -E 'capname="dac_(override|read_search)"'; then
+    fail "dac_override/dac_read_search requested under the AppArmor profile"
+  fi
 fi
 
 [ $rc = 0 ] && echo "systemd-unit OK"

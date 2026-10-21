@@ -491,7 +491,14 @@ sandbox_ns_main(int argc, char **argv)
 {
 	int fd;
 
-	openlog("phantom-mirage", LOG_PERROR | LOG_PID | LOG_CONS, LOG_DAEMON);
+	/*
+	 * No LOG_CONS: if syslog() can't reach /dev/log, glibc would open
+	 * /dev/console (root:tty 0600). Inside the launcher's user namespace
+	 * that open fails DAC and the kernel asks for CAP_DAC_OVERRIDE, which
+	 * the AppArmor profile (rightly) denies. LOG_PERROR already sends
+	 * every message to stderr, i.e. the journal under systemd.
+	 */
+	openlog("phantom-mirage", LOG_PERROR | LOG_PID, LOG_DAEMON);
 	if (argc < 3 || (fd = atoi(argv[1])) < 3 ||
 	    sandbox_state_parse(argc - 3, argv + 3) == -1) {
 		syslog(LOG_ERR, "%s: started without a valid control socket "

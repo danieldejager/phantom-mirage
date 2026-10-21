@@ -303,6 +303,9 @@ installed and unused, and the package installs as before.
     it is confined by `pm-script-ns`, the script is not run.
   * Both profiles use `attach_disconnected` (syslog from the private mount
     namespace), and `dac_override`/`dac_read_search` are explicitly denied.
+    The launcher logs without `LOG_CONS`, so a failed syslog never falls
+    back to opening `/dev/console` (root-only), which is what used to ask for
+    `dac_override`. CI fails if either capability is ever requested.
 * **`phantom-mirage-script`**, stacked on the launcher's profile:
   * Under `no_new_privs`, which the daemon sets, AppArmor only allows
     stacking, not a plain profile change.
