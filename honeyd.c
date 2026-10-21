@@ -3478,6 +3478,10 @@ honeyd_recv_cb(u_char *ag, const struct pcap_pkthdr *pkthdr, const u_char *pkt)
 		struct arp_req *req;
 		struct addr eth_sha;
 		
+		/* Too short to hold an Ethernet header */
+		if (pkthdr->caplen < ETH_HDR_LEN)
+			return;
+
 		/* Mark this packet as being delivered via ethernet */
 		is_etherpkt = 1;
 
