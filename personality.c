@@ -560,7 +560,6 @@ get_next_isn(struct template *tmpl, const struct personality *person)
 	min -= (std_dev/8);
 	double temp = rand_normal(0, std_dev);
 
-	ISN_delta = mean;
 	if(person->TCP_ISN_gcd > 9)
 	{
 		temp *= person->TCP_ISN_gcd;
@@ -576,7 +575,11 @@ get_next_isn(struct template *tmpl, const struct personality *person)
 		}
 	}
 
-	ISN_delta += temp;
+	/*
+	 * mean + temp can be negative or exceed 2^32; converting such a
+	 * double to uint32_t is undefined.  Wrap modulo 2^32 explicitly.
+	 */
+	ISN_delta = (uint32_t)(int64_t)fmod(mean + temp, 4294967296.0);
 
 	//Only worry about making things line up for the GCD if it's a significant value
 	if(person->TCP_ISN_gcd > 9)
