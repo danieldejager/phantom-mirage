@@ -20,6 +20,7 @@ cat > /etc/phantom-mirage/ns_probe.sh <<'SH'
 #!/bin/sh
 echo "pid=$$ host=$(uname -n) links=$(ip -o link | wc -l) loup=$(ip -o link show lo | grep -c LOWER_UP)"
 echo probe > /tmp/ns_probe && echo "tmp=$(cat /tmp/ns_probe)"
+echo "shadow=$(cat /etc/shadow >/dev/null 2>&1 && echo y || echo n) etchostname=$(cat /etc/hostname >/dev/null 2>&1 && echo y || echo n) home=$(ls /home >/dev/null 2>&1 && echo y || echo n)"
 SH
 chmod 755 /etc/phantom-mirage/ns_probe.sh
 cat > /etc/phantom-mirage/phantom-mirage.conf <<'CONF'
@@ -88,6 +89,7 @@ check_running() {
   # sethostname, though the script still has its own UTS namespace)
   grep -Eq 'pid=1 host=[^ ]+ links=1 loup=0 tmp=probe' <<<"$out" || fail "$what: script not namespaced: $out"
   [ -e /tmp/ns_probe ] && fail "$what: script /tmp not private"
+  grep -q 'shadow=n etchostname=n home=n' <<<"$out" || fail "$what: script sees host files: $out"
 }
 
 systemctl show -p ProtectSystem -p RestrictNamespaces -p NoNewPrivileges $U

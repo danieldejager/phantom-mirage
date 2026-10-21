@@ -16,3 +16,27 @@ A(mount)
 #ifdef __NR_sethostname
 A(sethostname)
 #endif
+#ifdef __NR_pivot_root
+A(pivot_root)
+#endif
+#ifdef __NR_umount2
+A(umount2)
+#endif
+#ifdef __NR_symlink
+A(symlink)
+#endif
+#ifdef __NR_symlinkat
+A(symlinkat)
+#endif
+#ifdef __NR_mkdir
+A(mkdir)
+#endif
+#ifdef __NR_mkdirat
+A(mkdirat)
+#endif
+#ifdef __NR_statfs
+A(statfs)
+#endif
+#ifdef __NR_fstatfs
+A(fstatfs)
+#endif

@@ -36,8 +36,17 @@ profile pm-script-ns /usr/lib{,/*}/phantom-mirage/pm-script-ns flags=(attach_dis
   deny capability dac_read_search,
 
   mount options=(rw, rprivate) -> /,
+  # The script's read-only root (sandbox_root.c): a tmpfs on /tmp, read-only
+  # binds and the private /tmp and /proc inside it, then pivot_root into it
+  # and detach the old root. Mount targets only ever lie under /tmp/.
   mount fstype=tmpfs options=(rw, nosuid, nodev) tmpfs -> /tmp/,
-  mount fstype=proc options=(rw, nosuid, nodev, noexec) proc -> /proc/,
+  mount fstype=tmpfs options=(rw, nosuid, nodev) tmpfs -> /tmp/tmp/,
+  mount fstype=proc options=(rw, nosuid, nodev, noexec) proc -> /tmp/proc/,
+  mount options=(rw, rbind) -> /tmp/**,
+  mount options=(rw, bind) -> /tmp/dev/*,
+  remount options in (ro, rw, bind, nosuid, nodev, noexec) /tmp/{,**},
+  pivot_root oldroot=/tmp/ /tmp/,
+  umount /,
 
   /usr/lib{,/*}/phantom-mirage/pm-script-ns mr,
   @{PROC}/@{pid}/uid_map w,

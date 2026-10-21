@@ -195,10 +195,8 @@ ns_run(struct ns_req *req, char *strs, int fd_io, int fd_err, int have_ns)
 		snprintf(map, sizeof(map), "%u %u 1", gid, gid);
 		if (ns_write("/proc/self/gid_map", map) == -1)
 			_exit(EXIT_FAILURE);
-		if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) == -1 ||
-		    mount("tmpfs", "/tmp", "tmpfs",
-			MS_NOSUID | MS_NODEV, "mode=1777,size=64m") == -1) {
-			syslog(LOG_ERR, "sandbox: private /tmp for %s: %m",
+		if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) == -1) {
+			syslog(LOG_ERR, "sandbox: private mounts for %s: %m",
 			    execcmd);
 			_exit(EXIT_FAILURE);
 		}
@@ -217,9 +215,13 @@ ns_run(struct ns_req *req, char *strs, int fd_io, int fd_err, int have_ns)
 			ns_mirror_exit(status);
 		}
 		prctl(PR_SET_PDEATHSIG, SIGKILL);
-		/* our own /proc; refused where /proc has masked paths */
-		mount("proc", "/proc", "proc",
-		    MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL);
+		/* a minimal read-only root with a private /tmp (and /proc);
+		 * fail closed rather than run the script on the host's */
+		if (sandbox_script_root(argv) == -1) {
+			syslog(LOG_ERR, "sandbox: no read-only root for %s; "
+			    "not running it", execcmd);
+			_exit(EXIT_FAILURE);
+		}
 	}
 
 	if (dup2(fd_io, 0) == -1 || dup2(fd_io, 1) == -1 ||
@@ -308,12 +310,13 @@ ns_launcher(int ctl, pid_t parent)
 		have_ns = 1;
 		syslog(LOG_NOTICE, "sandbox: scripts run in their own user, "
 		    "mount, PID, IPC, UTS and network namespaces with a "
-		    "private /tmp");
+		    "private /tmp and a minimal read-only root");
 	} else {
 		have_ns = 0;
 		syslog(LOG_WARNING, "sandbox: unprivileged user namespaces "
-		    "unavailable (%s); scripts run WITHOUT namespaces or a "
-		    "private /tmp (Landlock and seccomp still apply)",
+		    "unavailable (%s); scripts run WITHOUT namespaces, a "
+		    "private /tmp or a read-only root (Landlock and seccomp "
+		    "still apply)",
 		    strerror(err));
 	}
 	/* setup done: from here on only requests, fork, namespaces, exec */
