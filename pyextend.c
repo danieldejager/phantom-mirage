@@ -62,6 +62,7 @@
 
 #include <event.h>
 
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
 #include "honeyd.h"
@@ -464,7 +465,7 @@ pyextend_uptime(PyObject *self, PyObject *args)
 	gettimeofday(&tv, NULL);
 	timersub(&tv, &honeyd_uptime, &tv);
 
-	return (Py_BuildValue("i", tv.tv_sec));
+	return (Py_BuildValue("l", (long)tv.tv_sec));
 }
 
 static PyObject*
@@ -613,6 +614,33 @@ pyextend_writeselector(PyObject *self, PyObject *args)
 	return (pValue);
 }
 
+/*
+ * Scripts may return bytes (preferred) or str, which is sent as UTF-8.
+ * The buffer is owned by obj.
+ */
+static int
+pyextend_as_bytes(PyObject *obj, char **buf, Py_ssize_t *size)
+{
+	const char *p;
+
+	if (PyBytes_Check(obj))
+		return (PyBytes_AsStringAndSize(obj, buf, size));
+	if (PyByteArray_Check(obj)) {
+		*buf = PyByteArray_AsString(obj);
+		*size = PyByteArray_Size(obj);
+		return (0);
+	}
+	if (PyUnicode_Check(obj)) {
+		if ((p = PyUnicode_AsUTF8AndSize(obj, size)) == NULL)
+			return (-1);
+		*buf = (char *)p;
+		return (0);
+	}
+	PyErr_Format(PyExc_TypeError,
+	    "expected bytes or str, got %s", Py_TYPE(obj)->tp_name);
+	return (-1);
+}
+
 static void
 pyextend_cbread(int fd, short what, void *arg)
 {
@@ -627,7 +655,8 @@ pyextend_cbread(int fd, short what, void *arg)
 	if (n <= 0)
 		goto error;
 
-	pArgs = Py_BuildValue("(O,s#)", state->state, buf, n);
+	/* Python 3: service scripts get the raw bytes from the wire */
+	pArgs = Py_BuildValue("(O,y#)", state->state, buf, (Py_ssize_t)n);
 	if (pArgs == NULL) {
 		fprintf(stderr, "Failed to build value\n");
 		goto error;
@@ -681,7 +710,8 @@ pyextend_cbwrite(int fd, short what, void *arg)
 	struct pyextend *pye = state->pye;
 	struct pywrite *writebuf;
 	char *buf;
-	int size, res;
+	Py_ssize_t size;
+	int res;
 
 	/* If we still have buffered data from before, we are going
 	 * to send it now and reschedule us if necessary.
@@ -734,9 +764,8 @@ pyextend_cbwrite(int fd, short what, void *arg)
 		goto error;
 	}
 
-	res = PyString_AsStringAndSize(pValue, &buf, &size);
-
-	if (res == -1) {
+	if (pyextend_as_bytes(pValue, &buf, &size) == -1) {
+		PyErr_Print();
 		Py_DECREF(pValue);
 		goto error;
 	}
@@ -750,7 +779,7 @@ pyextend_cbwrite(int fd, short what, void *arg)
 	}
 
 	if (res != size) {
-		pyextend_addbuffer(state, buf + res, size - res);
+		pyextend_addbuffer(state, (u_char *)buf + res, size - res);
 		event_add(&state->pwrite, NULL);
 	}
 
@@ -765,42 +794,80 @@ pyextend_cbwrite(int fd, short what, void *arg)
 
 /* Initializes our Python extension support */
 
+static struct PyModuleDef honeyd_module = {
+	PyModuleDef_HEAD_INIT, "honeyd",
+	"Honeyd functions for embedded Python service scripts.",
+	-1, HoneydMethods
+};
+
+static PyObject *
+pyextend_module_init(void)
+{
+	PyObject *pModule;
+
+	if ((pModule = PyModule_Create(&honeyd_module)) == NULL)
+		return (NULL);
+	PyModule_AddIntConstant(pModule, "EVENT_ON", 1);
+	PyModule_AddIntConstant(pModule, "EVENT_OFF", 0);
+	PyModule_AddStringConstant(pModule, "version", VERSION);
+	return (pModule);
+}
+
+static void
+pyextend_path_append(PyObject *syspath, const char *dir)
+{
+	PyObject *item;
+
+	if ((item = PyUnicode_DecodeFSDefault(dir)) == NULL) {
+		PyErr_Print();
+		return;
+	}
+	if (PyList_Append(syspath, item) == -1)
+		PyErr_Print();
+	Py_DECREF(item);
+}
+
+/* Initializes our Python extension support */
+
 void
 pyextend_init(void)
 {
-	PyObject *pModule;
-	char path[1024], singlepath[1024];
+	char singlepath[1024];
 	extern char *honeyd_webserver_root;
+	PyObject *syspath;
 	char *p;
 
 	SPLAY_INIT(&pyextends);
 
+	if (PyImport_AppendInittab("honeyd", pyextend_module_init) == -1) {
+		syslog(LOG_ERR, "%s: cannot register honeyd module", __func__);
+		exit(EXIT_FAILURE);
+	}
 	Py_Initialize();
-	strlcpy(path, Py_GetPath(), sizeof(path));
-	/* Append the current path */
-	strlcat(path, ":.", sizeof(path));
-	strlcat(path, ":webserver", sizeof(path));
 
-	/* Append the webserver root directory */
-	snprintf(singlepath, sizeof(singlepath), ":%s", honeyd_webserver_root);
-	if ((p = strstr(singlepath, "/htdocs")) != NULL) {
-		*p = '\0';
-		strlcat(path, singlepath, sizeof(path));
+	/* sys.path is borrowed */
+	if ((syspath = PySys_GetObject("path")) == NULL ||
+	    !PyList_Check(syspath)) {
+		syslog(LOG_ERR, "%s: no sys.path", __func__);
+		exit(EXIT_FAILURE);
 	}
 
-	/* Append the Honeyd shared data directory */ 
-	snprintf(singlepath, sizeof(singlepath),
-	    ":%s", PATH_HONEYDDATA);
-	strlcat(path, singlepath, sizeof(path));
-	snprintf(singlepath, sizeof(singlepath),
-	    ":%s/webserver", PATH_HONEYDDATA);
-	strlcat(path, singlepath, sizeof(path));
-	PySys_SetPath(path);
+	/* The current directory and the in-tree webserver */
+	pyextend_path_append(syspath, ".");
+	pyextend_path_append(syspath, "webserver");
 
-	pModule = Py_InitModule("honeyd", HoneydMethods);
-	PyModule_AddIntConstant(pModule, "EVENT_ON", 1);
-	PyModule_AddIntConstant(pModule, "EVENT_OFF", 0);
-	PyModule_AddStringConstant(pModule, "version", VERSION);
+	/* The webserver root directory */
+	strlcpy(singlepath, honeyd_webserver_root, sizeof(singlepath));
+	if ((p = strstr(singlepath, "/htdocs")) != NULL) {
+		*p = '\0';
+		pyextend_path_append(syspath, singlepath);
+	}
+
+	/* The Honeyd shared data directory */
+	pyextend_path_append(syspath, PATH_HONEYDDATA);
+	snprintf(singlepath, sizeof(singlepath), "%s/webserver",
+	    PATH_HONEYDDATA);
+	pyextend_path_append(syspath, singlepath);
 }
 
 /* Cleans up all Python stuff when we exit */
@@ -808,7 +875,8 @@ pyextend_init(void)
 void
 pyextend_exit(void)
 {
-	Py_Finalize();
+	if (Py_IsInitialized())
+		Py_FinalizeEx();
 }
 
 void
@@ -816,12 +884,12 @@ pyextend_run(struct evbuffer *output, char *command)
 {
 	PyObject *res = NULL, *compiled_code;
 	char *data;
-	int datlen;
+	Py_ssize_t datlen;
 
-	char *preamble = "import StringIO\n"
+	char *preamble = "import io\n"
 	    "import sys\n"
-	    "myout = StringIO.StringIO()\n"
-	    "myerr = StringIO.StringIO()\n"
+	    "myout = io.StringIO()\n"
+	    "myerr = io.StringIO()\n"
 	    "saveout = sys.stdout\n"
 	    "saveerr = sys.stderr\n"
 	    "try:\n"
@@ -833,7 +901,7 @@ pyextend_run(struct evbuffer *output, char *command)
 	    "    import traceback\n"
 	    "    traceback.print_exc()\n"
 	    "finally:\n"
-	    "  sys.stdout = saveerr\n"
+	    "  sys.stdout = saveout\n"
 	    "  sys.stderr = saveerr\n"
 	    "output = \"%%s%%s\" %% (myout.getvalue(), myerr.getvalue())";
 
@@ -885,7 +953,7 @@ pyextend_run(struct evbuffer *output, char *command)
 		}
 	}
 
-	res = PyEval_EvalCode((PyCodeObject *)compiled_code,
+	res = PyEval_EvalCode(compiled_code,
 	    pyextend_dict_global, pyextend_dict_local);
 	Py_DECREF(compiled_code);
 
@@ -898,8 +966,10 @@ pyextend_run(struct evbuffer *output, char *command)
 	res = PyDict_GetItemString(pyextend_dict_local, "output");
 	assert(res != NULL);
 
-	if (PyString_AsStringAndSize(res, &data, &datlen) == 0) 
+	if (pyextend_as_bytes(res, &data, &datlen) == 0)
 		evbuffer_add(output, data, datlen);
+	else
+		PyErr_Print();
 }
 
 #define CHECK_FUNC(f, x) do { \
@@ -930,13 +1000,13 @@ pyextend_load_module(const char *name)
 	if ((pye = SPLAY_FIND(pyetree, &pyextends, &tmp)) != NULL)
 		return (pye);
 
-	pName = PyString_FromString(script);
-	pModule = PyImport_Import(pName);
-	Py_DECREF(pName);
+	pName = PyUnicode_FromString(script);
+	pModule = pName != NULL ? PyImport_Import(pName) : NULL;
+	Py_XDECREF(pName);
 
 	if (pModule == NULL) {
 		PyErr_Print();
-		warn("%s: could not load python module: %s",
+		warnx("%s: could not load python module: %s",
 		    __func__, script);
 		return (NULL);
 	}
@@ -1033,8 +1103,10 @@ pyextend_connection_start(struct tuple *hdr, struct command *cmd,
 	}
 
 	/* Set up state with event callbacks */
-	event_set(&state->pread, state->fd, EV_READ, pyextend_cbread, state);
-	event_set(&state->pwrite, state->fd, EV_WRITE, pyextend_cbwrite,state);
+	event_assign(&state->pread, libevent_base, state->fd, EV_READ,
+	    pyextend_cbread, state);
+	event_assign(&state->pwrite, libevent_base, state->fd, EV_WRITE,
+	    pyextend_cbwrite, state);
 
 	addr_pack(&src, ADDR_TYPE_IP, IP_ADDR_BITS, &hdr->ip_src,IP_ADDR_LEN);
 	addr_pack(&dst, ADDR_TYPE_IP, IP_ADDR_BITS, &hdr->ip_dst,IP_ADDR_LEN);
@@ -1092,15 +1164,18 @@ pyextend_connection_end(struct pystate *state)
 {
 	struct command *cmd = state->cmd;
 	struct pyextend *pye = state->pye;
-	PyObject *pArgs;
+	PyObject *pArgs, *pValue;
 
 	pArgs = PyTuple_New(1);
 
 	/* state->state reference stolen here: */
 	PyTuple_SetItem(pArgs, 0, state->state);
 
-	PyObject_CallObject(pye->pFuncEnd, pArgs);
+	pValue = PyObject_CallObject(pye->pFuncEnd, pArgs);
 	Py_DECREF(pArgs);
+	if (pValue == NULL)
+		PyErr_Print();
+	Py_XDECREF(pValue);
 
 	pyextend_freestate(state);
 
@@ -1129,26 +1204,27 @@ pyextend_evb_readcb(struct bufferevent *bev, void *parameter)
 	PyObject *pArgs, *pValue;
 	char *client_address = addr_ntoa(&req->src);
 	char *buf;
-	int size, res;
+	Py_ssize_t size;
 
 	/* Check if we have received the complete request */
-	if (evbuffer_find(bev->input, "\r\n\r\n", 4) == NULL) {
+	if (evbuffer_find(bufferevent_get_input(bev), (u_char *)"\r\n\r\n", 4) == NULL) {
 		/* 
 		 * If we did not receive the complete request and we have
 		 * waited for too long already, then we drop the request.
 		 */
-		if (evbuffer_get_length(bev->input) > PYEXTEND_MAX_REQUEST_SIZE) {
+		if (evbuffer_get_length(bufferevent_get_input(bev)) > PYEXTEND_MAX_REQUEST_SIZE) {
 			syslog(LOG_NOTICE,
-			    "Dropping request from %s with size %d",
-			    client_address, evbuffer_get_length(bev->input));
+			    "Dropping request from %s with size %zu",
+			    client_address, evbuffer_get_length(bufferevent_get_input(bev)));
 			pyextend_request_free(req);
 		}
 		return;
 	}
 
-	pArgs = Py_BuildValue("(O,s#,s#)", pWebServer,
-	    EVBUFFER_DATA(bev->input), evbuffer_get_length(bev->input),
-	    client_address, strlen(client_address));
+	pArgs = Py_BuildValue("(O,y#,s)", pWebServer,
+	    (char *)evbuffer_pullup(bufferevent_get_input(bev), -1),
+	    (Py_ssize_t)evbuffer_get_length(bufferevent_get_input(bev)),
+	    client_address);
 	if (pArgs == NULL)
 		goto error;
 
@@ -1158,15 +1234,14 @@ pyextend_evb_readcb(struct bufferevent *bev, void *parameter)
 	if (pValue == NULL)
 		goto error;
 
-	res = PyString_AsStringAndSize(pValue, &buf, &size);
-
-	if (res == -1) {
+	if (pyextend_as_bytes(pValue, &buf, &size) == -1) {
 		Py_DECREF(pValue);
 		goto error;
 	}
 
 	/* Write the data to the network stream and be done with it */
 	bufferevent_write(req->evb, buf, size);
+	Py_DECREF(pValue);
 
 	return;
 
@@ -1216,12 +1291,12 @@ pyextend_request_new(int fd, struct addr *src)
 	req->fd = fd;
 	req->src = *src;
 
-	if ((req->evb = bufferevent_new(fd,
-		 pyextend_evb_readcb, pyextend_evb_writecb, pyextend_evb_errcb,
-		 req)) == NULL) {
+	if ((req->evb = bufferevent_socket_new(libevent_base, fd, 0)) == NULL) {
 		free(req);
 		return (NULL);
 	}
+	bufferevent_setcb(req->evb,
+	    pyextend_evb_readcb, pyextend_evb_writecb, pyextend_evb_errcb, req);
 
 	/* Highest priority to UI requests */
 	bufferevent_priority_set(req->evb, 0);
@@ -1272,7 +1347,7 @@ pyextend_webserver_fix_permissions(const char *path, uid_t uid, gid_t gid)
 		if (snprintf(fullname, sizeof(fullname), "%s/graphs", path) >=
 		    sizeof(fullname))
 		{
-			syslog(LOG_ERR, "Path too long: %s\graphs", path);
+			syslog(LOG_ERR, "Path too long: %s/graphs", path);
 			exit(EXIT_FAILURE);
 		}
 		if (lstat(fullname, &sb) == -1 && errno == ENOENT) {
@@ -1390,20 +1465,26 @@ pyextend_webserver_verify_setup(const char *root_dir)
  * and serves documents from the specified directory.
  */
 
-void
+int
 pyextend_webserver_init(char *address, int port, char *root_dir)
 {
 	PyObject *pArgs, *pName, *pModule, *pDict, *pFuncWebInit;
 	char *script = "server";
 
-	pName = PyString_FromString(script);
-	pModule = PyImport_Import(pName);
-	Py_DECREF(pName);
+	pName = PyUnicode_FromString(script);
+	pModule = pName != NULL ? PyImport_Import(pName) : NULL;
+	Py_XDECREF(pName);
 
+	/*
+	 * The bundled webserver (webserver/, htmltmpl) is still Python 2
+	 * code (#36). Under Python 3 it does not import, so carry on
+	 * without it instead of refusing to start.
+	 */
 	if (pModule == NULL) {
 		PyErr_Print();
-		syslog(LOG_ERR, "%s: could not load python module: %s", __func__, script);
-		exit(EXIT_FAILURE);
+		syslog(LOG_WARNING, "%s: could not load python module \"%s\"; "
+		    "internal webserver disabled", __func__, script);
+		return (-1);
 	}
 
 	pDict = PyModule_GetDict(pModule); /* Borrowed */
@@ -1420,8 +1501,10 @@ pyextend_webserver_init(char *address, int port, char *root_dir)
 	Py_DECREF(pArgs);
 	if (pWebServer == NULL) {
 		PyErr_Print();
-		syslog(LOG_ERR, "%s: make_server function returned error.", __func__);
-		exit(EXIT_FAILURE);
+		syslog(LOG_WARNING, "%s: make_server function returned error; "
+		    "internal webserver disabled", __func__);
+		Py_DECREF(pModule);
+		return (-1);
 	}
 
 	pyserver_fd = make_socket(bind, SOCK_STREAM, address, port);
@@ -1444,18 +1527,19 @@ pyextend_webserver_init(char *address, int port, char *root_dir)
 	syslog(LOG_NOTICE, "HTTP server root at %s", root_dir);
 	
 	/* Accept connections */
-	event_set(&ev_accept, pyserver_fd, EV_READ | EV_PERSIST,
+	event_assign(&ev_accept, libevent_base, pyserver_fd, EV_READ | EV_PERSIST,
 	    pyextend_accept, NULL);
 
 	/* Give the highest priority to the accept */
 	event_priority_set(&ev_accept, 0);
 	event_add(&ev_accept, NULL);
-	return;
+	return (0);
 
  error:
 	Py_DECREF(pModule);
-	syslog(LOG_ERR, "Cannot initialize module");
-	exit(EXIT_FAILURE);
+	syslog(LOG_WARNING, "%s: cannot initialize module \"%s\"; "
+	    "internal webserver disabled", __func__, script);
+	return (-1);
 }
 
 void

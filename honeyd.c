@@ -3985,10 +3985,11 @@ main(int argc, char *argv[])
 
 	/* Start our web server */
 	if (!honeyd_verify_config && honeyd_is_webserver_enabled())
-		pyextend_webserver_init(
+		if (pyextend_webserver_init(
 			honeyd_webserver_address,
 			honeyd_webserver_port,
-			honeyd_webserver_root);
+			honeyd_webserver_root) == -1)
+			honeyd_disable_webserver = 1;
 #endif
 	/* Reads in the ethernet codes and indexes them for use in config */
 		//ethernetcode_init();

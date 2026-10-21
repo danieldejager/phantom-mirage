@@ -46,6 +46,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <string.h>
 #include <dirent.h>
 #include <unistd.h>
@@ -63,6 +64,7 @@
 
 #include <event.h>
 
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include <marshal.h>
 
@@ -170,7 +172,7 @@ PyMapData(struct mkvtree *tree, struct PyFilter *filter, PyObject* input)
 {
 	PyObject* output = PyFilterRun(filter, input);
 	char *dat_key = NULL, *dat_value = NULL;
-	int dat_keylen = 0, dat_vallen = 0;
+	Py_ssize_t dat_keylen = 0, dat_vallen = 0;
 	int i = 0;
 	int res = -1;
 	
@@ -201,22 +203,22 @@ PyMapData(struct mkvtree *tree, struct PyFilter *filter, PyObject* input)
 		}
 
 		key = PyList_GetItem(item, 0);
-		if (key == NULL || !PyString_Check(key)) {
+		if (key == NULL || !PyBytes_Check(key)) {
 			warnx("%s: key not available or not string", __func__);
 			goto out;
 		}
 		value = PyList_GetItem(item, 1);
-		if (value == NULL || !PyString_Check(value)){
+		if (value == NULL || !PyBytes_Check(value)){
 			warnx("%s: value not available or not string",
 			    __func__);
 			goto out;
 		}
 
-		if (PyString_AsStringAndSize(key, &dat_key, &dat_keylen) == -1){
+		if (PyBytes_AsStringAndSize(key, &dat_key, &dat_keylen) == -1){
 			PyErr_Print();
 			goto out;
 		}
-		if (PyString_AsStringAndSize(value,
+		if (PyBytes_AsStringAndSize(value,
 			&dat_value, &dat_vallen) == -1) {
 			PyErr_Print();
 			goto out;
@@ -224,7 +226,8 @@ PyMapData(struct mkvtree *tree, struct PyFilter *filter, PyObject* input)
 
 		/* Merge the returned key and value with existing keys */
 		MergedKeyValueInsert(tree,
-		    dat_key, dat_keylen, dat_value, dat_vallen);
+		    (u_char *)dat_key, dat_keylen,
+		    (u_char *)dat_value, dat_vallen);
 	}
 
 	/* Everything was well */
@@ -306,15 +309,24 @@ PyUnmarshalString(char *input, size_t len)
 int
 PyMarshalToString(PyObject *pValue, char **data, int *datlen)
 {
-	int res = -1;
 	PyObject *datastr = NULL;
+	char *p;
+	Py_ssize_t len;
+
+	/* *data is a malloc'd copy; the caller frees it. */
 	datastr = PyMarshal_WriteObjectToString(pValue, Py_MARSHAL_VERSION);
 	if (datastr == NULL)
 		return (-1);
-	res = PyString_AsStringAndSize(datastr, data, datlen);
+	if (PyBytes_AsStringAndSize(datastr, &p, &len) == -1 ||
+	    len > INT_MAX || (*data = malloc(len ? len : 1)) == NULL) {
+		Py_DECREF(datastr);
+		return (-1);
+	}
+	memcpy(*data, p, len);
+	*datlen = (int)len;
 	Py_DECREF(datastr);
 
-	return (res);
+	return (0);
 }
 
 PyObject *
@@ -352,7 +364,7 @@ PyFilterRun(struct PyFilter *filter, PyObject *record)
 	if (PyErr_Occurred())
 		return (NULL);
 
-	res = PyEval_EvalCode((PyCodeObject *)filter->compiled_code,
+	res = PyEval_EvalCode(filter->compiled_code,
 	    pyextend_dict_global, filter->dict_local);
 	if (res == NULL)
 		return (NULL);
@@ -375,8 +387,8 @@ pyfilter_test(void)
 {
 	char *some_code =
 	    "def TestProcessing(input):\n"
-	    "  print '\t\tinput: %d' % len(input)\n"
-	    "  return [ [ input['src'], '\x01' ], [ input['dst'], '\x01' ] ]\n"
+	    "  print('\t\tinput: %d' % len(input))\n"
+	    "  return [ [ input['src'].encode(), b'\x01' ], [ input['dst'].encode(), b'\x01' ] ]\n"
 	    "output_record = TestProcessing(input_record)\n";
 
 	PyObject *pValue, *pRes;
@@ -412,6 +424,7 @@ pyfilter_test(void)
 	Py_DECREF(pRes);
 	
 	fprintf(stderr, "\t\tResult len: %d\n", res_len);
+	free(result);
 	
 	assert(PyMapData(&mkvs, filter, pValue) != -1);
 

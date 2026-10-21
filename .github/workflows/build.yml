@@ -35,6 +35,8 @@ jobs:
         run: |
           ./autogen.sh
           ./configure --prefix=/usr
+          # Python is opt-in (#36): the default build has no libpython
+          ! grep -q '^#define HAVE_PYTHON' config.h
 
       - name: Build
         run: |
@@ -127,7 +129,8 @@ jobs:
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             build-essential autoconf automake libtool bison flex pkg-config \
-            libpcap-dev libevent-dev libdumbnet-dev zlib1g-dev libedit-dev
+            libpcap-dev libevent-dev libdumbnet-dev zlib1g-dev libedit-dev \
+            python3-dev
 
       - name: Configure
         # Makefile.am hard-codes CFLAGS, which overrides a configure-time
@@ -138,7 +141,9 @@ jobs:
           ./autogen.sh
           CPPFLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer" \
           LDFLAGS="-fsanitize=address,undefined" \
-          ./configure --prefix=/usr
+          ./configure --prefix=/usr --with-python
+          # Embedded Python 3 is on in this job only (#36)
+          grep -q '^#define HAVE_PYTHON 1' config.h
 
       - name: Build
         run: |
@@ -279,6 +284,15 @@ jobs:
           cp /tmp/hdlogs/events.jsonl /tmp/hdlogs/honeyd.log .
           python3 ci/check_json_log.py events.jsonl | tee -a "$GITHUB_STEP_SUMMARY"
 
+      - name: Embedded Python 3 service script (sanitized, #36)
+        # honeyd built --with-python; an "internal" Python 3 service
+        # (scripts/python/echo_banner.py) answers three connections over lo,
+        # honeyd.log() reaches the service log, honeydctl "!" runs Python,
+        # and the not-yet-ported Python 2 webserver must not stop startup.
+        # Uses the 10.99.0.0/24 route over lo from the subsystem step.
+        shell: bash
+        run: ci/python_service.sh
+
       - name: Privilege hardening + script sandbox (sanitized, #16)
         # Default: honeyd and every script child run with all IDs 65534,
         # no capabilities (incl. bounding/ambient), no_new_privs.
@@ -371,6 +385,8 @@ jobs:
             events.jsonl
             honeyd.log
             regress-*.log
+            honeyd-py*.log
+            honeyd-py-ctl.out
           if-no-files-found: ignore
 
   docker:
