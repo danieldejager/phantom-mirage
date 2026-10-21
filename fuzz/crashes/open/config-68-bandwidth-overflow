@@ -1,0 +1,2 @@
+route entry 10.0.0.1
+route 10.0.0.1 add net 10.2.0.0/16 10.2.0.1 bandwidth 10000 1000000

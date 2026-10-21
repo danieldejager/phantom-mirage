@@ -616,8 +616,12 @@ fragment	: FRAGMENT DROP	{ $$ = FRAG_DROP; }
 ;
 ipaddr		: IPSTRING
 	{
-		if (addr_pton($1, &$$) < 0)
+		if (addr_pton($1, &$$) < 0) {
 			yyerror("Illegal IP address %s", $1);
+			free($1);
+			/* $$ is unset: abort rather than hand it on (#66) */
+			YYERROR;
+		}
 		free($1);
 	}
 		| CMDSTRING
@@ -633,7 +637,8 @@ ipaddr		: IPSTRING
 		$1[strlen($1) - 1] = '\0';
 		if (getaddrinfo($1+1, NULL, &ai, &aitop) != 0) {
 			yyerror("getaddrinfo failed: %s", $1+1);
-			break;
+			free($1);
+			YYERROR;
 		}
 		addr_ston(aitop->ai_addr, &$$);
 		freeaddrinfo(aitop);
@@ -646,8 +651,10 @@ ipnet		: ipaddr SLASH NUMBER
 		struct addr b;
 		snprintf(src, sizeof(src), "%s/%d",
 		    addr_ntoa(&$1), $3);
-		if (addr_pton(src, &$$) < 0)
+		if (addr_pton(src, &$$) < 0) {
 			yyerror("Illegal IP network %s", src);
+			YYERROR;
+		}
 		/* Fix libdnet error */
 		if ($3 == 0)
 			$$.addr_bits = 0;
@@ -793,42 +800,56 @@ action		: flags STRING
 template	: STRING
 	{
 		$$ = template_find($1);
-		if ($$ == NULL)
+		if ($$ == NULL) {
 			yyerror("Unknown template \"%s\"", $1);
+			free($1);
+			YYERROR;
+		}
 		free($1);
 	}
 		| TEMPLATE
 	{
 		$$ = template_find("template");
-		if ($$ == NULL)
+		if ($$ == NULL) {
 			yyerror("Unknown template \"%s\"", "template");
+			YYERROR;
+		}
 	}
 		| DEFAULT
 	{
 		$$ = template_find("default");
-		if ($$ == NULL)
+		if ($$ == NULL) {
 			yyerror("Unknown template \"%s\"", "default");
+			YYERROR;
+		}
 	}
 		| ipaddr
 	{
 		$$ = template_find(addr_ntoa(&$1));
-		if ($$ == NULL)
+		if ($$ == NULL) {
 			yyerror("Unknown template \"%s\"", addr_ntoa(&$1));
+			YYERROR;
+		}
 	}
 ;
 personality	: CMDSTRING
 	{
 		$1[strlen($1) - 1] = '\0';
 		$$ = personality_find($1+1);
-		if ($$ == NULL)
+		if ($$ == NULL) {
 			yyerror("Unknown personality \"%s\"", $1+1);
+			free($1);
+			YYERROR;
+		}
 		free($1);
 	}
 		| RANDOM
 	{
 		$$ = personality_random();
-		if ($$ == NULL)
+		if ($$ == NULL) {
 			yyerror("Random personality failed");
+			YYERROR;
+		}
 	}
 ;
 rate		: FLOAT

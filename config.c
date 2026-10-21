@@ -148,6 +148,8 @@ template_find(const char *name)
 {
 	struct template tmp;
 
+	if (name == NULL)
+		return (NULL);
 	tmp.name = (char *)name;
 	return (SPLAY_FIND(templtree, &templates, &tmp));
 }
