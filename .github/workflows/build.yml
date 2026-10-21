@@ -565,7 +565,22 @@ jobs:
           sudo aa-status | grep -E 'pm-script-ns|phantom-mirage-script'
 
       - name: Run the service (ci/systemd_unit.sh)
-        run: sudo HD_APPARMOR=require bash src/phantom-mirage/ci/systemd_unit.sh
+        # The launcher is traced with strace for the syscall audit. AppArmor
+        # mediates ptrace on the traced side too, so CI (only) lets the
+        # unconfined tracer in via the profiles' local/ includes.
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends strace
+          for f in usr.lib.phantom-mirage.pm-script-ns phantom-mirage-script; do
+            echo 'ptrace (tracedby, readby) peer=unconfined,' | sudo tee -a /etc/apparmor.d/local/$f
+          done
+          sudo apparmor_parser -r -K /etc/apparmor.d/usr.lib.phantom-mirage.pm-script-ns
+          mkdir -p lt
+          sudo HD_APPARMOR=require HD_LTRACE=$PWD/lt bash src/phantom-mirage/ci/systemd_unit.sh
+
+      - name: Syscall audit of the launcher allowlist
+        run: |
+          ls lt
+          sudo bash src/phantom-mirage/ci/syscall_audit.sh --launcher lt/* | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Kernel log (AppArmor)
         if: always()
@@ -700,7 +715,11 @@ jobs:
       - name: "--sandbox-scripts: per-script namespaces (#16)"
         run: |
           mkdir -p ns-logs
-          sudo HD_NS=require HD_LOGDIR=$PWD/ns-logs bash ci/script_ns.sh
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends strace
+          mkdir -p lt
+          sudo HD_NS=require HD_LOGDIR=$PWD/ns-logs HD_LTRACE=$PWD/lt bash ci/script_ns.sh
+          ls lt
+          sudo bash ci/syscall_audit.sh --launcher lt/* | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: "Fallback is logged when user namespaces are off"
         run: |

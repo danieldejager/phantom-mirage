@@ -316,6 +316,12 @@ ns_launcher(int ctl, pid_t parent)
 		    "private /tmp (Landlock and seccomp still apply)",
 		    strerror(err));
 	}
+	/* setup done: from here on only requests, fork, namespaces, exec */
+	if (sandbox_launcher_seccomp() == -1) {
+		syslog(LOG_ERR, "sandbox: script launcher seccomp allowlist: "
+		    "%m; not running scripts");
+		_exit(EXIT_FAILURE);
+	}
 
 	for (;;) {
 		pfd[0].fd = ctl;
