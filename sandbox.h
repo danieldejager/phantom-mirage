@@ -29,4 +29,9 @@ int sandbox_add_write_path(const char *path);
 
 extern int honeyd_sandbox_scripts;
 
+/* --sandbox-daemon: seccomp allowlist for the daemon (sandbox_daemon.c) */
+int sandbox_daemon(void);
+
+extern int honeyd_sandbox_daemon;
+
 #endif /* _SANDBOX_H_ */

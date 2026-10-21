@@ -386,6 +386,30 @@ jobs:
           if grep -E 'runtime error|ERROR: AddressSanitizer' ../regress-*.log; then bad=1; fi
           exit $bad
 
+      - name: "--sandbox-daemon: suites under the daemon seccomp allowlist (#16)"
+        # Same services as above (subsystem, shell script, Python 3
+        # service, status page, honeydctl, SIGHUP/SIGUSR1, plus
+        # --sandbox-scripts), then the regress/ suite incl. nmap.py, with
+        # honeyd confined to its syscall allowlist. A denied call logs
+        # "sandbox-daemon: denied syscall N" (daemon) or "killed by
+        # SIGSYS" (child) and fails the step; ci/sandbox_daemon.sh also
+        # checks that an off-list call (mount) is caught.
+        shell: bash
+        run: |
+          bash ci/sandbox_daemon.sh
+          cd regress
+          bad=0
+          for t in general.py detect.py routing.py nmap.py; do
+            log="../regress-sbd-${t%.py}.log"
+            set +e; REGRESS_HONEYD_ARGS=--sandbox-daemon timeout -k 10 300 \
+              python3 "$t" -d > "$log" 2>&1; rc=$?; set -e
+            tail -5 "$log"
+            [ $rc = 0 ] || { echo "$t: rc=$rc" >&2; bad=1; }
+            grep -q 'sandbox-daemon: seccomp allowlist active' "$log" || { echo "$t: filter not active" >&2; bad=1; }
+            if grep -E 'sandbox-daemon: denied syscall|killed by SIGSYS' "$log"; then bad=1; fi
+          done
+          exit $bad
+
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -398,6 +422,7 @@ jobs:
             honeyd.log
             regress-*.log
             regress/nmap.log
+            sandbox-daemon-*.log
             honeyd-py*.log
             honeyd-py-ctl.out
           if-no-files-found: ignore

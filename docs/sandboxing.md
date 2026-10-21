@@ -73,6 +73,50 @@ Raspberry Pi OS uses Debian's userland. Whether Landlock is active
 depends on the Raspberry Pi kernel's `lsm=` list
 (`cat /sys/kernel/security/lsm`); seccomp is available there.
 
+## Opt-in: `--sandbox-daemon`
+
+```
+honeyd ... --sandbox-daemon [--sandbox-scripts ...]
+```
+
+Right after the daemon's privilege drop (or the "Running with root
+privileges" notice), honeyd installs a seccomp **allowlist** for itself
+(`sandbox_daemon.c`, list in `sandbox_daemon_list.h`, about 200 calls on
+x86_64). If the filter can't be installed, honeyd exits.
+
+* **What is allowed.** The list covers what the daemon and its children
+  used under `strace -f` across the CI suites on an ASan build: smoke,
+  subsystem echo (through the `libhoneyd.so` shim), a shell script port,
+  an `internal` Python 3 service, the status page, honeydctl (including
+  `!`), SIGHUP/SIGUSR1, `--sandbox-scripts` (Landlock and the stacked
+  deny-list), and `regress/` including `nmap.py`. It also includes the
+  usual sh, Perl and Python 3 runtime calls (sleep, poll/select, stat
+  variants, rename/unlink, pipes, signals and so on).
+* **Children inherit the filter.** seccomp filters can't be removed, so
+  every script and subsystem honeyd forks and execs runs under the same
+  allowlist (and, with `--sandbox-scripts`, under the stricter deny-list
+  and Landlock on top). That is why the list includes `execve`, `clone`,
+  `vfork` and the ID-changing calls the child needs for its own
+  privilege drop.
+* **Never allowed.** Everything not on the list, in particular the
+  deny-list calls from `--sandbox-scripts`: `ptrace`, `mount` and the
+  new mount API, `unshare`, `setns`, `bpf`, `keyctl`, `perf_event_open`,
+  `io_uring_*`, module loading, `kexec_*`, `reboot` and clock setting.
+  Foreign ABIs (i386, x32 on x86_64) kill the process.
+* **What a denial looks like.** The filter returns `SECCOMP_RET_TRAP`:
+  * In the daemon (or a forked child that has not exec'd yet) a SIGSYS
+    handler writes `honeyd: sandbox-daemon: denied syscall <nr>` to
+    stderr and syslog (`LOG_CRIT`), then the process dies with SIGSYS.
+  * An exec'd script or subsystem dies with SIGSYS, and the daemon logs
+    `child <pid> killed by SIGSYS (seccomp: denied syscall)`.
+  * Look up `<nr>` with `ausyscall <nr>` or
+    `grep -w <nr> /usr/include/asm/unistd_64.h`. If a legitimate
+    service needs it, add it to `sandbox_daemon_list.h`.
+* **Architectures.** x86_64 and arm64 (aarch64). Elsewhere the option
+  makes honeyd exit with "cannot install seccomp filter".
+* On start-up the daemon logs `sandbox-daemon: seccomp allowlist active
+  (<n> syscalls)`.
+
 ## Known gaps (why this is opt-in)
 
 * **Deny-list, not allowlist.** Service scripts are arbitrary programs
@@ -93,9 +137,14 @@ depends on the Raspberry Pi kernel's `lsm=` list
   beyond the daemon's own hardening.
 * **Read-only /tmp.** Scripts that write scratch files must be given a
   directory with `--sandbox-allow-write`.
-* **The daemon itself** gets the always-on hardening but no
-  seccomp/Landlock. It loads plugins with `dlopen` and reopens logs on
-  SIGHUP/SIGUSR1, which makes a tight policy fragile.
+* **The daemon itself** gets no Landlock. `--sandbox-daemon` gives it a
+  seccomp allowlist, but that list has to be broad (sockets, file I/O,
+  `execve`) because the daemon reopens logs and configs on
+  SIGHUP/SIGUSR1, loads plugins with `dlopen`, and its children
+  inherit the filter. Scripts or plugins that use calls outside the
+  list are killed (SIGSYS, logged), which is why this is opt-in. There
+  is no argument filtering yet (for example `socket` families or
+  `ioctl` requests).
 
 ## CI
 
@@ -111,6 +160,13 @@ depends on the Raspberry Pi kernel's `lsm=` list
     do: write, read, list, `/proc` and `unshare`.
   * SIGHUP and SIGUSR1 must leave the daemon running, and the subsystem
     must keep answering before and after the reload.
+* The same job then runs `ci/sandbox_daemon.sh` and the whole
+  `regress/` suite (including `nmap.py`) with `--sandbox-daemon`:
+  subsystem, shell script, Python 3 service, status page, honeydctl,
+  SIGHUP/SIGUSR1, with and without `--sandbox-scripts`. Any
+  `denied syscall` or `killed by SIGSYS` line fails the step, and a
+  negative check (a `mount` call through honeydctl `!`) must be logged
+  and must kill the daemon.
 * The **Docker** job checks the same `/proc/1/status` fields in the
   image (the bounding set is exempt: no `CAP_SETPCAP`), and that
   `--sandbox-scripts` starts.
