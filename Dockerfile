@@ -16,15 +16,14 @@ RUN apt-get update \
 WORKDIR /src
 COPY . .
 
-# `make install` runs scripts/lib/init.py with Python 2 (#36), so install
-# only the binaries, the preload shim and the data files.
+# Plain `make install` (no Python needed since #36); headers and man pages
+# are not needed at runtime.
 RUN ./autogen.sh \
  && ./configure --prefix=/usr --sysconfdir=/etc \
  && make -j"$(nproc)" \
- && make install-exec install-libhoneydDATA install-honeyddataDATA DESTDIR=/out \
- && strip /out/usr/bin/* /out/usr/lib/honeyd/libhoneyd.so \
- && cp -r scripts /out/usr/share/honeyd/scripts \
- && rm -rf /out/usr/share/honeyd/scripts/lib
+ && make install DESTDIR=/out \
+ && rm -rf /out/usr/include /out/usr/share/man \
+ && strip /out/usr/bin/* /out/usr/lib/honeyd/libhoneyd.so
 
 ########################################################################
 # Runtime stage

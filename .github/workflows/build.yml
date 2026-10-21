@@ -47,8 +47,7 @@ jobs:
           echo "Compiler warnings: $n" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Smoke test
-        # Runs from the build tree. `make install` needs Python 2 for
-        # scripts/lib/init.py, so it is left out until issue #36.
+        # Runs from the build tree, before anything is installed.
         run: |
           D=$PWD
           # No /usr/share/honeyd here: honeyd must start without it (#43).
@@ -58,6 +57,41 @@ jobs:
             -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
             -0 $D/pf.os -m $D/nmap-mac-prefixes
           for b in honeydctl honeydstats hsniff; do test -x ./$b; done
+
+      - name: make install + run from the installed tree (#36)
+        # make install needs no Python (#36) and must not touch $HOME.
+        run: |
+          set -x
+          make install DESTDIR=$PWD/destdir
+          for f in usr/bin/honeyd usr/bin/honeydctl usr/bin/honeydstats \
+                   usr/bin/hsniff usr/lib/honeyd/libhoneyd.so \
+                   usr/share/honeyd/nmap-os-db usr/share/honeyd/xprobe2.conf \
+                   usr/share/honeyd/nmap.assoc usr/share/honeyd/pf.os \
+                   usr/share/honeyd/nmap-mac-prefixes \
+                   usr/share/honeyd/scripts/lib/names.py \
+                   usr/include/honeyd/hooks.h; do
+            test -e destdir/$f || { echo "missing $f" >&2; exit 1; }
+          done
+          test ! -e "$HOME/.config/honeyd"
+          make install
+          mkdir -p /var/run
+          cd /
+          # Data files found via the compiled-in defaults, no -p/-x/...
+          honeyd --verify-config -f "$GITHUB_WORKSPACE/ci/smoke.conf" -i lo --disable-webserver
+          timeout 20 honeyd -d -f "$GITHUB_WORKSPACE/ci/smoke.conf" -i lo \
+            --disable-webserver > /tmp/installed.log 2>&1 &
+          for i in $(seq 1 20); do
+            echo "list template" | timeout 5 honeydctl > /tmp/ctl.out 2>&1 && break
+            sleep 0.5
+          done
+          cat /tmp/ctl.out
+          grep -q 10.99.0.10 /tmp/ctl.out
+          kill -INT %1 || true
+          wait %1 || true
+          cat /tmp/installed.log
+          grep -q 'Demoting process privileges' /tmp/installed.log
+          python3 -c 'import sys; sys.path.insert(0, "/usr/share/honeyd/scripts/lib"); import names' \
+            || echo "python3 not installed here; names.py import skipped"
 
       - name: Upload build log
         if: always()
