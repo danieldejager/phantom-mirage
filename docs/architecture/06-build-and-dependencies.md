@@ -2,7 +2,7 @@
 
 ## Build system (facts from the source)
 
-- **GNU Autotools.** `autogen.sh` runs aclocal/libtoolize/autoheader/automake/autoconf over `configure.in` (old name; modern autoconf expects `configure.ac`) and `Makefile.am`. Package version: `AM_INIT_AUTOMAKE(honeyd, 1.6d)` (configure.in:8).
+- **GNU Autotools.** `autogen.sh` runs aclocal/libtoolize/autoheader/automake/autoconf over `configure.in` (old name; modern autoconf expects `configure.ac`) and `Makefile.am`. Package version: `AC_INIT([honeyd], [1.7.0])` in `configure.ac` is the single source; `AM_INIT_AUTOMAKE` takes no arguments and `VERSION`/`PACKAGE_VERSION` come from it.
 - **Targets** (`Makefile.am`): `bin_PROGRAMS = honeyd honeydctl honeydstats hsniff`; optional `smtp`, `proxy` subsystems; `libhoneyd.so` built by a hand-written libtool rule ("libtool is so broken" comment) from honeyd_overload.c, atomicio.c, fdpass.c; data files installed to `$(datadir)/honeyd` (nmap-os-db, xprobe2.conf, nmap.assoc, pf.os, nmap-mac-prefixes, config.sample …). Plugin headers (hooks.h, plugins.h, plugins_config.h, debug.h) are installed so third-party plugins can be built; `honeyd_LDFLAGS = -export-dynamic` exposes daemon symbols to dlopen'd plugins.
 - **Generated parser:** `parse.y` → `parse.c`/`parse.h` (bison/yacc) and `lex.l` → `lex.c` (flex) are generated at build time and are not committed (see #66/#69), so `bison` and `flex` are required build dependencies.
 - **Python packet libraries:** the bundled Python 2 `pypcap` and `dpkt` trees were removed (#36). `regress/` uses the system `python3-dpkt` and is run directly, not by `make`.

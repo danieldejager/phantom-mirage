@@ -1,3 +1,26 @@
+honeyd (1.7.0-1) unstable; urgency=medium
+
+  * New release 1.7.0. Version now set only in configure.ac (AC_INIT);
+    honeyd, hsniff, honeydstats and the status page derive it.
+  * Build: Debian 13 / GCC 14 clean, parallel make, configure.ac,
+    parser generated at build time.
+  * Hardening: locked-down control socket, ~/.config/honeyd 0700, bounded
+    nmap-mac-prefixes parsing, strict config parsing and range checks,
+    fixes from libFuzzer harnesses, ASan/UBSan CI.
+  * Privilege drop hardened (caps, no_new_privs, saved IDs); opt-in
+    Landlock + seccomp sandbox for scripts and seccomp for the daemon.
+  * Python 3 port: optional pyextend (--with-python), service scripts,
+    read-only webserver status page, regress/ suite; bundled Python 2
+    dpkt/pypcap removed.
+  * Opt-in JSON Lines event log with sensor_id and heartbeat.
+  * Multi-arch Docker image with entrypoint and compose example.
+  * Packaging: debhelper compat 13, hardened systemd unit (not enabled),
+    lintian clean-ups, AdSense stripped from docs, built and installed
+    in CI.
+  * New maintainer.
+
+ -- Daniel de Jager <ddejager@dandejager.com>  Thu, 22 Oct 2026 06:00:00 +1100
+
 honeyd (1.6.8.1) unstable; urgency=medium
 
   * Modernise packaging: debhelper compat 13 (dh sequencer), Python 3

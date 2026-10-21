@@ -1,11 +1,11 @@
 # Process this file with autoconf to produce a configure script.
-AC_INIT(honeyd)
+AC_INIT([honeyd], [1.7.0])
 AC_CONFIG_SRCDIR(honeyd.c)
 
 AC_CANONICAL_SYSTEM
 AC_CANONICAL_HOST
 
-AM_INIT_AUTOMAKE(honeyd, 1.6d)
+AM_INIT_AUTOMAKE
 AC_CONFIG_HEADERS(config.h)
 AM_MAINTAINER_MODE
 

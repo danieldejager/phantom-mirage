@@ -9,7 +9,7 @@ import server  # noqa: E402
 
 class FakeHoneyd:
     def config(self):
-        return {"version": "1.6d", "config": "/x<y>.conf", "personality": "p",
+        return {"version": "0.0-test", "config": "/x<y>.conf", "personality": "p",
                 "xprobe": "x", "assoc": "a", "osfp": "o"}
 
     def interfaces(self):

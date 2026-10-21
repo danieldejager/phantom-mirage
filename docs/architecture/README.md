@@ -2,7 +2,7 @@
 
 Honeyd is a single C program that pretends to be a whole network of computers. It answers traffic sent to unused IP addresses and makes each one look like a real machine, with its own operating system, open ports, services, network delay and position behind routers. Because no legitimate user has a reason to touch those addresses, anything that does is worth investigating. That makes Honeyd a honeynet: an early-warning decoy for scanning, worms and lateral movement.
 
-This copy is Niels Provos' Honeyd 1.5/1.6 (2002 to 2007) plus later DataSoft/Nova additions. It reports version 1.6d.
+This copy is Niels Provos' Honeyd 1.5/1.6 (2002 to 2007) plus later DataSoft/Nova additions. It reports version 1.7.0 (1.6d before 1.7.0); the version is set only in `configure.ac` `AC_INIT`.
 
 ## How to read these docs
 

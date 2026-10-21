@@ -1,4 +1,4 @@
-Honeyd 1.6d
+Honeyd (version: see AC_INIT in configure.ac, or run `honeyd --version`)
 Copyright (c) 2002 - 2007 Niels Provos <provos@citi.umich.edu>
 -------------------------------------------------------------------------
 
