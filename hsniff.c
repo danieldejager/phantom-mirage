@@ -82,6 +82,11 @@
 
 int			honeyd_debug;
 
+struct event_base *hsniff_libevent_base;
+/* Shared modules (stats.c, histogram.c, ...) reference libevent_base; it is
+ * never set in this program and stays NULL, i.e. the default event base. */
+struct event_base *libevent_base;
+
 static int		hsniff_show_version;
 static int		hsniff_show_usage;
 static int		hsniff_useudp;

@@ -77,6 +77,8 @@
 #include "template.h"
 #include "subsystem.h"
 #include "personality.h"
+
+struct event_base *libevent_base;
 #include "xprobe_assoc.h"
 #include "ipfrag.h"
 #include "router.h"

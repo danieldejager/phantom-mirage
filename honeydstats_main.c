@@ -87,6 +87,11 @@ extern int checkpoint_fd;
 extern struct evbuffer *checkpoint_evbuf;
 extern struct usertree users;
 
+struct event_base *stats_libevent_base;
+/* Shared modules (stats.c, histogram.c, ...) reference libevent_base; it is
+ * never set in this program and stays NULL, i.e. the default event base. */
+struct event_base *libevent_base;
+
 static int fd_recv;
 static struct evbuffer *evbuf_recv;
 static char *checkpoint_filename = NULL;
