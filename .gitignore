@@ -25,6 +25,10 @@ honeyd
 honeydctl
 honeydstats
 hsniff
+phantom-mirage
+phantom-mirage-ctl
+phantom-mirage-stats
+phantom-mirage-sniff
 
 # Packages #
 ############

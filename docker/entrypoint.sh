@@ -1,49 +1,61 @@
 #!/bin/sh
-# Validate the config, then run honeyd in the foreground.
+# Validate the config, then run phantom-mirage in the foreground.
 #
-#   HONEYD_CONFIG      config file (default /etc/honeyd/honeyd.conf)
-#   HONEYD_INTERFACES  space-separated capture interfaces (default eth0)
-#   HONEYD_NET         optional: address/range honeyd answers for
-#                      (honeyd's trailing net argument)
-#   HONEYD_JSON_LOG    optional: "stdout" writes JSON Lines events (#24) to
+#   PHANTOM_MIRAGE_CONFIG      config file (default /etc/phantom-mirage/phantom-mirage.conf)
+#   PHANTOM_MIRAGE_INTERFACES  space-separated capture interfaces (default eth0)
+#   PHANTOM_MIRAGE_NET         optional: address/range phantom-mirage answers for
+#                      (phantom-mirage's trailing net argument)
+#   PHANTOM_MIRAGE_JSON_LOG    optional: "stdout" writes JSON Lines events (#24) to
 #                      the container's stdout (for a log shipper); any
 #                      other value is a file path writable by nobody
-#   HONEYD_SENSOR_ID   optional: sensor_id in JSON events (default hostname)
-#   HONEYD_HEARTBEAT   optional: JSON heartbeat interval in seconds
+#   PHANTOM_MIRAGE_SENSOR_ID   optional: sensor_id in JSON events (default hostname)
+#   PHANTOM_MIRAGE_HEARTBEAT   optional: JSON heartbeat interval in seconds
 #
-# Any arguments are appended to the honeyd command line. Arguments
+# Any arguments are appended to the phantom-mirage command line. Arguments
 # starting with --version/--help/--verify-config are passed straight to
-# honeyd without starting the daemon.
+# phantom-mirage without starting the daemon.
+#
+# The pre-rename HONEYD_* names are still accepted (deprecated): each one
+# is used only if the PHANTOM_MIRAGE_* variable is unset.
 set -eu
 
-conf=${HONEYD_CONFIG:-/etc/honeyd/honeyd.conf}
-ifs=${HONEYD_INTERFACES:-eth0}
+for v in CONFIG INTERFACES NET JSON_LOG SENSOR_ID HEARTBEAT UI_GROUP; do
+	eval "old=\${HONEYD_$v:-} new=\${PHANTOM_MIRAGE_$v+set}"
+	if [ -n "$old" ] && [ -z "$new" ]; then
+		echo "phantom-mirage-entrypoint: warning: HONEYD_$v is deprecated, use PHANTOM_MIRAGE_$v" >&2
+		eval "PHANTOM_MIRAGE_$v=\$old"
+		export "PHANTOM_MIRAGE_$v"
+	fi
+done
+
+conf=${PHANTOM_MIRAGE_CONFIG:-/etc/phantom-mirage/phantom-mirage.conf}
+ifs=${PHANTOM_MIRAGE_INTERFACES:-eth0}
 
 case "${1:-}" in
 --version|-V|--help|-h)
-	exec /usr/bin/honeyd "$@" ;;
+	exec /usr/bin/phantom-mirage "$@" ;;
 esac
 
 set -- -f "$conf" --disable-webserver "$@"
-case "${HONEYD_JSON_LOG:-}" in
+case "${PHANTOM_MIRAGE_JSON_LOG:-}" in
 "")	;;
 stdout|-) set -- "$@" --json-log=- ;;
-*)	set -- "$@" --json-log="$HONEYD_JSON_LOG" ;;
+*)	set -- "$@" --json-log="$PHANTOM_MIRAGE_JSON_LOG" ;;
 esac
-[ -n "${HONEYD_SENSOR_ID:-}" ] && set -- "$@" --sensor-id="$HONEYD_SENSOR_ID"
-[ -n "${HONEYD_HEARTBEAT:-}" ] && set -- "$@" --heartbeat="$HONEYD_HEARTBEAT"
+[ -n "${PHANTOM_MIRAGE_SENSOR_ID:-}" ] && set -- "$@" --sensor-id="$PHANTOM_MIRAGE_SENSOR_ID"
+[ -n "${PHANTOM_MIRAGE_HEARTBEAT:-}" ] && set -- "$@" --heartbeat="$PHANTOM_MIRAGE_HEARTBEAT"
 for i in $ifs; do set -- -i "$i" "$@"; done
 
-# honeyd needs these at runtime; with a read-only rootfs mount a tmpfs
+# phantom-mirage needs these at runtime; with a read-only rootfs mount a tmpfs
 # on /run (see docs/docker.md).
 mkdir -p /run
 
 # Only asked to verify: run that once and exit with its status.
 case " $* " in
-*" --verify-config "*) exec /usr/bin/honeyd "$@" ${HONEYD_NET:-} ;;
+*" --verify-config "*) exec /usr/bin/phantom-mirage "$@" ${PHANTOM_MIRAGE_NET:-} ;;
 esac
 
-echo "honeyd-entrypoint: verifying $conf" >&2
-/usr/bin/honeyd --verify-config "$@" ${HONEYD_NET:-}
+echo "phantom-mirage-entrypoint: verifying $conf" >&2
+/usr/bin/phantom-mirage --verify-config "$@" ${PHANTOM_MIRAGE_NET:-}
 
-exec /usr/bin/honeyd -d "$@" ${HONEYD_NET:-}
+exec /usr/bin/phantom-mirage -d "$@" ${PHANTOM_MIRAGE_NET:-}

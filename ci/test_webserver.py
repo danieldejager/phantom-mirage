@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit test for webserver/server.py with a stand-in honeyd module (#36)."""
+"""Unit test for webserver/server.py with a stand-in honeyd Python module (#36)."""
 import os
 import sys
 

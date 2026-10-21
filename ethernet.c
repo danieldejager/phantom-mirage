@@ -381,7 +381,7 @@ ethernetcode_test(void)
 void
 ethernet_test(void)
 {
-	FILE *in_file  = fopen("/usr/share/honeyd/nmap-mac-prefixes", "r"); // read only
+	FILE *in_file  = fopen(PATH_HONEYDDATA "/nmap-mac-prefixes", "r"); // read only
 	ethernetcode_init(in_file);
 	ethernetcode_test();
 }

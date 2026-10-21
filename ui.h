@@ -50,8 +50,8 @@ void ui_init(void);
  * lives in a root-owned directory (0700, or 0750 when HONEYD_UI_GROUP
  * names a group allowed to use honeydctl).
  */
-#define UI_DIR		"/var/run/honeyd"
-#define UI_FIFO		UI_DIR "/honeyd.sock"
-#define UI_GROUP_ENV	"HONEYD_UI_GROUP"
+#define UI_DIR		"/run/phantom-mirage"
+#define UI_FIFO		UI_DIR "/phantom-mirage.sock"
+#define UI_GROUP_ENV	"PHANTOM_MIRAGE_UI_GROUP"
 
 #endif /* !_UI_H_ */

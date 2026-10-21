@@ -88,7 +88,7 @@ for o, a in opts:
     if o in ("-h", "--help"):
             usage()
             sys.exit(1)
-reg = regress.regress("general networking tests", "../honeyd", "config.1", debug)
+reg = regress.regress("general networking tests", "../phantom-mirage", "config.1", debug)
 reg.generate = generate
 reg.run(Ping())
 reg.run(TCPOpen())

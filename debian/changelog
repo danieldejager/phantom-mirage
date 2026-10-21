@@ -1,3 +1,24 @@
+phantom-mirage (1.7.0-2) unstable; urgency=medium
+
+  * Rename to Phantom Mirage I, part of the Phantom deception range; based
+    on Honeyd by Niels Provos (original copyright and licence kept, see
+    NOTICE). No functional changes.
+  * Source/binary packages honeyd/honeyd-common -> phantom-mirage /
+    phantom-mirage-common (Conflicts/Replaces/Provides: honeyd,
+    honeyd-common).
+  * Binaries: phantom-mirage, phantom-mirage-ctl, phantom-mirage-stats,
+    phantom-mirage-sniff; preload library libphantom-mirage.so.
+  * Paths: /usr/share/phantom-mirage, /usr/lib/phantom-mirage,
+    /etc/phantom-mirage, /var/log/phantom-mirage,
+    /run/phantom-mirage/phantom-mirage.sock, /run/phantom-mirage.pid,
+    ~/.config/phantom-mirage.
+  * systemd unit phantom-mirage.service, /etc/default/phantom-mirage,
+    init script and system user phantom-mirage.
+  * Environment: PHANTOM_MIRAGE_*; HONEYD_* still accepted (deprecated,
+    with a warning) and still exported to service scripts.
+
+ -- Daniel de Jager <ddejager@dandejager.com>  Thu, 22 Oct 2026 06:30:00 +1100
+
 honeyd (1.7.0-1) unstable; urgency=medium
 
   * New release 1.7.0. Version now set only in configure.ac (AC_INIT);

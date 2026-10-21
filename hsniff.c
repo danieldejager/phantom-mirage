@@ -108,7 +108,7 @@ void
 usage(void)
 {
 	fprintf(stderr,
-		"Usage: hsniff [OPTIONS] [net ...]\n\n"
+		"Usage: phantom-mirage-sniff [OPTIONS] [net ...]\n\n"
 		"where options include:\n"
 		"  -d                     Do not daemonize, be verbose.\n"
 		"  -V, --version          Print program version and exit.\n"
@@ -166,7 +166,7 @@ syslog_init(int argc, char *argv[])
 #else
 	options = LOG_PID|LOG_CONS;
 #endif
-	openlog("hsniff", options, LOG_DAEMON);	
+	openlog("phantom-mirage-sniff", options, LOG_DAEMON);	
 
 	/* Create a string containing all the command line
 	 * arguments and pass it to syslog:
@@ -684,7 +684,7 @@ main(int argc, char *argv[])
 		/* NOTREACHED */
 	}
 
-	fprintf(stderr, "Hsniff V%s Copyright (c) 2004-2007 Niels Provos\n",
+	fprintf(stderr, "Phantom Mirage I Sniffer %s (based on Hsniff, Copyright (c) 2004-2007 Niels Provos)\n",
 	    VERSION);
 
 	/* disabled event methods that don't work with bpf */

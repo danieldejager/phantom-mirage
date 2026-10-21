@@ -1,6 +1,6 @@
 # Embedded Python 3 services
 
-honeyd can run Python 3 code inside the daemon to answer connections
+phantom-mirage can run Python 3 code inside the daemon to answer connections
 ("internal" services). This is the `pyextend.c` code. It is **off by
 default**. A default `./configure` build does not link libpython. See #36.
 
@@ -25,7 +25,7 @@ line in the config fails with "Python support is not available."
 add linux tcp port 7 internal "echo_banner"
 ```
 
-`echo_banner` is a Python **module name**, not a path. honeyd imports it
+`echo_banner` is a Python **module name**, not a path. phantom-mirage imports it
 once, while it reads the config (before it drops privileges), from
 `sys.path`. That path covers `PYTHONPATH`, the current directory, and
 `$(datadir)/honeyd`. A module that cannot be imported, or that lacks one of
@@ -35,7 +35,7 @@ The module must define:
 
 | hook | called | returns |
 |---|---|---|
-| `honeyd_init(env)` | per connection; `env` has `HONEYD_IP_SRC`, `HONEYD_IP_DST`, `HONEYD_SRC_PORT`, `HONEYD_DST_PORT`, `HONEYD_REMOTE_OS` | per-connection state object |
+| `honeyd_init(env)` | per connection; `env` has `PHANTOM_MIRAGE_IP_SRC`, `PHANTOM_MIRAGE_IP_DST`, `PHANTOM_MIRAGE_SRC_PORT`, `PHANTOM_MIRAGE_DST_PORT`, `PHANTOM_MIRAGE_REMOTE_OS` | per-connection state object |
 | `honeyd_readdata(state, data)` | attacker sent `data` (**bytes**) | ignored |
 | `honeyd_writedata(state)` | socket writable and writes enabled | **bytes** to send (a `str` is sent as UTF-8), or `None` to close |
 | `honeyd_end(state)` | connection gone | ignored |
@@ -53,12 +53,12 @@ complete example. CI runs it under ASan/UBSan
 Changes from the old Python 2 interface: data is `bytes` instead of `str`,
 and `honeyd_writedata` may return `bytes`, `bytearray` or `str`.
 
-## honeydctl `!`
+## phantom-mirage-ctl `!`
 
 With Python built in, `! <python statement>` on the control socket runs one
-line inside honeyd and returns its stdout and stderr, for example
+line inside phantom-mirage and returns its stdout and stderr, for example
 `! import honeyd; print(honeyd.uptime())`. Anyone who can reach the socket
-can already run commands as honeyd, so treat this as root-equivalent too
+can already run commands as phantom-mirage, so treat this as root-equivalent too
 (see docs/architecture/07).
 
 ## Status page (built-in webserver)
@@ -68,22 +68,22 @@ read-only status page at `/` (interfaces, traffic statistics, active
 TCP/UDP connections, bound addresses, static configuration) with the
 standard library (`http.server`, `html`). The old Python 2 UI, its
 `htmltmpl` template library, the `.tmpl` files and the delete-template /
-kill-connection links are gone: the page cannot change honeyd state and
+kill-connection links are gone: the page cannot change phantom-mirage state and
 does not execute anything from the web root. Static files are served only
 from `styles/`, `images/` and `graphs/` under `--webserver-root`; GET and
 HEAD only.
 
 It listens on `127.0.0.1` (`--webserver-address`) port 80
 (`--webserver-port`) by default. Only change the address if the page
-should be reachable from elsewhere. If `server` does not import, honeyd
+should be reachable from elsewhere. If `server` does not import, phantom-mirage
 logs `internal webserver disabled` and keeps running; `--disable-webserver`
 turns it off. `ci/test_webserver.py` unit-tests the module and the
 sanitizer job fetches the page from a running honeyd.
 
-## honeydstats filter helpers
+## phantom-mirage-stats filter helpers
 
 `pydataprocessing.c` and `pydatahoneyd.c` were ported to Python 3 in #77.
-They compile with `--with-python` and pass `honeyd -T`. Map filters must
+They compile with `--with-python` and pass `phantom-mirage -T`. Map filters must
 return `[[bytes key, bytes value], ...]`.
 
 ## Service scripts under scripts/

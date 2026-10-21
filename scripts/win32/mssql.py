@@ -79,7 +79,7 @@ class LoginError:
 
     def __init__(self):
         self.errorMsg = "Login failed for user."
-        self.serverName = os.getenv("HONEYD_IP_DST", "")[:255]
+        self.serverName = os.getenv("PHANTOM_MIRAGE_IP_DST", os.getenv("HONEYD_IP_DST", ""))[:255]
 
     def writePacket(self):
         msg = self.errorMsg.encode("utf-16-le")
@@ -104,8 +104,8 @@ def alert():
     """Optional hook kept from the Nova integration; run only if present."""
     tool = shutil.which("createNovaScriptAlert.py")
     if tool:
-        subprocess.call([tool, os.getenv("HONEYD_IP_SRC", ""),
-                         os.getenv("HONEYD_INTERFACE", ""), "mssql",
+        subprocess.call([tool, os.getenv("PHANTOM_MIRAGE_IP_SRC", os.getenv("HONEYD_IP_SRC", "")),
+                         os.getenv("PHANTOM_MIRAGE_INTERFACE", os.getenv("HONEYD_INTERFACE", "")), "mssql",
                          "Mssql database login attempt"])
 
 

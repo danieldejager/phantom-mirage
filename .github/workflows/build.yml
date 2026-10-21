@@ -52,38 +52,38 @@ jobs:
         # Runs from the build tree, before anything is installed.
         run: |
           D=$PWD
-          # No /usr/share/honeyd here: honeyd must start without it (#43).
-          test ! -e /usr/share/honeyd
-          ./honeyd --version
-          ./honeyd --verify-config -f $D/ci/smoke.conf -i lo --disable-webserver \
+          # No /usr/share/phantom-mirage here: phantom-mirage must start without it (#43).
+          test ! -e /usr/share/phantom-mirage
+          ./phantom-mirage --version
+          ./phantom-mirage --verify-config -f $D/ci/smoke.conf -i lo --disable-webserver \
             -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
             -0 $D/pf.os -m $D/nmap-mac-prefixes
-          for b in honeydctl honeydstats hsniff; do test -x ./$b; done
+          for b in phantom-mirage-ctl phantom-mirage-stats phantom-mirage-sniff; do test -x ./$b; done
 
       - name: "make install + run from the installed tree (#36)"
         # make install needs no Python (#36) and must not touch $HOME.
         run: |
           set -x
           make install DESTDIR=$PWD/destdir
-          for f in usr/bin/honeyd usr/bin/honeydctl usr/bin/honeydstats \
-                   usr/bin/hsniff usr/lib/honeyd/libhoneyd.so \
-                   usr/share/honeyd/nmap-os-db usr/share/honeyd/xprobe2.conf \
-                   usr/share/honeyd/nmap.assoc usr/share/honeyd/pf.os \
-                   usr/share/honeyd/nmap-mac-prefixes \
-                   usr/share/honeyd/scripts/lib/names.py \
+          for f in usr/bin/phantom-mirage usr/bin/phantom-mirage-ctl usr/bin/phantom-mirage-stats \
+                   usr/bin/phantom-mirage-sniff usr/lib/phantom-mirage/libphantom-mirage.so \
+                   usr/share/phantom-mirage/nmap-os-db usr/share/phantom-mirage/xprobe2.conf \
+                   usr/share/phantom-mirage/nmap.assoc usr/share/phantom-mirage/pf.os \
+                   usr/share/phantom-mirage/nmap-mac-prefixes \
+                   usr/share/phantom-mirage/scripts/lib/names.py \
                    usr/include/honeyd/hooks.h; do
             test -e destdir/$f || { echo "missing $f" >&2; exit 1; }
           done
-          test ! -e "$HOME/.config/honeyd"
+          test ! -e "$HOME/.config/phantom-mirage"
           make install
           mkdir -p /var/run
           cd /
           # Data files found via the compiled-in defaults, no -p/-x/...
-          honeyd --verify-config -f "$GITHUB_WORKSPACE/ci/smoke.conf" -i lo --disable-webserver
-          timeout 20 honeyd -d -f "$GITHUB_WORKSPACE/ci/smoke.conf" -i lo \
+          phantom-mirage --verify-config -f "$GITHUB_WORKSPACE/ci/smoke.conf" -i lo --disable-webserver
+          timeout 20 phantom-mirage -d -f "$GITHUB_WORKSPACE/ci/smoke.conf" -i lo \
             --disable-webserver > /tmp/installed.log 2>&1 &
           for i in $(seq 1 20); do
-            echo "list template" | timeout 5 honeydctl > /tmp/ctl.out 2>&1 && break
+            echo "list template" | timeout 5 phantom-mirage-ctl > /tmp/ctl.out 2>&1 && break
             sleep 0.5
           done
           cat /tmp/ctl.out
@@ -92,7 +92,7 @@ jobs:
           wait %1 || true
           cat /tmp/installed.log
           grep -q 'Demoting process privileges' /tmp/installed.log
-          python3 -c 'import sys; sys.path.insert(0, "/usr/share/honeyd/scripts/lib"); import names' \
+          python3 -c 'import sys; sys.path.insert(0, "/usr/share/phantom-mirage/scripts/lib"); import names' \
             || echo "python3 not installed here; names.py import skipped"
 
       - name: Upload build log
@@ -104,7 +104,7 @@ jobs:
             build.log
             config.log
             events.jsonl
-            honeyd.log
+            phantom-mirage.log
           if-no-files-found: ignore
 
   sanitizers:
@@ -117,7 +117,7 @@ jobs:
       # (unshare --net + nsenter, no mounts).
       options: --cap-add=NET_ADMIN --cap-add=SYS_ADMIN
     env:
-      # Findings fail the job. Leak detection is off because honeyd keeps
+      # Findings fail the job. Leak detection is off because phantom-mirage keeps
       # its config, personalities and assoc tables for the whole process
       # lifetime and never frees them on exit (~590 KB in ~14k allocations
       # reported per --verify-config), so LSan output is all noise.
@@ -152,46 +152,46 @@ jobs:
           set -o pipefail
           make -j$(nproc) 2>&1 | tee build.log
 
-      - name: Rebuild libhoneyd.so without sanitizers
-        # libhoneyd.so is an LD_PRELOAD shim for unsanitized subsystem
+      - name: Rebuild libphantom-mirage.so without sanitizers
+        # libphantom-mirage.so is an LD_PRELOAD shim for unsanitized subsystem
         # binaries. An ASan runtime dependency would break it there
         # (ASan must be first in the link order), so rebuild just the
         # shim's objects without sanitizer flags.
         run: |
-          rm -f libhoneyd.so libhoneyd-*.lo .libs/libhoneyd-*.o
-          make CPPFLAGS= LDFLAGS= libhoneyd.so
+          rm -f libphantom-mirage.so libhoneyd-*.lo .libs/libhoneyd-*.o
+          make CPPFLAGS= LDFLAGS= libphantom-mirage.so
           # ldd misses instrumented objects (undefined __asan_* symbols
           # with no NEEDED entry), so check the symbol table too.
-          if ldd libhoneyd.so | grep -E 'libasan|libubsan' ||
-             nm -D libhoneyd.so | grep -E ' U __(asan|ubsan)_'; then
-            echo "libhoneyd.so is still sanitizer-instrumented" >&2; exit 1
+          if ldd libphantom-mirage.so | grep -E 'libasan|libubsan' ||
+             nm -D libphantom-mirage.so | grep -E ' U __(asan|ubsan)_'; then
+            echo "libphantom-mirage.so is still sanitizer-instrumented" >&2; exit 1
           fi
 
       - name: Prepare test data
-        # No /usr/share/honeyd here: honeyd must start without it (#43).
-        run: test ! -e /usr/share/honeyd
+        # No /usr/share/phantom-mirage here: phantom-mirage must start without it (#43).
+        run: test ! -e /usr/share/phantom-mirage
 
       - name: Relative-path smoke test (sanitized, #10/#48)
         # determine_path() turns relative paths into absolute ones; ASan
         # catches any under-allocation regression here.
         run: |
-          ./honeyd --verify-config -f ci/smoke.conf -i lo --disable-webserver \
+          ./phantom-mirage --verify-config -f ci/smoke.conf -i lo --disable-webserver \
             -p nmap-os-db -x xprobe2.conf -a nmap.assoc \
             -0 pf.os -m nmap-mac-prefixes
 
       - name: Smoke test (sanitized)
         run: |
           D=$PWD
-          ./honeyd --version
+          ./phantom-mirage --version
           for f in ci/smoke.conf ci/sanitizer.conf; do
             echo "== verify-config $f"
-            ./honeyd --verify-config -f $D/$f -i lo --disable-webserver \
+            ./phantom-mirage --verify-config -f $D/$f -i lo --disable-webserver \
               -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
               -0 $D/pf.os -m $D/nmap-mac-prefixes
           done
           # --help/usage exits non-zero in these tools, so check the output
           # for sanitizer reports instead of the exit code.
-          for b in honeydctl honeydstats hsniff; do
+          for b in phantom-mirage-ctl phantom-mirage-stats phantom-mirage-sniff; do
             echo "== $b --help"
             ./$b --help > $b.out 2>&1 || true
             head -5 $b.out
@@ -200,51 +200,51 @@ jobs:
 
       - name: Control socket lockdown (sanitized, #14)
         # Runs the daemon on lo for a few seconds: the socket dir must be
-        # root 0700, the socket 0600, root's honeydctl must work and a
+        # root 0700, the socket 0600, root's phantom-mirage-ctl must work and a
         # non-root peer must be refused (SO_PEERCRED, checked with the
         # permissions opened up so the kernel does not refuse it first).
         run: |
           D=$PWD
           mkdir -p /var/run
-          timeout 30 ./honeyd -d -f $D/ci/smoke.conf -i lo --disable-webserver \
+          timeout 30 ./phantom-mirage -d -f $D/ci/smoke.conf -i lo --disable-webserver \
             -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
-            -0 $D/pf.os -m $D/nmap-mac-prefixes > honeyd-ui.log 2>&1 &
+            -0 $D/pf.os -m $D/nmap-mac-prefixes > phantom-mirage-ui.log 2>&1 &
           for i in $(seq 1 20); do
-            test -S /var/run/honeyd/honeyd.sock && break; sleep 0.5
+            test -S /run/phantom-mirage/phantom-mirage.sock && break; sleep 0.5
           done
-          stat -c '%a %U:%G %F %n' /var/run/honeyd /var/run/honeyd/honeyd.sock
-          test "$(stat -c '%a %u' /var/run/honeyd)" = "700 0"
-          test "$(stat -c '%a %u %F' /var/run/honeyd/honeyd.sock)" = "600 0 socket"
-          echo "list template" | timeout 5 ./honeydctl | tee ctl-root.out
+          stat -c '%a %U:%G %F %n' /run/phantom-mirage /run/phantom-mirage/phantom-mirage.sock
+          test "$(stat -c '%a %u' /run/phantom-mirage)" = "700 0"
+          test "$(stat -c '%a %u %F' /run/phantom-mirage/phantom-mirage.sock)" = "600 0 socket"
+          echo "list template" | timeout 5 ./phantom-mirage-ctl | tee ctl-root.out
           grep -q '10.99.0.10' ctl-root.out
-          chmod 755 /var/run/honeyd; chmod 666 /var/run/honeyd/honeyd.sock
+          chmod 755 /run/phantom-mirage; chmod 666 /run/phantom-mirage/phantom-mirage.sock
           echo "list template" | timeout 5 setpriv --reuid=65534 --regid=65534 \
-            --clear-groups ./honeydctl > ctl-nobody.out 2>&1 || true
+            --clear-groups ./phantom-mirage-ctl > ctl-nobody.out 2>&1 || true
           sleep 1
           kill -INT %1 || true
           wait %1 || true
-          cat honeyd-ui.log
+          cat phantom-mirage-ui.log
           if grep -q '10.99.0.10' ctl-nobody.out; then
             echo "non-root peer was served" >&2; exit 1
           fi
-          grep -q 'rejected ui connection from .* uid 65534' honeyd-ui.log
-          if grep -E 'runtime error|ERROR: AddressSanitizer' honeyd-ui.log; then exit 1; fi
+          grep -q 'rejected ui connection from .* uid 65534' phantom-mirage-ui.log
+          if grep -E 'runtime error|ERROR: AddressSanitizer' phantom-mirage-ui.log; then exit 1; fi
 
       - name: Subsystem connection + JSON log (sanitized, #22, #24)
-        # A TCP connection to a subsystem port used to crash honeyd
+        # A TCP connection to a subsystem port used to crash phantom-mirage
         # (event_add(NULL) in cmd_subsystem_schedule_connect). Run a tiny
-        # subsystem through the libhoneyd.so shim and connect to it three
+        # subsystem through the libphantom-mirage.so shim and connect to it three
         # times over lo.
-        # After honeyd drops privileges the sanitizer runtime cannot read
+        # After phantom-mirage drops privileges the sanitizer runtime cannot read
         # /proc/self/environ, so UBSAN_OPTIONS (halt_on_error, suppressions)
         # do not apply to later reports; the log is grepped instead.
         run: |
           D=$PWD
           apt-get install -y --no-install-recommends iproute2 python3 >/dev/null
-          install -D -m 755 libhoneyd.so /usr/lib/honeyd/libhoneyd.so
+          install -D -m 755 libphantom-mirage.so /usr/lib/phantom-mirage/libphantom-mirage.so
           gcc -O1 -o /tmp/subsys_echo ci/subsys_echo.c
           cp ci/svc_escape.sh /tmp/svc_escape.sh
-          # honeyd opens its logs after dropping to nobody (#24 docs)
+          # phantom-mirage opens its logs after dropping to nobody (#24 docs)
           install -d -m 1777 /tmp/hdlogs
           ip route add 10.99.0.0/24 dev lo
           cat > /tmp/subsys.conf <<'CONF'
@@ -258,14 +258,14 @@ jobs:
           bind 10.99.0.10 linux
           CONF
           mkdir -p /var/run
-          timeout 60 ./honeyd -d -f /tmp/subsys.conf -i lo --disable-webserver \
+          timeout 60 ./phantom-mirage -d -f /tmp/subsys.conf -i lo --disable-webserver \
             -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
             -0 $D/pf.os -m $D/nmap-mac-prefixes \
-            -l /tmp/hdlogs/honeyd.log --json-log=/tmp/hdlogs/events.jsonl \
+            -l /tmp/hdlogs/phantom-mirage.log --json-log=/tmp/hdlogs/events.jsonl \
             --sensor-id=ci-sensor-1 --heartbeat=1 \
-            > honeyd-sub.log 2>&1 &
+            > phantom-mirage-sub.log 2>&1 &
           for i in $(seq 1 30); do
-            grep -q 'Listen: .*:18080' honeyd-sub.log && break; sleep 0.5
+            grep -q 'Listen: .*:18080' phantom-mirage-sub.log && break; sleep 0.5
           done
           ok=0
           for i in 1 2 3; do
@@ -276,21 +276,21 @@ jobs:
           sleep 2
           kill -INT %1 || true
           wait %1 || true
-          cat honeyd-sub.log
-          if grep -E 'runtime error|ERROR: AddressSanitizer' honeyd-sub.log; then
+          cat phantom-mirage-sub.log
+          if grep -E 'runtime error|ERROR: AddressSanitizer' phantom-mirage-sub.log; then
             exit 1
           fi
           test "$ok" = 3
-          test "$(grep -c 'Connection established: .*subsystem' honeyd-sub.log)" = 3
+          test "$(grep -c 'Connection established: .*subsystem' phantom-mirage-sub.log)" = 3
           # Text log still written as before; JSON log valid with the schema
-          grep -q 'tcp(6) S ' /tmp/hdlogs/honeyd.log
-          cp /tmp/hdlogs/events.jsonl /tmp/hdlogs/honeyd.log .
+          grep -q 'tcp(6) S ' /tmp/hdlogs/phantom-mirage.log
+          cp /tmp/hdlogs/events.jsonl /tmp/hdlogs/phantom-mirage.log .
           python3 ci/check_json_log.py events.jsonl ci-sensor-1 | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Embedded Python 3 service script (sanitized, #36)
-        # honeyd built --with-python; an "internal" Python 3 service
+        # phantom-mirage built --with-python; an "internal" Python 3 service
         # (scripts/python/echo_banner.py) answers three connections over lo,
-        # honeyd.log() reaches the service log, honeydctl "!" runs Python,
+        # honeyd.log() reaches the service log, phantom-mirage-ctl "!" runs Python,
         # and the read-only status page (webserver/) answers on 127.0.0.1.
         # Uses the 10.99.0.0/24 route over lo from the subsystem step.
         shell: bash
@@ -305,7 +305,7 @@ jobs:
         run: python3 ci/test_scripts.py
 
       - name: Privilege hardening + script sandbox (sanitized, #16)
-        # Default: honeyd and every script child run with all IDs 65534,
+        # Default: phantom-mirage and every script child run with all IDs 65534,
         # no capabilities (incl. bounding/ambient), no_new_privs.
         # --sandbox-scripts: script children also get Landlock + seccomp.
         # SIGHUP/SIGUSR1 must keep working with the hardened process.
@@ -329,15 +329,15 @@ jobs:
           run() {
             mode=$1; shift
             rm -f /tmp/hdsb/tmp/* /tmp/hdsb/rw/*
-            timeout 60 ./honeyd -d -f /tmp/hdsb/sb.conf -i lo --disable-webserver \
+            timeout 60 ./phantom-mirage -d -f /tmp/hdsb/sb.conf -i lo --disable-webserver \
               -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
               -0 $D/pf.os -m $D/nmap-mac-prefixes "$@" > sb-$mode.log 2>&1 &
             hp=$!
             for i in $(seq 1 30); do
               grep -q 'Listen: .*:18080' sb-$mode.log && break; sleep 0.5
             done
-            # $hp is timeout(1); signal and inspect honeyd itself
-            hd=$(pgrep -n -P $hp -x honeyd)
+            # $hp is timeout(1); signal and inspect phantom-mirage itself
+            hd=$(pgrep -n -P $hp -x phantom-mirage)
             ll=""
             grep -q 'Landlock unavailable' sb-$mode.log && ll=no-landlock || true
             python3 ci/check_sandbox.py $mode $hd $ll | tee -a "$GITHUB_STEP_SUMMARY"
@@ -360,7 +360,7 @@ jobs:
 
       - name: "regress/ suite (gating, veth pair, #36 #74)"
         # Deterministic since #74: veth pair instead of lo, -R seeds all
-        # of honeyd's randomness, the harness masks only wall-clock and
+        # of phantom-mirage's randomness, the harness masks only wall-clock and
         # kernel-chosen fields (regress/IMPORTANT_NOTES.txt). Runs the
         # suite 3 times; any mismatch or harness error fails the job.
         # nmap.py runs real nmap -O against fixed personalities.
@@ -388,16 +388,16 @@ jobs:
 
       - name: "--sandbox-daemon: suites under the daemon seccomp allowlist (#16)"
         # Same services as above (subsystem, shell script, Python 3
-        # service, status page, honeydctl, SIGHUP/SIGUSR1, plus
+        # service, status page, phantom-mirage-ctl, SIGHUP/SIGUSR1, plus
         # --sandbox-scripts), then the regress/ suite incl. nmap.py, with
-        # honeyd confined to its syscall allowlist. A denied call logs
+        # phantom-mirage confined to its syscall allowlist. A denied call logs
         # "sandbox-daemon: denied syscall N" (daemon) or "killed by
         # SIGSYS" (child) and fails the step; ci/sandbox_daemon.sh also
         # checks that an off-list call (mount) is caught.
         shell: bash
         run: |
           bash ci/sandbox_daemon.sh
-          # Again as under debian/honeyd.service: no_new_privs, the unit's
+          # Again as under debian/phantom-mirage.service: no_new_privs, the unit's
           # capability bounding set, writable state only below /run.
           # (ProtectSystem=strict needs mounts, which the CI container
           # refuses; it was checked by hand, see docs/sandboxing.md.)
@@ -408,7 +408,7 @@ jobs:
           bad=0
           for t in general.py detect.py routing.py nmap.py; do
             log="../regress-sbd-${t%.py}.log"
-            set +e; REGRESS_HONEYD_ARGS=--sandbox-daemon timeout -k 10 300 \
+            set +e; REGRESS_PHANTOM_MIRAGE_ARGS=--sandbox-daemon timeout -k 10 300 \
               python3 "$t" -d > "$log" 2>&1; rc=$?; set -e
             tail -5 "$log"
             [ $rc = 0 ] || { echo "$t: rc=$rc" >&2; bad=1; }
@@ -426,13 +426,13 @@ jobs:
             build.log
             config.log
             events.jsonl
-            honeyd.log
+            phantom-mirage.log
             regress-*.log
             regress/nmap.log
             sandbox-daemon-*.log
             unit-logs/*.log
-            honeyd-py*.log
-            honeyd-py-ctl.out
+            phantom-mirage-py*.log
+            phantom-mirage-py-ctl.out
           if-no-files-found: ignore
 
   deb:
@@ -442,10 +442,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          path: src/honeyd
+          path: src/phantom-mirage
 
       - name: Install packaging tools and build-deps
-        working-directory: src/honeyd
+        working-directory: src/phantom-mirage
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -453,7 +453,7 @@ jobs:
           mk-build-deps -i -r -t 'apt-get -y --no-install-recommends' debian/control
 
       - name: dpkg-buildpackage -us -uc -b
-        working-directory: src/honeyd
+        working-directory: src/phantom-mirage
         run: dpkg-buildpackage -us -uc -b
 
       - name: lintian (report only)
@@ -466,33 +466,33 @@ jobs:
         working-directory: src
         run: |
           set -x
-          test ! -e /usr/bin/honeyd
-          DEBIAN_FRONTEND=noninteractive apt-get install -y ./honeyd_*.deb ./honeyd-common_*.deb
-          dpkg -L honeyd
-          test "$(command -v honeyd)" = /usr/bin/honeyd
-          dpkg -S /usr/bin/honeyd
+          test ! -e /usr/bin/phantom-mirage
+          DEBIAN_FRONTEND=noninteractive apt-get install -y ./phantom-mirage_*.deb ./phantom-mirage-common_*.deb
+          dpkg -L phantom-mirage
+          test "$(command -v phantom-mirage)" = /usr/bin/phantom-mirage
+          dpkg -S /usr/bin/phantom-mirage
           # Version comes from AC_INIT in configure.ac only
-          want=$(sed -n 's/^AC_INIT(\[honeyd\], \[\([^]]*\)\]).*/\1/p' honeyd/configure.ac)
+          want=$(sed -n 's/^AC_INIT(\[phantom-mirage\], \[\([^]]*\)\]).*/\1/p' phantom-mirage/configure.ac)
           test -n "$want"
-          honeyd --version 2>&1 | tee version.txt
-          grep -q "Version $want\$" version.txt
-          test "$(dpkg-query -W -f='${Version}' honeyd)" = "$want-1"
-          test "$(dpkg-query -W -f='${Version}' honeyd-common)" = "$want-1"
+          phantom-mirage --version 2>&1 | tee version.txt
+          grep -qx "Phantom Mirage I $want (based on Honeyd)" version.txt
+          test "$(dpkg-query -W -f='${Version}' phantom-mirage)" = "$want-2"
+          test "$(dpkg-query -W -f='${Version}' phantom-mirage-common)" = "$want-2"
           test "$want" = 1.7.0
-          test -e /etc/honeypot/honeyd.conf
-          test -e /usr/share/honeyd/nmap-os-db
-          getent passwd honeyd
+          test -e /etc/phantom-mirage/phantom-mirage.conf
+          test -e /usr/share/phantom-mirage/nmap-os-db
+          getent passwd phantom-mirage
           # systemd unit: shipped, valid, not enabled (matches --no-start)
-          test -f /usr/lib/systemd/system/honeyd.service
+          test -f /usr/lib/systemd/system/phantom-mirage.service
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd
-          systemd-analyze verify /usr/lib/systemd/system/honeyd.service
-          systemd-analyze security --offline=yes /usr/lib/systemd/system/honeyd.service | tail -n 1 || true
-          test ! -e /etc/systemd/system/multi-user.target.wants/honeyd.service
+          systemd-analyze verify /usr/lib/systemd/system/phantom-mirage.service
+          systemd-analyze security --offline=yes /usr/lib/systemd/system/phantom-mirage.service | tail -n 1 || true
+          test ! -e /etc/systemd/system/multi-user.target.wants/phantom-mirage.service
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
         with:
-          name: honeyd-deb
+          name: phantom-mirage-deb
           path: |
             src/*.deb
             src/*.buildinfo
@@ -529,7 +529,7 @@ jobs:
           grep -q '^#define HAVE_PYTHON 1' config.h
           make -j$(nproc)
           uname -m | tee -a "$GITHUB_STEP_SUMMARY"
-          install -D -m 755 libhoneyd.so /usr/lib/honeyd/libhoneyd.so
+          install -D -m 755 libphantom-mirage.so /usr/lib/phantom-mirage/libphantom-mirage.so
           gcc -O1 -o /tmp/subsys_echo ci/subsys_echo.c
 
       - name: strace audit of the allowlist (arm64)
@@ -541,13 +541,13 @@ jobs:
           mkdir -p st learn-logs
           HD_LEARN=1 HD_WRAP="strace -f -qq -o $PWD/st/sd" HD_LOGDIR=$PWD/learn-logs \
             bash ci/sandbox_daemon.sh || true
-          mv honeyd honeyd.real
-          printf '#!/bin/sh\nexec strace -f -qq -o %s/st/r.$$ %s/honeyd.real "$@"\n' "$PWD" "$PWD" > honeyd
-          chmod +x honeyd
+          mv phantom-mirage honeyd.real
+          printf '#!/bin/sh\nexec strace -f -qq -o %s/st/r.$$ %s/honeyd.real "$@"\n' "$PWD" "$PWD" > phantom-mirage
+          chmod +x phantom-mirage
           (cd regress && for t in general.py detect.py routing.py nmap.py; do
              timeout -k 10 300 python3 $t > ../learn-logs/regress-${t%.py}.log 2>&1 || true
            done)
-          mv honeyd.real honeyd
+          mv honeyd.real phantom-mirage
           ls st | wc -l
           ci/syscall_audit.sh st/* | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -559,7 +559,7 @@ jobs:
           bad=0
           for t in general.py detect.py routing.py nmap.py; do
             log="../regress-sbd-${t%.py}.log"
-            set +e; REGRESS_HONEYD_ARGS=--sandbox-daemon timeout -k 10 300 \
+            set +e; REGRESS_PHANTOM_MIRAGE_ARGS=--sandbox-daemon timeout -k 10 300 \
               python3 "$t" -d > "$log" 2>&1; rc=$?; set -e
             tail -5 "$log"
             [ $rc = 0 ] || { echo "$t: rc=$rc" >&2; bad=1; }
@@ -610,7 +610,7 @@ jobs:
           platforms: linux/amd64
           push: false
           load: true
-          tags: honeyd:ci
+          tags: phantom-mirage:ci
           cache-from: type=gha
 
       - name: Smoke test amd64 image
@@ -618,20 +618,20 @@ jobs:
           set -x
           caps="--cap-drop ALL --cap-add NET_RAW --cap-add NET_ADMIN --cap-add SETUID --cap-add SETGID"
           ro="--read-only --tmpfs /run --tmpfs /tmp --tmpfs /root/.config --security-opt no-new-privileges"
-          docker run --rm $caps $ro honeyd:ci --version
-          docker run --rm $caps $ro honeyd:ci --verify-config
-          docker run --rm $caps $ro -v "$PWD/ci/smoke.conf:/etc/honeyd/honeyd.conf:ro" honeyd:ci --verify-config
+          docker run --rm $caps $ro phantom-mirage:ci --version
+          docker run --rm $caps $ro phantom-mirage:ci --verify-config
+          docker run --rm $caps $ro -v "$PWD/ci/smoke.conf:/etc/phantom-mirage/phantom-mirage.conf:ro" phantom-mirage:ci --verify-config
           # A broken config must stop the entrypoint before the daemon starts
           printf 'create x\nset x personality "Nope"\n' > /tmp/bad.conf
-          if docker run --rm $caps $ro -v /tmp/bad.conf:/etc/honeyd/honeyd.conf:ro honeyd:ci; then
+          if docker run --rm $caps $ro -v /tmp/bad.conf:/etc/phantom-mirage/phantom-mirage.conf:ro phantom-mirage:ci; then
             echo "bad config was accepted" >&2; exit 1
           fi
           # Daemon starts, drops privileges, control socket is locked down
-          cid=$(docker run -d $caps $ro honeyd:ci)
+          cid=$(docker run -d $caps $ro phantom-mirage:ci)
           sleep 5
-          docker exec "$cid" stat -c '%a %U %n' /run/honeyd /run/honeyd/honeyd.sock
-          test "$(docker exec "$cid" stat -c '%a' /run/honeyd/honeyd.sock)" = 600
-          docker exec "$cid" sh -c 'echo "list template" | honeydctl' | grep -q 192.0.2.10
+          docker exec "$cid" stat -c '%a %U %n' /run/phantom-mirage /run/phantom-mirage/phantom-mirage.sock
+          test "$(docker exec "$cid" stat -c '%a' /run/phantom-mirage/phantom-mirage.sock)" = 600
+          docker exec "$cid" sh -c 'echo "list template" | phantom-mirage-ctl' | grep -q 192.0.2.10
           docker exec "$cid" grep -q '^Uid:.*65534' /proc/1/status
           # #16: every ID 65534, no effective/permitted/ambient caps,
           # no_new_privs (bounding set stays: no CAP_SETPCAP here)
@@ -645,15 +645,15 @@ jobs:
           docker rm -f "$cid"
           # --sandbox-scripts starts in the image too (Landlock/seccomp
           # under Docker's default seccomp profile)
-          cid=$(docker run -d $caps $ro honeyd:ci --sandbox-scripts)
+          cid=$(docker run -d $caps $ro phantom-mirage:ci --sandbox-scripts)
           sleep 5
           docker exec "$cid" sh -c 'tr "\0" " " < /proc/1/cmdline' | grep -q -- '--sandbox-scripts'
           docker exec "$cid" grep -Eq '^NoNewPrivs:\s+1$' /proc/1/status
           docker logs "$cid"
           docker rm -f "$cid"
-          # HONEYD_JSON_LOG=stdout passes --json-log=- to honeyd (#24)
-          cid=$(docker run -d $caps $ro -e HONEYD_JSON_LOG=stdout \
-            -e HONEYD_SENSOR_ID=docker-ci -e HONEYD_HEARTBEAT=1 honeyd:ci)
+          # PHANTOM_MIRAGE_JSON_LOG=stdout passes --json-log=- to phantom-mirage (#24)
+          cid=$(docker run -d $caps $ro -e PHANTOM_MIRAGE_JSON_LOG=stdout \
+            -e PHANTOM_MIRAGE_SENSOR_ID=docker-ci -e PHANTOM_MIRAGE_HEARTBEAT=1 phantom-mirage:ci)
           sleep 5
           docker exec "$cid" sh -c 'tr "\0" " " < /proc/1/cmdline' | grep -q -- '--json-log=-'
           docker exec "$cid" sh -c 'tr "\0" " " < /proc/1/cmdline' | grep -q -- '--sensor-id=docker-ci'
@@ -661,7 +661,7 @@ jobs:
           docker exec "$cid" grep -q '^Uid:.*65534' /proc/1/status
           docker logs "$cid"
           docker rm -f "$cid"
-          docker image ls honeyd:ci --format 'Image size: {{.Size}}' | tee -a "$GITHUB_STEP_SUMMARY"
+          docker image ls phantom-mirage:ci --format 'Image size: {{.Size}}' | tee -a "$GITHUB_STEP_SUMMARY"
 
   fuzz:
     name: Debian 13 / libFuzzer (smoke)

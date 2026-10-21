@@ -142,7 +142,7 @@ for o, a in opts:
             usage()
             sys.exit(1)
 
-reg = regress.regress("detect probe", "../honeyd", "config.1", debug)
+reg = regress.regress("detect probe", "../phantom-mirage", "config.1", debug)
 reg.generate = generate
 reg.run(DetectSFSROpen())
 reg.run(DetectSAAROpen())

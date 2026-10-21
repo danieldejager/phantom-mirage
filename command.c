@@ -211,7 +211,24 @@ cmd_proxy_connect(struct tuple *hdr, struct command *cmd, struct addrinfo *ai,
 	syslog(LOG_INFO, "Connection established: %s -> proxy to %s:%s",
 	    honeyd_contoa(hdr), host, port);
 
+
 	return (0);
+}
+
+/*
+ * Export a connection variable to a subsystem script.  PHANTOM_MIRAGE_*
+ * is the current name; the legacy HONEYD_* name is set as well so
+ * existing Honeyd service scripts keep working.
+ */
+static void
+subsys_setenv(const char *suffix, const char *value)
+{
+	char name[64];
+
+	snprintf(name, sizeof(name), "PHANTOM_MIRAGE_%s", suffix);
+	setenv(name, value, 1);
+	snprintf(name, sizeof(name), "HONEYD_%s", suffix);
+	setenv(name, value, 1);
 }
 
 void
@@ -224,7 +241,7 @@ cmd_environment(struct template *tmpl, struct tuple *hdr)
 
 	if (tmpl->person != NULL) {
 		snprintf(line, sizeof(line), "%s", tmpl->person->name);
-		setenv("HONEYD_PERSONALITY", line, 1);
+		subsys_setenv("PERSONALITY", line);
 	}
 
 	if (hdr == NULL)
@@ -234,30 +251,30 @@ cmd_environment(struct template *tmpl, struct tuple *hdr)
 	ip.ip_src = hdr->ip_src;
 	os_name = honeyd_osfp_name(&ip);
 	if (os_name != NULL) {
-		setenv("HONEYD_REMOTE_OS", os_name, 1);
+		subsys_setenv("REMOTE_OS", os_name);
 	}
 
 	addr_pack(&addr, ADDR_TYPE_IP, IP_ADDR_BITS, &hdr->ip_src,IP_ADDR_LEN);
 	snprintf(line, sizeof(line), "%s", addr_ntoa(&addr));
-	setenv("HONEYD_IP_SRC", line, 1);
+	subsys_setenv("IP_SRC", line);
 
 	addr_pack(&addr, ADDR_TYPE_IP, IP_ADDR_BITS, &hdr->ip_dst,IP_ADDR_LEN);
 	snprintf(line, sizeof(line), "%s", addr_ntoa(&addr));
-	setenv("HONEYD_IP_DST", line, 1);
+	subsys_setenv("IP_DST", line);
 
 	if (hdr->iface != NULL) {
 		snprintf(line, sizeof(line), "%s", hdr->iface->if_ent.intf_name);
-		setenv("HONEYD_INTERFACE", line, 1);
+		subsys_setenv("INTERFACE", line);
 	}
 
 	snprintf(line, sizeof(line), "%s", tmpl->name);
-	setenv("HONEYD_TEMPLATE_NAME", line, 1);
+	subsys_setenv("TEMPLATE_NAME", line);
 
 	snprintf(line, sizeof(line), "%d", hdr->sport);
-	setenv("HONEYD_SRC_PORT", line, 1);
+	subsys_setenv("SRC_PORT", line);
 
 	snprintf(line, sizeof(line), "%d", hdr->dport);
-	setenv("HONEYD_DST_PORT", line, 1);
+	subsys_setenv("DST_PORT", line);
 }
 
 #define SETERROR(x) do { \
@@ -596,7 +613,7 @@ cmd_subsystem(struct template *tmpl, struct subsystem *sub,
 		cmd_environment(tmpl, NULL);
 
 		/* Setup the wrapper library */
-		if (setenv("LD_PRELOAD", PATH_HONEYDLIB"/libhoneyd.so", 1) == -1)
+		if (setenv("LD_PRELOAD", PATH_HONEYDLIB"/libphantom-mirage.so", 1) == -1)
 		{
 			syslog(LOG_ERR, "%s: setenv", __func__);
 			exit(EXIT_FAILURE);

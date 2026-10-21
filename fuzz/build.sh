@@ -22,8 +22,8 @@ fi
 # Ask make for the exact compile flags and honeyd's object/library lists
 q() { make -s -f Makefile -f - "$1" <<'MK'
 cflags: ; @echo $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CFLAGS)
-objs: ; @echo $(am_honeyd_OBJECTS)
-libs: ; @echo $(honeyd_LDADD) $(LIBS) | sed "s/[^ ]*sha1[^ ]*\\.o//"
+objs: ; @echo $(am_phantom_mirage_OBJECTS)
+libs: ; @echo $(phantom_mirage_LDADD) $(LIBS) | sed "s/[^ ]*sha1[^ ]*\\.o//"
 MK
 }
 CFLAGS_H=$(q cflags)

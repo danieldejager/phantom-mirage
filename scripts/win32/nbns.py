@@ -70,8 +70,8 @@ def respond(data, our_name, our_ip):
 
 
 def main():
-    honeyd_home = os.getenv("HONEYD_HOME", "")
-    our_ip = os.getenv("HONEYD_TEMPLATE_NAME", "")
+    honeyd_home = os.getenv("PHANTOM_MIRAGE_HOME", os.getenv("HONEYD_HOME", ""))
+    our_ip = os.getenv("PHANTOM_MIRAGE_TEMPLATE_NAME", os.getenv("HONEYD_TEMPLATE_NAME", ""))
     with open(sys.argv[2]) as fd:
         names_file = fd.readline().split(" ", 1)[1].rstrip("\n")
     our_name = AddNameAllocation(honeyd_home + names_file, our_ip).upper()

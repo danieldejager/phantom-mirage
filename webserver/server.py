@@ -2,19 +2,19 @@
 # Copyright (c) 2004 Niels Provos <provos@citi.umich.edu>
 # All rights reserved.
 #
-"""Honeyd internal web server: a read-only, local status page.
+"""Phantom Mirage internal web server: a read-only, local status page.
 
 pyextend.c calls make_server(root) once, then handle_request(server,
 request_bytes, client_address) for each complete HTTP request and writes
-the returned bytes back to the client.  There is no socket here; honeyd
+the returned bytes back to the client.  There is no socket here; phantom-mirage
 owns the listening socket (bound to 127.0.0.1 unless --webserver-address
 says otherwise).
 
 Only GET and HEAD are accepted.  "/" (also /index.html, /index.py) is the
-status page, generated from the honeyd module with the standard library.
+status page, generated from the honeyd Python module with the standard library.
 Everything else is served as a static file from the styles/, images/ and
 graphs/ directories under the web root.  Nothing is executed from the web
-root and nothing changes honeyd state.
+root and nothing changes phantom-mirage state.
 """
 
 import html
@@ -28,7 +28,7 @@ import urllib.parse
 
 try:
     import honeyd
-except ImportError:          # imported outside honeyd (tests)
+except ImportError:          # imported outside phantom-mirage (tests)
     honeyd = None
 
 __version__ = "0.2"
@@ -78,20 +78,20 @@ def table(title, explanation, headings, rows, empty=None):
 
 
 def status_page(mod):
-    """Builds the status page from the honeyd module (or a stand-in)."""
+    """Builds the status page from the honeyd Python module (or a stand-in)."""
     config = mod.config()
     parts = []
 
     parts.append(table(
         "Interface Information",
-        "The interfaces Honeyd listens on.",
+        "The interfaces Phantom Mirage listens on.",
         ("Name", "Address", "MTU", "Link Address"),
         [(i["name"], i["address"], i["mtu"], i["link"])
          for i in mod.interfaces()]))
 
     stats = mod.stats_network()
     parts.append(table(
-        "Honeyd Statistics",
+        "Phantom Mirage Statistics",
         "Average traffic over the last minute, hour and day.",
         ("Name", "Minute", "Hour", "Day"),
         [(k, humanize(v[0], "/s"), humanize(v[1], "/s"), humanize(v[2], "/s"))
@@ -101,7 +101,7 @@ def status_page(mod):
         conns = mod.status_connections(proto)
         parts.append(table(
             "Active %s Connections" % proto.upper(),
-            "Connections Honeyd is currently handling.",
+            "Connections Phantom Mirage is currently handling.",
             ("Src IP", "Src Port", "Dst IP", "Dst Port", "Received", "Sent"),
             [(c["src"], c["sport"], c["dst"], c["dport"],
               c["received"], c["sent"]) for c in conns],
@@ -117,10 +117,10 @@ def status_page(mod):
         empty="No addresses are bound."))
 
     parts.append(table(
-        "Honeyd Static Configuration", "Files Honeyd was started with.",
+        "Phantom Mirage Static Configuration", "Files Phantom Mirage was started with.",
         ("Key", "Value"), sorted(config.items())))
 
-    title = "Honeyd %s Status" % config.get("version", "")
+    title = "Phantom Mirage I %s Status" % config.get("version", "")
     return """<!DOCTYPE html>
 <html>
 <head>
@@ -174,7 +174,7 @@ class HoneydRequestHandler(http.server.BaseHTTPRequestHandler):
         self.close_connection = True
         try:
             self.handle_one_request()
-        except Exception as e:                  # never take honeyd down
+        except Exception as e:                  # never take phantom-mirage down
             self.log_message("internal error: %r", e)
             self.wfile = io.BytesIO()
             self.send_error(500)
@@ -206,7 +206,7 @@ class HoneydRequestHandler(http.server.BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         if path in INDEX_PATHS:
             if self.server.mod is None:
-                self.send_error(503, "honeyd module not available")
+                self.send_error(503, "honeyd Python module not available")
                 return
             body = status_page(self.server.mod).encode("utf-8")
             self.send_body(body, "text/html; charset=utf-8", head_only, True)

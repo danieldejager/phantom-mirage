@@ -1,20 +1,20 @@
 .\"
 .\" Copyright (c) 2004 Niels Provos <provos@citi.umich.edu>
 .\"
-.Dd March 21, 2004
-.Dt HONEYDCTL 1
+.Dd October 22, 2026
+.Dt PHANTOM-MIRAGE-CTL 1
 .Sh NAME
-.Nm honeydctl
-.Nd Honey Control
+.Nm phantom-mirage-ctl
+.Nd Phantom Mirage I control console
 .Sh SYNOPSIS
-.Nm honeyd
+.Nm
 .Op Fl v
 .Op Fl t Ar seconds
 .Op Ar socket
 .Sh DESCRIPTION
-.Nm Honeydctl
+.Nm phantom-mirage-ctl
 is used to connect to
-.Nm Honeyd's
+.Nm phantom-mirage's
 management console.
 .Pp
 The options are as follows:
@@ -25,15 +25,15 @@ Tells
 to output all conversations.
 .It Fl t Ar seconds
 Specifies the timeout in seconds when connection to
-.Nm Honeyd .
+.Nm phantom-mirage .
 .El
 .Pp
 Using
 .Nm ,
 it is possible to dynamically configure
-.Nm Honeyd . 
+.Nm phantom-mirage . 
 All commands that can be specified in a regular
-.Nm Honeyd
+.Nm phantom-mirage
 configuration file, may also be specified on the console.
 The tool understand the following additional commands:
 .Bl -tag -width listatemplateaa
@@ -45,20 +45,20 @@ The command also matches templates based on wild cards similar
 to file system globbing.
 .El
 .Sh FILES
-.Bl -tag -width /var/run/honeyd/honeyd.sock
-.It Pa /var/run/honeyd/honeyd.sock
+.Bl -tag -width /run/phantom-mirage/phantom-mirage.sock
+.It Pa /run/phantom-mirage/phantom-mirage.sock
 The default socket that
 .Nm
 connects to.
-.Nm Honeyd
+.Nm phantom-mirage
 creates it in a root-owned directory with mode 0700, the socket itself
 with mode 0600, and checks the peer credentials of every connection, so
 by default only root may use
 .Nm .
 If
-.Nm honeyd
+.Nm phantom-mirage
 is started with the environment variable
-.Ev HONEYD_UI_GROUP
+.Ev PHANTOM_MIRAGE_UI_GROUP
 set to a group name, the directory becomes 0750 and the socket 0660
 with that group, and clients whose primary group matches are accepted
 (e.g. run
@@ -66,7 +66,23 @@ with that group, and clients whose primary group matches are accepted
 Access to the socket is equivalent to code execution.
 .El
 .Sh SEE ALSO
-.Xr honeyd 8
+.Xr phantom-mirage 8
+.Sh HISTORY
+.Nm
+is part of Phantom Mirage I, a member of the Phantom deception product
+range.
+Phantom Mirage I is based on
+.Em Honeyd
+by Niels Provos (2002\(en2007) and later contributors, and is
+distributed under the GNU General Public License, version 2 or later.
+The program was called
+.Nm honeydctl
+before the rename; the
+.Ev HONEYD_*
+environment variables are still accepted but deprecated.
 .Sh AUTHORS
 Niels Provos
 .Aq provos@citi.umich.edu
+.Pp
+Phantom Mirage I packaging and rename: Daniel de Jager
+.Aq ddejager@dandejager.com

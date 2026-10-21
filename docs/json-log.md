@@ -1,26 +1,26 @@
 # JSON Lines event log
 
-`--json-log=FILE` makes honeyd also write one JSON object per line for each connection, packet and service event, so a log shipper (Fluent Bit, Vector, Filebeat, ...) can forward them to a SIEM (Sentinel, Splunk, Elastic) without parsing text. It's off by default. The text logs (`-l`, `-s`) and syslog output don't change.
+`--json-log=FILE` makes phantom-mirage also write one JSON object per line for each connection, packet and service event, so a log shipper (Fluent Bit, Vector, Filebeat, ...) can forward them to a SIEM (Sentinel, Splunk, Elastic) without parsing text. It's off by default. The text logs (`-l`, `-s`) and syslog output don't change.
 
 ```sh
-honeyd -d -f honeyd.conf -i eth0 --json-log=/var/log/honeyd/events.jsonl
-honeyd -d -f honeyd.conf -i eth0 --json-log=-     # stdout (containers)
+phantom-mirage -d -f phantom-mirage.conf -i eth0 --json-log=/var/log/honeyd/events.jsonl
+phantom-mirage -d -f phantom-mirage.conf -i eth0 --json-log=-     # stdout (containers)
 ```
 
 Every event carries a `sensor_id` (`--sensor-id=STR`, default the hostname) so events from several sensors can be told apart. `--heartbeat=SECONDS` (off by default) adds a periodic `heartbeat` event with uptime and packet counters, so the SIEM can alert on a silent sensor (#30).
 
 ```sh
-honeyd ... --json-log=- --sensor-id=dmz-01 --heartbeat=60
+phantom-mirage ... --json-log=- --sensor-id=dmz-01 --heartbeat=60
 ```
 
-In the Docker image, set `HONEYD_JSON_LOG=stdout`, `HONEYD_SENSOR_ID` and `HONEYD_HEARTBEAT` (see [docker.md](docker.md)).
+In the Docker image, set `PHANTOM_MIRAGE_JSON_LOG=stdout`, `PHANTOM_MIRAGE_SENSOR_ID` and `PHANTOM_MIRAGE_HEARTBEAT` (see [docker.md](docker.md)).
 
 ## Behaviour
 
 - **One complete line per event.** Each event is built in memory and written in one go, then flushed. The file is opened in append mode.
-- **Privileges.** Like the text logs, the file is opened *after* honeyd drops privileges (to `nobody` by default), so the file or directory must be writable by that user. `-` (stdout) avoids this.
+- **Privileges.** Like the text logs, the file is opened *after* phantom-mirage drops privileges (to `nobody` by default), so the file or directory must be writable by that user. `-` (stdout) avoids this.
 - **Rotation.** `SIGUSR1` reopens the JSON log together with the text logs (rename the file, then send `kill -USR1`). stdout isn't reopened.
-- **Write errors** (disk full, closed pipe) are reported to syslog once. honeyd keeps running, and logs again when writes succeed.
+- **Write errors** (disk full, closed pipe) are reported to syslog once. phantom-mirage keeps running, and logs again when writes succeed.
 - **Strings.** Escaped so every line is valid JSON *and pure ASCII*. Quotes, backslashes and control characters are escaped. Bytes ≥ 0x7f are written as `\u00XX` (one code point per byte), because service output is attacker-controlled and needn't be UTF-8.
 
 ## Schema (`"v": 1`, revision 1.1)
@@ -47,18 +47,18 @@ Fields are omitted when they don't apply. Consumers should ignore unknown fields
 | `bytes` | int | `packet` | IP packet length |
 | `tcp_flags` | string | tcp `packet` | flags in `FSRPAUEC` order, e.g. `SA` |
 | `os_guess` | string | `packet`, `connection.start` | passive OS fingerprint of the source, if known |
-| `comment` | string | `packet` | honeyd's remark for the packet, if any |
+| `comment` | string | `packet` | phantom-mirage's remark for the packet, if any |
 | `bytes_in`, `bytes_out` | int | `connection.end` | payload bytes received from / sent to the peer |
 | `message` | string | `service` | a line of output from a service script or subsystem (stderr), newline kept |
-| `uptime_s` | int | `heartbeat` | seconds since honeyd started serving (1.1) |
+| `uptime_s` | int | `heartbeat` | seconds since phantom-mirage started serving (1.1) |
 | `packets_in` | int | `heartbeat` | IP packets received for processing since start (1.1) |
-| `packets_out` | int | `heartbeat` | IP packets sent by honeyd since start (1.1) |
+| `packets_out` | int | `heartbeat` | IP packets sent by phantom-mirage since start (1.1) |
 | `connections` | int | `heartbeat` | `connection.start` events since start (1.1) |
 
 ### Events
 
 - **`connection.start` / `connection.end`:** a TCP connection or UDP flow to a honeypot started or ended. These are the same as the `S` and `E` lines in the text log.
-- **`packet`:** a packet logged by honeyd: probes to closed or filtered ports, ICMP, other protocols, and honeyd's own replies. These are the same as the `-` lines in the text log.
+- **`packet`:** a packet logged by phantom-mirage: probes to closed or filtered ports, ICMP, other protocols, and phantom-mirage's own replies. These are the same as the `-` lines in the text log.
 - **`service`:** output from a service script or subsystem. These are the same lines as the service log (`-s`).
 - **`heartbeat`:** written every `--heartbeat` seconds (off by default). It has only `ts`, `v`, `event`, `sensor_id` and the counters; there are no protocol or address fields. Counters are cumulative since start and reset on restart.
 
@@ -74,7 +74,7 @@ Fields are omitted when they don't apply. Consumers should ignore unknown fields
 
 ### SIEM mapping hints
 
-| honeyd | Elastic ECS | Splunk CIM | Sentinel ASIM |
+| phantom-mirage | Elastic ECS | Splunk CIM | Sentinel ASIM |
 |---|---|---|---|
 | `ts` | `@timestamp` | `_time` | `TimeGenerated` |
 | `src_ip` / `src_port` | `source.ip` / `source.port` | `src_ip` / `src_port` | `SrcIpAddr` / `SrcPortNumber` |

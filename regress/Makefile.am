@@ -1,4 +1,4 @@
-# Honeyd Regression Test Suite
+# Phantom Mirage Regression Test Suite
 # Copyright (c) 2004 Niels Provos <provos@citi.umich.edu>
 # All rights reserved.
 #

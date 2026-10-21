@@ -75,7 +75,7 @@ static void
 fatal(const char *fmt, const char *what)
 {
 	syslog(LOG_ERR, fmt, what, strerror(errno));
-	fprintf(stderr, "honeyd: ");
+	fprintf(stderr, "phantom-mirage: ");
 	fprintf(stderr, fmt, what, strerror(errno));
 	fprintf(stderr, "\n");
 	exit(EXIT_FAILURE);

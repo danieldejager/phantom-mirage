@@ -25,9 +25,9 @@ smbcfg = os.path.join(tmp, "smb.cfg")
 with open(smbcfg, "w") as f:
     f.write("NATIVE_OS Windows 5.1\nLAN_MANAGER Windows 2000 LAN Manager\n"
             "PRIMARY_DOMAIN WORKGROUP\nTIME_ZONE 65176\n")
-ENV = dict(os.environ, HONEYD_HOME="", HONEYD_TEMPLATE_NAME="10.99.0.10",
-           HONEYD_IP_SRC="10.0.0.1", HONEYD_IP_DST="10.99.0.10",
-           HONEYD_INTERFACE="lo", PATH="/usr/bin:/bin")
+ENV = dict(os.environ, PHANTOM_MIRAGE_HOME="", PHANTOM_MIRAGE_TEMPLATE_NAME="10.99.0.10",
+           PHANTOM_MIRAGE_IP_SRC="10.0.0.1", PHANTOM_MIRAGE_IP_DST="10.99.0.10",
+           PHANTOM_MIRAGE_INTERFACE="lo", PATH="/usr/bin:/bin")
 failures = []
 
 

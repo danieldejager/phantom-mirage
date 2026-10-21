@@ -1,14 +1,18 @@
-Honeyd (version: see AC_INIT in configure.ac, or run `honeyd --version`)
-Copyright (c) 2002 - 2007 Niels Provos <provos@citi.umich.edu>
+Phantom Mirage I (version: see AC_INIT in configure.ac, or run `phantom-mirage --version`)
+Part of the Phantom deception product range.
+
+Based on Honeyd, Copyright (c) 2002 - 2007 Niels Provos <provos@citi.umich.edu>
+Distributed under the GNU General Public License, version 2 or later
+(see LICENSE). See NOTICE for attribution and the rename map.
 -------------------------------------------------------------------------
 
-About Honeyd:
+About Phantom Mirage:
 -------------
 
-Honeyd is a small daemon that creates virtual hosts on a network.  The
+Phantom Mirage is a small daemon that creates virtual hosts on a network.  The
 hosts can be configured to run arbitrary services, and their TCP
 personality can be adapted so that they appear to be running certain
-versions of operating systems.  Honeyd enables a single host to claim
+versions of operating systems.  Phantom Mirage enables a single host to claim
 multiple addresses - I have tested up to 65536 - on a LAN for network
 simulation.
 
@@ -20,7 +24,7 @@ is also possible to proxy it to another machine.
 Installation:
 -------------
 
-Honeyd depends on several libraries:
+Phantom Mirage depends on several libraries:
 
  - libevent  - event notification
  - libdnet   - packet creation
@@ -44,7 +48,7 @@ Python is optional. The regression tests in regress/ need python3 and
 python3-dpkt. Embedded Python 3 service scripts ("internal" services) need
 ./configure --with-python and python3-dev (see docs/python.md).
 
-To build honeyd, run the following commands:
+To build phantom-mirage, run the following commands:
 
 $ ./autogen.sh
 $ ./configure
@@ -62,26 +66,26 @@ Documentation:
 You can find documentation as part of this release.  The manual
 page can be accessed with the following commands:
 
-$ man honeyd
+$ man phantom-mirage
 
 or in the source directory
 
-$ nroff -mdoc honeyd.8
+$ nroff -mdoc phantom-mirage.8
 
 More information can be found at http://www.honeyd.org/ and https://github.com/DataSoft/Honeyd
 
 Running:
 --------
 
-Honeyd requires root-privileges for execution.  Normally, you run it
+Phantom Mirage requires root-privileges for execution.  Normally, you run it
 with arguments similiar to the following:
 
 $ sudo ./honeyd -d -f config.sample 10.0.0.0/8
 
-It is strongly recommend that you run Honeyd in a chroot environment
-under a sandbox like systrace.  If possible, Honeyd drops privileges
+It is strongly recommend that you run Phantom Mirage in a chroot environment
+under a sandbox like systrace.  If possible, Phantom Mirage drops privileges
 after creating its raw sockets.  This depends on your configuration
-file.  You can force privileges to be dropped by setting Honeyd's uid
+file.  You can force privileges to be dropped by setting Phantom Mirage's uid
 and gid via the -u <uid> and -g <gid> flags.
 
 Testing
@@ -89,16 +93,16 @@ Testing
 
 To empirically verify the quality of OS scan results, a bash script named
 ostest is included. There are a few "gotcha"s with this, however. Normally,
-honeyd ignores packets coming from the same machine that it's running on
+phantom-mirage ignores packets coming from the same machine that it's running on
 so as to avoid routing loops. (or so it claims, at least) So scanning
 yourself doesn't work.
 
 An ugly hack to make this work is to use a separate hardware ethernet
 interface such as a cheap usb-ethernet adapter. You then have two eth adapters,
 call them eth0 and eth1. Set up a route so that the IP address given to 
-ostest is routing to eth0. You then set up honeyd to listen on eth1. 
+ostest is routing to eth0. You then set up phantom-mirage to listen on eth1. 
 
-Honeyd will see packets coming from eth0 and assume that it is a different
+Phantom Mirage will see packets coming from eth0 and assume that it is a different
 machine than ours, and not drop them.
 
 License:

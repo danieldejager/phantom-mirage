@@ -14,7 +14,7 @@
 # (Whether nmap reports an exact "OS details" line or only a top guess
 # depends on timing-based tests such as TCP ISN rate, so the two are not
 # told apart; nmap.log has the full output, EXACT/GUESS per target.)
-# The result is compared with nmap.output.1. honeyd runs with -R 1, so
+# The result is compared with nmap.output.1. phantom-mirage runs with -R 1, so
 # its answers are the same every run. Needs root, nmap, python3-dpkt.
 #
 #   python3 nmap.py        compare      -g  regenerate      -d  debug
@@ -133,11 +133,11 @@ def main():
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     known("../nmap-os-db")
     make_configuration("config.nmap")
-    reg = regress.regress("Nmap fingerprints", "../honeyd", "config.nmap",
+    reg = regress.regress("Nmap fingerprints", "../phantom-mirage", "config.nmap",
                           debug="-d" in flags)
     reg.generate = "-g" in flags
     # nmap runs in its own network namespace on hdt1 (192.0.2.1), so
-    # nothing it uses is a local address for honeyd's side: honeyd's
+    # nothing it uses is a local address for phantom-mirage's side: phantom-mirage's
     # replies go out hdt0 and nmap sees them like a remote scanner would.
     make_ns()
     if NETNS is None:

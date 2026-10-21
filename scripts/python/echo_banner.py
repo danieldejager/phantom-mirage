@@ -30,7 +30,7 @@ def honeyd_readdata(state, data):
         honeyd.read_selector(honeyd.EVENT_ON)
     honeyd.write_selector(honeyd.EVENT_ON)
     honeyd.log("python echo %d bytes from %s"
-               % (len(data), state["env"]["HONEYD_IP_SRC"]))
+               % (len(data), state["env"]["PHANTOM_MIRAGE_IP_SRC"]))
 
 
 def honeyd_writedata(state):

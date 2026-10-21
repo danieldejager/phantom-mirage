@@ -72,7 +72,7 @@ for o, a in opts:
             usage()
             sys.exit(1)
 
-reg = regress.regress("routing behavior", "../honeyd", "config.2", debug)
+reg = regress.regress("routing behavior", "../phantom-mirage", "config.2", debug)
 reg.generate = generate
 reg.run(RouteOne())
 reg.finish()

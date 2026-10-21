@@ -1116,7 +1116,13 @@ pyextend_connection_start(struct tuple *hdr, struct command *cmd,
 	os_name = honeyd_osfp_name(&ip);
 
 	pArgs = PyTuple_New(1);
-	pValue = Py_BuildValue("{sssssisiss}",
+	/* PHANTOM_MIRAGE_* keys, plus the legacy HONEYD_* keys for old scripts */
+	pValue = Py_BuildValue("{sssssisisssssssisiss}",
+	    "PHANTOM_MIRAGE_IP_SRC", addr_ntoa(&src),
+	    "PHANTOM_MIRAGE_IP_DST", addr_ntoa(&dst),
+	    "PHANTOM_MIRAGE_SRC_PORT", hdr->sport,
+	    "PHANTOM_MIRAGE_DST_PORT", hdr->dport,
+	    "PHANTOM_MIRAGE_REMOTE_OS", os_name,
 	    "HONEYD_IP_SRC", addr_ntoa(&src),
 	    "HONEYD_IP_DST", addr_ntoa(&dst),
 	    "HONEYD_SRC_PORT", hdr->sport,

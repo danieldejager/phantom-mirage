@@ -1,0 +1,53 @@
+Phantom Mirage I
+================
+
+Phantom Mirage I is part of the Phantom deception product range.
+
+Phantom Mirage I is based on Honeyd
+-----------------------------------
+
+Phantom Mirage I is a renamed and modified version of Honeyd, the virtual
+honeypot daemon written by Niels Provos <provos@citi.umich.edu>
+(Copyright (c) 2002-2007 Niels Provos), with later contributions by
+DataSoft Corp (Nova), the Debian packagers (Javier Fernandez-Sanguino Pena
+and others) and the other authors credited in the source files, the
+ChangeLog and debian/copyright.
+
+Honeyd is free software released under the GNU General Public License,
+version 2 or (at your option) any later version. Phantom Mirage I is
+distributed under the same terms; the full licence text is in LICENSE.
+All original copyright notices, licence notices and credits in the source
+files are retained unchanged. Some files carry additional or different
+permissive notices (e.g. BSD-style); those also remain in force.
+
+The rename (2026, Daniel de Jager <ddejager@dandejager.com>) changed
+program, package, path and environment-variable names only; it does not
+change the licence or the authorship of the original code. "Honeyd" is the
+name of the original project; Phantom Mirage I is not endorsed by its
+authors.
+
+Rename map
+----------
+
+  honeyd                      -> phantom-mirage
+  honeydctl                   -> phantom-mirage-ctl
+  honeydstats                 -> phantom-mirage-stats
+  hsniff                      -> phantom-mirage-sniff
+  libhoneyd.so                -> libphantom-mirage.so
+  /usr/share/honeyd           -> /usr/share/phantom-mirage
+  /usr/lib/honeyd             -> /usr/lib/phantom-mirage
+  /etc/honeypot               -> /etc/phantom-mirage
+  /etc/honeypot/honeyd.conf   -> /etc/phantom-mirage/phantom-mirage.conf
+  /var/log/honeypot           -> /var/log/phantom-mirage
+  /var/run/honeyd/honeyd.sock -> /run/phantom-mirage/phantom-mirage.sock
+  /var/run/honeyd.pid         -> /run/phantom-mirage.pid
+  ~/.config/honeyd            -> ~/.config/phantom-mirage
+  HONEYD_* environment        -> PHANTOM_MIRAGE_* (HONEYD_* still accepted,
+                                 deprecated, and still exported to scripts)
+  Debian honeyd/honeyd-common -> phantom-mirage/phantom-mirage-common
+  honeyd.service              -> phantom-mirage.service
+
+Kept for compatibility: the embedded Python module is still "honeyd" and
+the Python service hooks are still honeyd_init/honeyd_readdata/
+honeyd_writedata/honeyd_end; plugin headers still install under
+<includedir>/honeyd so existing #include <honeyd/...> lines keep working.

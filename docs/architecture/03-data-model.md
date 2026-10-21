@@ -1,6 +1,6 @@
 # 03 – Data model (in-memory)
 
-Honeyd has no database. All state lives in C structs held in BSD `tree.h` splay trees (`SPLAY_HEAD`) and `queue.h` lists (`TAILQ_HEAD`) from `compat/sys/tree.h`. The diagrams below use Mermaid ER notation; "PK" marks the field used as the splay-tree key.
+Phantom Mirage has no database. All state lives in C structs held in BSD `tree.h` splay trees (`SPLAY_HEAD`) and `queue.h` lists (`TAILQ_HEAD`) from `compat/sys/tree.h`. The diagrams below use Mermaid ER notation; "PK" marks the field used as the splay-tree key.
 
 ## Configuration entities
 
@@ -216,4 +216,4 @@ erDiagram
     PORT_ENCAPSULATE { void_ptr con }
 ```
 
-TCP and UDP connections live in two splay trees (`tcpcons`, `udpcons`) keyed on the 4-tuple (`conhdr_compare`, util.c:363; trees declared honeyd.c:124–126) plus LRU lists (`struct conlru`) used to evict old state (limit `HONEYD_MAX_CONNECTS` = 32000, honeyd.h). Timeouts: SYN/close-wait 60 s, idle 300 s, UDP 60 s (honeyd.h).
+TCP and UDP connections live in two splay trees (`tcpcons`, `udpcons`) keyed on the 4-tuple (`conhdr_compare`, util.c:363; trees declared honeyd.c:124–126) plus LRU lists (`struct conlru`) used to evict old state (limit `PHANTOM_MIRAGE_MAX_CONNECTS` = 32000, honeyd.h). Timeouts: SYN/close-wait 60 s, idle 300 s, UDP 60 s (honeyd.h).

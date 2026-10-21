@@ -31,7 +31,7 @@ sequenceDiagram
         A->>P: ACK (handshake complete)
         P->>T: (same path)
         T->>C: generic_connect(tmpl, conhdr, cmd, con)
-        C->>S: socketpair + fork/exec script, HONEYD_* env, drop to template uid/gid
+        C->>S: socketpair + fork/exec script, PHANTOM_MIRAGE_* env, drop to template uid/gid
         A->>T: payload
         T->>S: write to cmd.pfd (cmd_trigger_write)
         S-->>C: stdout data (libevent read cb)
@@ -120,7 +120,7 @@ sequenceDiagram
     O->>N: reply that matches the configured nmap fingerprint
 ```
 
-Inbound packets are also matched against the passive PF fingerprints (`honeyd_osfp_init`, osfp.c / pf_osfp.c) so the *attacker's* OS is known; this feeds `HONEYD_REMOTE_OS` (command.c:236) and `source os =` conditions for dynamic templates (condition.c).
+Inbound packets are also matched against the passive PF fingerprints (`honeyd_osfp_init`, osfp.c / pf_osfp.c) so the *attacker's* OS is known; this feeds `PHANTOM_MIRAGE_REMOTE_OS` (command.c:236) and `source os =` conditions for dynamic templates (condition.c).
 
 ## 4.5 Routing topology simulation
 

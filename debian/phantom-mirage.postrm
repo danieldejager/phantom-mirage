@@ -2,17 +2,17 @@
 set -e
 
 
-HONEYUSER=honeyd
+HONEYUSER=phantom-mirage
 
 case "$1" in
        purge)
        	# Remove all log and configuration files
-  	for DIR in /etc/honeypot /var/log/honeypot ; do
+  	for DIR in /etc/phantom-mirage /var/log/phantom-mirage ; do
 		[ -d $DIR ]  && find $DIR \( -type f -o -type l \) -exec rm -f {} \;
 	done
-	# File created by honeyd 
-	[ -f /usr/share/honeyd/webserver/server.pyc ] && 
-		rm -f /usr/share/honeyd/webserver/server.pyc
+	# File created by phantom-mirage 
+	[ -f /usr/share/phantom-mirage/webserver/server.pyc ] && 
+		rm -f /usr/share/phantom-mirage/webserver/server.pyc
 
         # find first and last SYSTEM_UID numbers
          for LINE in `grep SYSTEM_UID /etc/adduser.conf | grep -v "^#"`; do

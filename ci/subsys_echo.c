@@ -1,6 +1,6 @@
 /*
  * Minimal honeyd subsystem for CI (issue #22): listens on 18080 via the
- * libhoneyd.so shim and answers every connection with "hello\n".
+ * libphantom-mirage.so shim and answers every connection with "hello\n".
  */
 #include <sys/socket.h>
 #include <netinet/in.h>

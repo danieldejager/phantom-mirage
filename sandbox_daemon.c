@@ -61,7 +61,7 @@ sd_sigsys(int sig, siginfo_t *si, void *ctx)
 	char buf[96], num[16];
 	int n = si->si_syscall, i = sizeof(num);
 	size_t len;
-	const char *pre = "honeyd: sandbox-daemon: denied syscall ";
+	const char *pre = "phantom-mirage: sandbox-daemon: denied syscall ";
 
 	(void)sig; (void)ctx;
 	num[--i] = '\0';

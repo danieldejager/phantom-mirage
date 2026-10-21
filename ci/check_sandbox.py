@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """#16: connect to the probe script port, read its report, and check the
-/proc/<pid>/status of honeyd and of the script child.
+/proc/<pid>/status of phantom-mirage and of the script child.
 
-usage: check_sandbox.py MODE HONEYD_PID   (MODE: default | sandbox)
+usage: check_sandbox.py MODE PHANTOM_MIRAGE_PID   (MODE: default | sandbox)
 """
 import socket, subprocess, sys, time
 
@@ -30,7 +30,7 @@ def hardened(name, st, bnd=True):
     check(name + " NoNewPrivs=1", st["NoNewPrivs"] == ["1"])
 
 hst = status(hpid)
-hardened("honeyd", hst)
+hardened("phantom-mirage", hst)
 
 s = socket.create_connection(("10.99.0.10", 2325), timeout=10)
 buf, t0 = b"", time.time()
@@ -47,17 +47,17 @@ st = status(pid)
 hardened("script", st)
 
 landlock = len(sys.argv) < 4 or sys.argv[3] != "no-landlock"
-# Compare filter counts with honeyd's own: CI containers already run
+# Compare filter counts with phantom-mirage's own: CI containers already run
 # under Docker's default seccomp profile, so "Seccomp: 2" alone proves
 # nothing.
 nf = lambda d: int(d.get("Seccomp_filters", ["0"])[0])
-print("seccomp filters: honeyd=%d script=%d" % (nf(hst), nf(st)))
+print("seccomp filters: phantom-mirage=%d script=%d" % (nf(hst), nf(st)))
 if mode == "default":
     check("script has no extra seccomp filter", nf(st) == nf(hst))
     check("script may write /tmp", report.get("write_tmp") == "ok")
 else:
     check("script Seccomp=2 (filter)", st["Seccomp"] == ["2"])
-    check("script has honeyd's extra seccomp filter", nf(st) == nf(hst) + 1)
+    check("script has phantom-mirage's extra seccomp filter", nf(st) == nf(hst) + 1)
     check("unshare denied (seccomp)", report.get("unshare") == "denied")
     if landlock:
         check("write /tmp denied (landlock)", report.get("write_tmp") == "denied")

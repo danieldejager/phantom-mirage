@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate a honeyd --json-log file (issue #24) for the CI subsystem test.
+"""Validate a phantom-mirage --json-log file (issue #24) for the CI subsystem test.
 
 usage: check_json_log.py EVENTS.jsonl [SENSOR_ID]
 """
