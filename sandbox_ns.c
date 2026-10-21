@@ -12,8 +12,7 @@
  * tracking, signals and reaping are unchanged); that child hands the
  * script's stdio descriptors, argv and environment to the launcher and
  * waits.  The launcher forks, enters new user, mount, PID, IPC and UTS
- * namespaces (and a network namespace unless the script is listed with
- * --sandbox-script-net), mounts a private /tmp, and runs the script as
+ * and network namespaces (only a downed lo: no network at all), mounts a private /tmp, and runs the script as
  * pid 1 of its PID namespace under the script sandbox (Landlock and the
  * deny-list) plus, with --sandbox-daemon, the daemon's allowlist.  The
  * exit status goes back to the daemon's child, which exits the same
@@ -49,18 +48,6 @@
 
 void cmd_droppriv(uid_t, gid_t);
 
-#define MAX_NET_SCRIPTS	32
-static const char *net_scripts[MAX_NET_SCRIPTS];
-static int nnet_scripts;
-
-int
-sandbox_add_net_script(const char *path)
-{
-	if (nnet_scripts >= MAX_NET_SCRIPTS || path[0] != '/')
-		return (-1);
-	net_scripts[nnet_scripts++] = path;
-	return (0);
-}
 
 #ifdef __linux__
 
@@ -76,7 +63,6 @@ sandbox_add_net_script(const char *path)
 struct ns_req {
 	uint32_t magic;
 	uint32_t uid, gid, nofiles;
-	uint32_t net;		/* 1: keep the host network namespace */
 	uint32_t argc, envc;
 	/* then execcmd, argv[], env[] as NUL-terminated strings */
 };
@@ -183,10 +169,9 @@ ns_run(struct ns_req *req, char *strs, int fd_io, int fd_err, int have_ns)
 	prctl(PR_SET_DUMPABLE, 1);
 	uid = geteuid();
 	gid = getegid();
+	/* always a new network namespace: scripts get no network (#16) */
 	flags = CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWIPC |
-	    CLONE_NEWUTS;
-	if (!req->net)
-		flags |= CLONE_NEWNET;
+	    CLONE_NEWUTS | CLONE_NEWNET;
 	if (have_ns && unshare(flags) == 0) {
 		ns_write("/proc/self/setgroups", "deny");
 		snprintf(map, sizeof(map), "%u %u 1", uid, uid);
@@ -525,19 +510,6 @@ sandbox_ns_main(int argc, char **argv)
  * environment built: have the launcher run the script, wait for it and
  * exit the same way.  Returns only if there is no launcher.
  */
-/* path appears in s as a whole word (delimited by blanks or quotes) */
-static int
-ns_has_word(const char *s, const char *path)
-{
-	size_t l = strlen(path);
-	const char *p;
-
-	for (p = s; (p = strstr(p, path)) != NULL; p++)
-		if ((p == s || strchr(" \t'\"", p[-1]) != NULL) &&
-		    (p[l] == '\0' || strchr(" \t'\"", p[l]) != NULL))
-			return (1);
-	return (0);
-}
 
 void
 sandbox_ns_exec(const char *execcmd, char * const argv[], uid_t uid,
@@ -554,7 +526,7 @@ sandbox_ns_exec(const char *execcmd, char * const argv[], uid_t uid,
 		struct cmsghdr align;
 	} cbuf;
 	size_t off = sizeof(req), l;
-	int chan[2], fds[3], status, i, j;
+	int chan[2], fds[3], status, i;
 	ssize_t n;
 
 	if (ns_ctl == -1)
@@ -568,14 +540,6 @@ sandbox_ns_exec(const char *execcmd, char * const argv[], uid_t uid,
 	req.uid = uid;
 	req.gid = gid;
 	req.nofiles = nofiles;
-	for (i = 0; i < nnet_scripts; i++) {
-		if (strcmp(execcmd, net_scripts[i]) == 0)
-			req.net = 1;
-		/* the command may also come as one "sh -c" string */
-		for (j = 0; argv[j] != NULL; j++)
-			if (ns_has_word(argv[j], net_scripts[i]))
-				req.net = 1;
-	}
 #define PUT(s) do {							\
 	l = strlen(s) + 1;						\
 	if (off + l > sizeof(buf)) {					\

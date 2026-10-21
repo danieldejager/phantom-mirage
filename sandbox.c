@@ -411,31 +411,19 @@ static void
 script_net_handled(struct landlock_ruleset_attr *ra, int abi)
 {
 #ifdef LANDLOCK_ACCESS_NET_BIND_TCP
-	if (!honeyd_sandbox_daemon || abi < 4)
+	/* scripts get no network: TCP bind and connect are handled and no
+	 * port is allowed (#16) */
+	if (abi < 4)
 		return;
-	ra->handled_access_net = LANDLOCK_ACCESS_NET_BIND_TCP;
-	if (!daemon_connect_any)
-		ra->handled_access_net |= LANDLOCK_ACCESS_NET_CONNECT_TCP;
+	ra->handled_access_net = LANDLOCK_ACCESS_NET_BIND_TCP |
+	    LANDLOCK_ACCESS_NET_CONNECT_TCP;
 #endif
 }
 
 static void
 script_net_rules(int rfd, int abi)
 {
-#ifdef LANDLOCK_ACCESS_NET_BIND_TCP
-	struct landlock_net_port_attr np;
-	int i;
-
-	if (!honeyd_sandbox_daemon || abi < 4 || daemon_connect_any)
-		return;
-	for (i = 0; i < ndaemon_ports; i++) {
-		memset(&np, 0, sizeof(np));
-		np.allowed_access = LANDLOCK_ACCESS_NET_CONNECT_TCP;
-		np.port = daemon_ports[i];
-		(void)syscall(SYS_landlock_add_rule, rfd,
-		    LANDLOCK_RULE_NET_PORT, &np, 0);
-	}
-#endif
+	(void)rfd; (void)abi;	/* nothing allowed */
 }
 
 static int

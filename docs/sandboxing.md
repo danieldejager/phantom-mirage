@@ -102,9 +102,17 @@ detaches the host's root.
 * **Without namespaces:** scripts run on the host's root as before; the
   launcher's start-up log line says so.
 
-`--sandbox-script-net=PATH` (repeatable, absolute) keeps the host
-network for scripts whose command line contains `PATH` as a word, for
-proxy-style scripts. They still get every other namespace.
+**No network.** phantom-mirage is run as a standalone system, so
+scripts get no network at all.
+* With namespaces, the network namespace has only a downed `lo`.
+* With or without namespaces, Landlock (ABI 4+) handles TCP `bind` and
+  `connect` and allows no port, so both fail with `EACCES`. This also
+  covers the fallback.
+* The old `--sandbox-script-net` opt-in has been removed. phantom-mirage
+  refuses to start with it and says why.
+* Proxy-style scripts (which need outbound connections) are out of scope
+  until the SaaS integration. `proxy` actions are handled by the daemon
+  itself and are not affected.
 
 **How it fits with `--sandbox-daemon`.** The daemon's seccomp allowlist
 and Landlock both forbid `unshare` and `mount` (Landlock refuses mounts
@@ -118,8 +126,8 @@ environment to the launcher over a socketpair and waits. The launcher
 forks, enters the namespaces, mounts `/tmp` and forks the script as
 pid 1. The script then gets the script sandbox (Landlock with `/tmp`
 writable, the deny-list) and, with `--sandbox-daemon`, also the daemon's
-allowlist and its Landlock TCP rules (no bind, connect only to proxy
-ports). So nothing is looser than when the daemon forked the script
+allowlist. TCP bind and connect are always denied to scripts (see "No
+network" above). So nothing is looser than when the daemon forked the script
 itself. The exit status (including "killed by SIGSYS") is passed back
 and reported as before. If the daemon's child goes away, the launcher
 kills the script's PID namespace. If the daemon dies, the launcher dies
@@ -376,10 +384,11 @@ installed and unused, and the package installs as before.
   (sh, Perl, Python), so a strict seccomp allowlist would break many of
   them. The deny-list removes the kernel attack surface that matters most
   for an escaped script.
-* **No network restriction.** Scripts get their connection on
-  stdin/stdout, but they can still open sockets. Landlock ABI 4+ can
-  restrict TCP bind/connect, but proxy-style scripts need outbound
-  connections. This is not done yet.
+* **No outbound scripts.** Scripts get no network by design (see "No
+  network"). Proxy-style scripts are out of scope until the SaaS
+  integration. On kernels without Landlock ABI 4 (before 6.7) the fallback
+  without namespaces can't stop TCP connects. UDP and raw sockets are
+  only stopped by the network namespace.
 * **Namespaces need unprivileged user namespaces.** Without them (see
   "Degrading" above) scripts share the host's network, PID and IPC
   namespaces and have no `/tmp`. Subsystems never get namespaces,
@@ -424,8 +433,12 @@ installed and unused, and the package installs as before.
   makes that job and the arm64 job fail if Landlock isn't active.
 * `ci/script_ns.sh` runs a probe script on two ports, with and without
   `--sandbox-daemon`. The isolated one must report pid 1, hostname
-  `phantom-mirage-script`, only a downed `lo`, and a private `/tmp`; the
-  `--sandbox-script-net` one must see the host's interfaces. The
+  `phantom-mirage-script`, only a downed `lo`, and a private `/tmp`.
+  The other must fail to connect to a listener on the host's
+  `127.0.0.1` and (Landlock ABI 4+) to bind a TCP port, in every mode
+  including the fallback. `--sandbox-script-net` must be refused with a
+  clear error. `ci/systemd_unit.sh` checks the outbound connect under
+  systemd too. The
   **script-ns** jobs (Ubuntu 24.04 amd64 and arm64, directly on the
   runner with `HD_NS=require`) run it, then again with
   `user.max_user_namespaces=0` to check the logged fallback. The ASan
