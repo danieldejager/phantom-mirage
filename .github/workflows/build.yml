@@ -493,6 +493,12 @@ jobs:
           test -e /etc/phantom-mirage/phantom-mirage.conf
           test -e /usr/share/phantom-mirage/nmap-os-db
           getent passwd phantom-mirage
+          # AppArmor profile shipped; this container has no AppArmor and the
+          # install above must still have succeeded (#16)
+          test -f /etc/apparmor.d/usr.lib.phantom-mirage.pm-script-ns
+          test -f /etc/apparmor.d/abstractions/phantom-mirage-script
+          ls /usr/lib/*/phantom-mirage/pm-script-ns
+          ! command -v apparmor_parser
           # log dir from debian/phantom-mirage.dirs, owned by the daemon user
           test "$(stat -c '%U' /var/log/phantom-mirage)" = phantom-mirage
           # systemd unit: shipped, valid, not enabled (matches --no-start)
@@ -549,13 +555,21 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends iproute2 python3
           systemctl cat phantom-mirage
 
-      - name: Allow unprivileged user namespaces
-        # Ubuntu 24.04 restricts them for unconfined programs by default;
-        # see docs/sandboxing.md
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: AppArmor profile is loaded, enforcing
+        # Ubuntu's default kernel.apparmor_restrict_unprivileged_userns=1
+        # stays on: the shipped profile grants userns to the launcher
+        run: |
+          sysctl kernel.apparmor_restrict_unprivileged_userns
+          ls -l /etc/apparmor.d/usr.lib.phantom-mirage.pm-script-ns /etc/apparmor.d/abstractions/phantom-mirage-script /usr/lib/*/phantom-mirage/pm-script-ns
+          sudo apparmor_parser -Q -K /etc/apparmor.d/usr.lib.phantom-mirage.pm-script-ns
+          sudo aa-status | grep -E 'pm-script-ns|phantom-mirage-script'
 
       - name: Run the service (ci/systemd_unit.sh)
-        run: sudo bash src/phantom-mirage/ci/systemd_unit.sh
+        run: sudo HD_APPARMOR=require bash src/phantom-mirage/ci/systemd_unit.sh
+
+      - name: Kernel log (AppArmor)
+        if: always()
+        run: sudo journalctl -k --no-pager | grep -i apparmor | tail -n 50 || true
 
       - name: Journal
         if: always()

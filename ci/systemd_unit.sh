@@ -3,14 +3,16 @@
 # with its defaults (--sandbox-daemon --sandbox-scripts, ProtectSystem=
 # strict, RestrictNamespaces=user mnt pid ipc uts net). Checks that the
 # daemon is sandboxed, a script gets its own namespaces, the pid file and
-# control socket behave across restart/stop, nothing is denied, and that
+# control socket behave across restart/stop, nothing is denied (with
+# HD_APPARMOR=require: the launcher runs under its enforcing AppArmor
+# profile with the userns restriction on, and no AppArmor denials), and that
 # removing the sandbox flags gives the loud warning. Run as root on a host
 # booted with systemd, after installing the .deb.
 set -uo pipefail
 U=phantom-mirage
 rc=0
 fail() { echo "systemd-unit: $*" >&2; rc=1; }
-since=$(date '+%Y-%m-%d %H:%M:%S')
+since=$(date '+%Y-%m-%d %H:%M:%S'); since0=$since
 jr() { journalctl -u $U --since "$since" --no-pager -o cat; }
 
 ip route replace 10.99.0.0/24 dev lo
@@ -63,6 +65,14 @@ check_running() {
   grep -Eq '^NoNewPrivs:\s+1' /proc/$mp/status || fail "$what: no_new_privs not set"
   grep -Eq '^Seccomp:\s+2' /proc/$mp/status || fail "$what: no seccomp filter"
   echo 'list template' | timeout 5 phantom-mirage-ctl | grep -q 10.99.0.12 || fail "$what: phantom-mirage-ctl list failed"
+  # AppArmor (debian/apparmor): only the launcher is confined, enforcing
+  if [ "${HD_APPARMOR:-}" = require ]; then
+    lp=$(pgrep -x pm-script-ns | head -1)
+    [ -n "$lp" ] || fail "$what: no pm-script-ns launcher process"
+    lab=$(cat /proc/$lp/attr/apparmor/current 2>/dev/null || cat /proc/$lp/attr/current)
+    echo "$what: launcher $lp: $lab; daemon: $(cat /proc/$mp/attr/apparmor/current 2>/dev/null || cat /proc/$mp/attr/current)"
+    [ "$lab" = "pm-script-ns (enforce)" ] || fail "$what: launcher is '$lab', not pm-script-ns (enforce)"
+  fi
   out=$(probe); echo "$what: $out"
   # (hostname stays the host's: the unit's ProtectHostname=yes forbids
   # sethostname, though the script still has its own UTS namespace)
@@ -98,6 +108,16 @@ systemctl is-active -q $U || fail "no-sandbox: not active"
 jr | grep -q 'WARNING: running under systemd WITHOUT --sandbox-daemon and --sandbox-scripts' || { fail "no-sandbox: no warning"; jr; }
 systemctl stop $U
 rm -rf /etc/systemd/system/$U.service.d; systemctl daemon-reload
+
+if [ "${HD_APPARMOR:-}" = require ]; then
+  aa-status | sed -n '/profiles are in enforce mode/,/profiles are in complain/p' | grep -E 'pm-script-ns|phantom-mirage-script|enforce mode|complain' || true
+  aa-status --json 2>/dev/null | python3 -c 'import json,sys; p=json.load(sys.stdin)["profiles"]; print({k:v for k,v in p.items() if "mirage" in k or "script-ns" in k}); assert p.get("pm-script-ns")=="enforce" and p.get("phantom-mirage-script")=="enforce", p' \
+    || fail "AppArmor profiles not loaded in enforce mode"
+  sysctl kernel.apparmor_restrict_unprivileged_userns
+  [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1 ] || fail "userns restriction is not on, the test proves nothing"
+  if journalctl -k --since "$since0" --no-pager | grep -E 'apparmor="(DENIED|ALLOWED)"'; then fail "AppArmor denials in the kernel log"; fi
+  if dmesg | grep -E 'apparmor="(DENIED|ALLOWED)"'; then fail "AppArmor denials in dmesg"; fi
+fi
 
 [ $rc = 0 ] && echo "systemd-unit OK"
 exit $rc

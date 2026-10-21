@@ -250,9 +250,10 @@ without either flag logs, at `LOG_CRIT` and on stderr (so in the journal):
 and/or its scripts are NOT sandboxed …`. It still starts.
 
 On Ubuntu 24.04 and later, unprivileged user namespaces are restricted
-for unconfined programs (`kernel.apparmor_restrict_unprivileged_userns=1`).
-There scripts fall back to no namespaces (logged) unless that sysctl is 0
-or an AppArmor profile grants `userns`. Debian 13 allows them.
+to confined programs whose AppArmor profile allows them
+(`kernel.apparmor_restrict_unprivileged_userns=1`). The package ships such
+a profile (next section), so no sysctl change is needed. Debian 13 does not
+restrict them.
 
 CI (**systemd** jobs, Ubuntu 24.04 amd64 and arm64, directly on the
 runner with systemd as PID 1, via `ci/systemd_unit.sh`) builds and
@@ -270,6 +271,63 @@ installs the .deb and runs the unit with its defaults:
 * `systemctl reload` delivers SIGHUP (`ExecReload=+…`: the bounding set
   has no `CAP_KILL`), and nothing is denied.
 * A drop-in with `SANDBOX=` gives the warning.
+
+## AppArmor profile (Debian package)
+
+The launcher is exec'd as `/usr/lib/<multiarch>/phantom-mirage/pm-script-ns` (the package's lib dir), the
+phantom-mirage binary installed a second time under that name. It
+recognises the name and runs only the launcher. This gives it a path of
+its own, so AppArmor can confine it alone. The package ships
+`/etc/apparmor.d/usr.lib.phantom-mirage.pm-script-ns` (and the abstraction
+`/etc/apparmor.d/abstractions/phantom-mirage-script`). `postinst`
+(`dh_apparmor`) loads it in **enforce** mode where AppArmor is enabled.
+Without AppArmor (Debian without it, containers) the files are just
+installed and unused, and the package installs as before.
+
+* **`pm-script-ns`** (the launcher):
+  * `userns,`. Nothing else in the package gets it; the daemon stays
+    unconfined, and its seccomp allowlist and Landlock keep it away from
+    namespaces.
+  * `capability sys_admin`, which only takes effect inside its own user
+    namespace (it has no capabilities in the initial one).
+  * Exactly three mounts: make `/` rprivate, tmpfs on `/tmp`, proc on
+    `/proc`.
+  * Writes to its own `uid_map`/`gid_map`/`setgroups`.
+  * Unix sockets for the requests and the passed descriptors, and
+    `kill` for its own children.
+  * Scripts in `/{usr/,}bin`, `/etc/phantom-mirage` and
+    `/usr/share/phantom-mirage` are exec'd with `phantom-mirage-script`
+    stacked: before the exec the launcher writes
+    `stack phantom-mirage-script` to `/proc/self/attr/apparmor/exec`
+    (`change_profile -> &phantom-mirage-script`). If that write fails while
+    it is confined by `pm-script-ns`, the script is not run.
+  * Both profiles use `attach_disconnected` (syslog from the private mount
+    namespace), and `dac_override`/`dac_read_search` are explicitly denied.
+* **`phantom-mirage-script`**, stacked on the launcher's profile:
+  * Under `no_new_privs`, which the daemon sets, AppArmor only allows
+    stacking, not a plain profile change.
+  * A stack is the intersection of its profiles, so scripts get no
+    `userns`, no capabilities and no mounts.
+  * They get only the shared abstraction: read `/etc`, `/usr/share` and
+    the libraries, exec `/{usr/,}bin`, a private `/tmp`, `/dev/null`,
+    inet/inet6/netlink sockets and unix sockets. Landlock and seccomp
+    restrict them further.
+* **Scripts elsewhere** (for example `/opt/...`): add exec and read rules
+  to *both* `/etc/apparmor.d/local/usr.lib.phantom-mirage.pm-script-ns`
+  and `/etc/apparmor.d/local/phantom-mirage-script`, then run
+  `apparmor_parser -r /etc/apparmor.d/usr.lib.phantom-mirage.pm-script-ns`.
+* **Build tree:** with no `pm-script-ns` installed, the launcher runs
+  in-process as before (unconfined; on Ubuntu that means the logged
+  fallback).
+* **CI:** the systemd jobs (Ubuntu 24.04 amd64 and arm64) keep the userns
+  restriction **on** and check all of the following:
+  * Both profiles are loaded in enforce mode (`aa-status`).
+  * The running launcher is `pm-script-ns (enforce)`.
+  * Scripts still get their namespaces.
+  * `journalctl -k` and `dmesg` have no `apparmor="DENIED"` (or
+    `ALLOWED`) lines.
+
+  The Debian 13 .deb job checks the package installs without AppArmor.
 
 ## Known gaps (why this is opt-in)
 

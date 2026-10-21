@@ -96,6 +96,41 @@ ns_write(const char *path, const char *buf)
 	return (ok ? 0 : -1);
 }
 
+/*
+ * Under the shipped AppArmor profile (debian/apparmor) the launcher may
+ * create user namespaces; its scripts must not. Have the kernel stack the
+ * "phantom-mirage-script" profile on the next exec (allowed under
+ * no_new_privs, unlike a plain profile change). Inherited by the fork
+ * that execs the script. Fails closed: 0 if not confined by pm-script-ns,
+ * -1 if confined and the stack could not be requested.
+ */
+static int
+ns_apparmor_stack(void)
+{
+	static const char *cur[] = { "/proc/self/attr/apparmor/current",
+	    "/proc/self/attr/current", NULL };
+	static const char *exe[] = { "/proc/self/attr/apparmor/exec",
+	    "/proc/self/attr/exec", NULL };
+	char label[256];
+	int fd, i, n = -1;
+
+	for (i = 0; cur[i] != NULL && n < 0; i++)
+		if ((fd = open(cur[i], O_RDONLY | O_CLOEXEC)) != -1) {
+			n = read(fd, label, sizeof(label) - 1);
+			close(fd);
+		}
+	if (n <= 0)
+		return (0);	/* no AppArmor */
+	label[n] = '\0';
+	if (strncmp(label, "pm-script-ns", 12) != 0 ||
+	    (label[12] != ' ' && label[12] != '\n' && label[12] != '\0'))
+		return (0);	/* not under our profile */
+	for (i = 0; exe[i] != NULL; i++)
+		if (ns_write(exe[i], "stack phantom-mirage-script") == 0)
+			return (0);
+	return (-1);
+}
+
 static void
 ns_mirror_exit(int status)
 {
@@ -120,6 +155,11 @@ ns_run(struct ns_req *req, char *strs, int fd_io, int fd_err, int have_ns)
 	struct rlimit rl;
 
 	prctl(PR_SET_PDEATHSIG, SIGKILL);
+	if (ns_apparmor_stack() == -1) {
+		syslog(LOG_ERR, "sandbox: cannot stack the AppArmor profile "
+		    "phantom-mirage-script for %s: %m; not running it", strs);
+		_exit(EXIT_FAILURE);
+	}
 	argv = calloc(req->argc + 1, sizeof(char *));
 	envp = calloc(req->envc + 1, sizeof(char *));
 	if (argv == NULL || envp == NULL)
@@ -394,10 +434,18 @@ ns_launcher(int ctl, pid_t parent)
 	}
 }
 
+/*
+ * The launcher is exec'd as PATH_HONEYDLIB/pm-script-ns (the same binary
+ * installed under that name) so that it, and only it, can get its own
+ * AppArmor profile granting "userns" (debian/apparmor). If that file
+ * isn't there (build tree), the forked child becomes the launcher itself.
+ */
 void
 sandbox_ns_start(void)
 {
-	int sv[2];
+	static const char path[] = PATH_HONEYDLIB "/" SANDBOX_LAUNCHER;
+	char fdbuf[16], ppbuf[16], ports[1024], *argv[256];
+	int sv[2], n;
 	pid_t pid, parent = getpid();
 
 	if (!honeyd_sandbox_scripts)
@@ -416,11 +464,44 @@ sandbox_ns_start(void)
 	}
 	if (pid == 0) {
 		close(sv[0]);
+		argv[0] = SANDBOX_LAUNCHER;
+		snprintf(fdbuf, sizeof(fdbuf), "%d", sv[1]);
+		snprintf(ppbuf, sizeof(ppbuf), "%ld", (long)parent);
+		argv[1] = fdbuf;
+		argv[2] = ppbuf;
+		n = sandbox_state_argv(argv + 3, 256 - 3, ports, sizeof(ports));
+		if (n >= 0 && access(path, X_OK) == 0 &&
+		    fcntl(sv[1], F_SETFD, 0) == 0) {
+			char *envp[] = { NULL };
+			execve(path, argv, envp);
+			syslog(LOG_WARNING, "sandbox: exec %s: %m; running "
+			    "the script launcher in-process", path);
+			fcntl(sv[1], F_SETFD, FD_CLOEXEC);
+		}
 		ns_launcher(sv[1], parent);
 		_exit(0);
 	}
 	close(sv[1]);
 	ns_ctl = sv[0];
+}
+
+/* main() of the exec'd launcher: pm-script-ns FD PARENT [settings] */
+int
+sandbox_ns_main(int argc, char **argv)
+{
+	int fd;
+
+	openlog("phantom-mirage", LOG_PERROR | LOG_PID | LOG_CONS, LOG_DAEMON);
+	if (argc < 3 || (fd = atoi(argv[1])) < 3 ||
+	    sandbox_state_parse(argc - 3, argv + 3) == -1) {
+		syslog(LOG_ERR, "%s: started without a valid control socket "
+		    "(it is run by phantom-mirage --sandbox-scripts)",
+		    SANDBOX_LAUNCHER);
+		return (EXIT_FAILURE);
+	}
+	fcntl(fd, F_SETFD, FD_CLOEXEC);
+	ns_launcher(fd, (pid_t)atol(argv[2]));
+	return (0);
 }
 
 /*
@@ -539,6 +620,7 @@ sandbox_ns_exec(const char *execcmd, char * const argv[], uid_t uid,
 #else /* !__linux__ */
 
 void sandbox_ns_start(void) { }
+int sandbox_ns_main(int argc, char **argv) { return (1); }
 void
 sandbox_ns_exec(const char *execcmd, char * const argv[], uid_t uid,
     gid_t gid, int nofiles)

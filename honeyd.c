@@ -3898,8 +3898,22 @@ unittest(void)
 	exit(0);
 }
 
+static int
+pm_daemon_main(int argc, char *argv[]);
+
 int
 main(int argc, char *argv[])
+{
+	const char *base = strrchr(argv[0], '/');
+
+	/* --sandbox-scripts launcher, exec'd by the daemon (sandbox_ns.c) */
+	if (strcmp(base != NULL ? base + 1 : argv[0], SANDBOX_LAUNCHER) == 0)
+		return (sandbox_ns_main(argc, argv));
+	return (pm_daemon_main(argc, argv));
+}
+
+static int
+pm_daemon_main(int argc, char *argv[])
 {
 	extern int interface_dopoll;
 	char *dev[HONEYD_MAX_INTERFACES];

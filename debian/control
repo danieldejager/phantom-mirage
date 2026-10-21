@@ -3,7 +3,8 @@ Section: net
 Priority: optional
 Maintainer: Daniel de Jager <ddejager@dandejager.com>
 Build-Depends: debhelper-compat (= 13), autoconf, automake, libtool, bison, flex, pkg-config,
- libpcap-dev, libevent-dev, libdumbnet-dev, zlib1g-dev, libedit-dev, sharutils
+ libpcap-dev, libevent-dev, libdumbnet-dev, zlib1g-dev, libedit-dev, sharutils,
+ dh-apparmor
 Rules-Requires-Root: no
 Standards-Version: 4.7.0
 Homepage: http://www.honeyd.org
@@ -15,7 +16,7 @@ Recommends: python3, farpd, phantom-mirage-common, rrdtool
 Conflicts: honeyd
 Replaces: honeyd
 Provides: honeyd
-Suggests: iisemulator
+Suggests: iisemulator, apparmor
 Homepage: http://www.honeyd.org
 Description: Phantom Mirage I network deception daemon (based on Honeyd)
  Phantom Mirage I, part of the Phantom deception product range, is based
