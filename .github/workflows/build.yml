@@ -68,3 +68,100 @@ jobs:
             build.log
             config.log
           if-no-files-found: ignore
+
+  sanitizers:
+    name: Debian 13 / ASan + UBSan
+    runs-on: ubuntu-latest
+    container: debian:13
+    env:
+      # Findings fail the job. Leak detection is off because honeyd keeps
+      # its config, personalities and assoc tables for the whole process
+      # lifetime and never frees them on exit (~590 KB in ~14k allocations
+      # reported per --verify-config), so LSan output is all noise.
+      ASAN_OPTIONS: halt_on_error=1:abort_on_error=0:detect_leaks=0:print_stacktrace=1:strict_string_checks=1:detect_stack_use_after_return=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool bison flex pkg-config \
+            libpcap-dev libevent-dev libdumbnet-dev zlib1g-dev libedit-dev
+
+      - name: Configure
+        # Makefile.am hard-codes CFLAGS, which overrides a configure-time
+        # CFLAGS, so the sanitizer flags go in through CPPFLAGS (used for
+        # every compile) and LDFLAGS. The Makefile's -O2 comes after our
+        # -O1, so the effective optimisation level is -O2. Legacy CC flags
+        # match the baseline job until #18 (PR #44) lands.
+        run: |
+          ./autogen.sh
+          CC="gcc -fpermissive -fcommon" \
+          CPPFLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer" \
+          LDFLAGS="-fsanitize=address,undefined" \
+          ./configure --prefix=/usr
+
+      - name: Build
+        run: make 2>&1 | tee build.log
+
+      - name: Rebuild libhoneyd.so without sanitizers
+        # libhoneyd.so is an LD_PRELOAD shim for unsanitized subsystem
+        # binaries. An ASan runtime dependency would break it there
+        # (ASan must be first in the link order), so rebuild just the
+        # shim's objects without sanitizer flags.
+        run: |
+          rm -f libhoneyd.so honeyd_overload.lo atomicio.lo fdpass.lo \
+                .libs/honeyd_overload.o .libs/atomicio.o .libs/fdpass.o
+          make CPPFLAGS= LDFLAGS= libhoneyd.so
+          if ldd libhoneyd.so | grep -E 'libasan|libubsan'; then
+            echo "libhoneyd.so still links a sanitizer runtime" >&2; exit 1
+          fi
+
+      - name: Prepare test data
+        # Issue #46: ethernetcode_init overflows a char[80] on the 3 vendor
+        # names longer than 79 chars in the stock nmap-mac-prefixes. Run the
+        # main checks with those lines filtered out so the rest of startup
+        # and config parsing is still covered.
+        run: |
+          mkdir -p /usr/share/honeyd
+          awk 'length($0) - 7 <= 78' nmap-mac-prefixes > ci-mac-prefixes
+          echo "Filtered out $(( $(wc -l < nmap-mac-prefixes) - $(wc -l < ci-mac-prefixes) )) long vendor lines (issue #46)"
+
+      - name: Smoke test (sanitized)
+        run: |
+          D=$PWD
+          ./honeyd --version
+          for f in ci/smoke.conf ci/sanitizer.conf; do
+            echo "== verify-config $f"
+            ./honeyd --verify-config -f $D/$f -i lo --disable-webserver \
+              -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
+              -0 $D/pf.os -m $D/ci-mac-prefixes
+          done
+          # --help/usage exits non-zero in these tools, so check the output
+          # for sanitizer reports instead of the exit code.
+          for b in honeydctl honeydstats hsniff; do
+            echo "== $b --help"
+            ./$b --help > $b.out 2>&1 || true
+            head -5 $b.out
+            if grep -E 'runtime error|ERROR: AddressSanitizer' $b.out; then exit 1; fi
+          done
+
+      - name: Stock nmap-mac-prefixes (known failure, issue #46)
+        continue-on-error: true
+        run: |
+          D=$PWD
+          ./honeyd --verify-config -f $D/ci/smoke.conf -i lo --disable-webserver \
+            -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
+            -0 $D/pf.os -m $D/nmap-mac-prefixes
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-sanitizers
+          path: |
+            build.log
+            config.log
+          if-no-files-found: ignore
