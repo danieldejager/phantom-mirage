@@ -1,14 +1,8 @@
 # required Python modules 
-if COND_PYPCAP
-  MAYBE_PYPCAP = pypcap
-endif
-if COND_PYDPKT
-  MAYBE_PYDPKT = dpkt
-endif
 if COND_REGRESS
   MAYBE_REGRESS = regress
 endif
-SUBDIRS = . $(MAYBE_PYPCAP) $(MAYBE_PYDPKT) $(MAYBE_REGRESS)
+SUBDIRS = . $(MAYBE_REGRESS)
 
 AUTOMAKE_OPTIONS = foreign no-dependencies
 
@@ -203,31 +197,9 @@ WEBDIR_FILES = webserver/htmltmpl.py \
 	webserver/server.py
 
 # Automake sucks - but that's ok
-PYTHON_FILES = pypcap/CHANGES pypcap/pcap_ex.c \
-	pypcap/test.py pypcap/LICENSE pypcap/pcap_ex.h \
-	pypcap/testsniff.py pypcap/Makefile.am pypcap/Makefile.in \
-	pypcap/pcap.c pypcap/setup.py \
-	pypcap/README pypcap/pcap.pyx pypcap/test.pcap \
-	dpkt/AUTHORS dpkt/dpkt/gre.py dpkt/dpkt/ppp.py \
-	dpkt/CHANGES dpkt/HACKING dpkt/dpkt/hsrp.py dpkt/dpkt/rpc.py \
-	dpkt/LICENSE dpkt/Makefile dpkt/dpkt/http.py dpkt/dpkt/smb.py \
-	dpkt/README dpkt/dpkt/__init__.py dpkt/dpkt/icmp.py dpkt/dpkt/stp.py \
-	dpkt/dpkt/ah.py dpkt/dpkt/icmp6.py dpkt/dpkt/stun.py \
-	dpkt/dpkt/aim.py dpkt/dpkt/igmp.py dpkt/dpkt/tcp.py \
-	dpkt/dpkt/arp.py dpkt/dpkt/ip.py dpkt/dpkt/telnet.py \
-	dpkt/dpkt/asn1.py dpkt/dpkt/ip6.py dpkt/dpkt/tftp.py \
-	dpkt/dpkt/cdp.py dpkt/dpkt/ipx.py dpkt/dpkt/tns.py \
-	dpkt/dpkt/dhcp.py dpkt/dpkt/loopback.py dpkt/dpkt/udp.py \
-	dpkt/dpkt/dns.py dpkt/dpkt/netbios.py dpkt/dpkt/vrrp.py \
-	dpkt/dpkt/dpkt.py dpkt/dpkt/netflow.py dpkt/dpkt/yahoo.py \
-	dpkt/dpkt/dtp.py dpkt/dpkt/ospf.py dpkt/examples/dnsping.py \
-	dpkt/dpkt/esp.py dpkt/dpkt/pcap.py dpkt/examples/ping.py \
-	dpkt/setup.py \
-	dpkt/dpkt/ethernet.py dpkt/dpkt/pim.py dpkt/tests/test-perf.py \
-	dpkt/tests/test-perf2.py
 
 # TODO: Fix this, half the scripts are missing and this will probably break gzipping
-EXTRA_DIST = $(man_MANS) $(WEBDIR_FILES) $(PYTHON_FILES)		  \
+EXTRA_DIST = $(man_MANS) $(WEBDIR_FILES)		  \
 	acconfig.h $(honeyddata_DATA) LICENSE sha1.c			  \
 	compat/sys/tree.h compat/sys/queue.h compat/err.h compat/sha1.h	  \
 	compat/libdnet/dnet.h compat/getopt.h				  \

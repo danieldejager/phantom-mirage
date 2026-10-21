@@ -664,10 +664,6 @@ PYTHONLIB
 PYEXTEND
 COND_REGRESS_FALSE
 COND_REGRESS_TRUE
-COND_PYDPKT_FALSE
-COND_PYDPKT_TRUE
-COND_PYPCAP_FALSE
-COND_PYPCAP_TRUE
 PATH_PYTHON
 PATH_RRDTOOL
 LIBCURSES
@@ -16162,22 +16158,6 @@ printf "%s\n" "#define HAVE_PYTHON 1" >>confdefs.h
     PYEXTEND="pyextend.o pydataprocessing.o pydatahoneyd.o"
 fi
  if false; then
-  COND_PYPCAP_TRUE=
-  COND_PYPCAP_FALSE='#'
-else
-  COND_PYPCAP_TRUE='#'
-  COND_PYPCAP_FALSE=
-fi
-
- if false; then
-  COND_PYDPKT_TRUE=
-  COND_PYDPKT_FALSE='#'
-else
-  COND_PYDPKT_TRUE='#'
-  COND_PYDPKT_FALSE=
-fi
-
- if false; then
   COND_REGRESS_TRUE=
   COND_REGRESS_FALSE='#'
 else
@@ -17771,7 +17751,7 @@ fi
 
 
 
-ac_config_files="$ac_config_files Makefile regress/Makefile pypcap/Makefile"
+ac_config_files="$ac_config_files Makefile regress/Makefile"
 
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
@@ -17924,14 +17904,6 @@ Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${am__fastdepCC_TRUE}" && test -z "${am__fastdepCC_FALSE}"; then
   as_fn_error $? "conditional \"am__fastdepCC\" was never defined.
-Usually this means the macro was only invoked conditionally." "$LINENO" 5
-fi
-if test -z "${COND_PYPCAP_TRUE}" && test -z "${COND_PYPCAP_FALSE}"; then
-  as_fn_error $? "conditional \"COND_PYPCAP\" was never defined.
-Usually this means the macro was only invoked conditionally." "$LINENO" 5
-fi
-if test -z "${COND_PYDPKT_TRUE}" && test -z "${COND_PYDPKT_FALSE}"; then
-  as_fn_error $? "conditional \"COND_PYDPKT\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${COND_REGRESS_TRUE}" && test -z "${COND_REGRESS_FALSE}"; then
@@ -18818,7 +18790,6 @@ do
     "libtool") CONFIG_COMMANDS="$CONFIG_COMMANDS libtool" ;;
     "Makefile") CONFIG_FILES="$CONFIG_FILES Makefile" ;;
     "regress/Makefile") CONFIG_FILES="$CONFIG_FILES regress/Makefile" ;;
-    "pypcap/Makefile") CONFIG_FILES="$CONFIG_FILES pypcap/Makefile" ;;
 
   *) as_fn_error $? "invalid argument: '$ac_config_target'" "$LINENO" 5;;
   esac

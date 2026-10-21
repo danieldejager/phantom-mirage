@@ -476,10 +476,7 @@ if test x"$DO_PYTHON" = xdefine ; then
     AC_DEFINE(HAVE_PYTHON, 1, [Define if we want to link with Python support])
     PYEXTEND="pyextend.o pydataprocessing.o pydatahoneyd.o"
 fi
-dnl The bundled Python 2 dpkt/pypcap and the old regress hook are not built
-dnl any more; regress/ uses the system python3-dpkt (#36).
-AM_CONDITIONAL([COND_PYPCAP], [false])
-AM_CONDITIONAL([COND_PYDPKT], [false])
+dnl The old regress hook is not built; regress/ uses the system python3-dpkt (#36).
 AM_CONDITIONAL([COND_REGRESS], [false])
 AC_SUBST(PYEXTEND)
 AC_SUBST(PYTHONLIB)
@@ -796,5 +793,5 @@ AC_SUBST(PLUGINLIB)
 AC_SUBST(PLUGINS)
 AC_SUBST(PLUGINSDECLARE)
 
-AC_CONFIG_FILES([Makefile regress/Makefile pypcap/Makefile])
+AC_CONFIG_FILES([Makefile regress/Makefile])
 AC_OUTPUT
