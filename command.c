@@ -461,6 +461,9 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 		TRACE_RESET(perr[1], close(perr[1]));
 
 		cmd_environment(tmpl, hdr);
+		/* --sandbox-scripts: own namespaces via the launcher */
+		sandbox_ns_exec(execcmd, argv, geteuid(), getegid(),
+		    tmpl->max_nofiles ? tmpl->max_nofiles : 30);
 		sandbox_script(argv);
 
 		if (execvp(execcmd, argv) == -1)

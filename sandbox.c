@@ -34,6 +34,7 @@
 #include "sandbox.h"
 
 int honeyd_sandbox_scripts = 0;
+int sandbox_script_private_tmp = 0;
 
 #define MAX_WRITE_PATHS	16
 static const char *write_paths[MAX_WRITE_PATHS];
@@ -206,6 +207,9 @@ ll_allow(int rfd, const char *path, __u64 access, __u64 handled)
 	close(fd);
 }
 
+static void script_net_handled(struct landlock_ruleset_attr *, int);
+static void script_net_rules(int, int);
+
 static int
 sandbox_landlock(char * const argv[])
 {
@@ -244,6 +248,7 @@ sandbox_landlock(char * const argv[])
 
 	memset(&ra, 0, sizeof(ra));
 	ra.handled_access_fs = handled;
+	script_net_handled(&ra, abi);
 	rfd = syscall(SYS_landlock_create_ruleset, &ra, sizeof(ra), 0);
 	if (rfd == -1)
 		return (-1);
@@ -260,6 +265,10 @@ sandbox_landlock(char * const argv[])
 	ll_allow(rfd, "/dev/null", LL_FILE, handled);
 	for (i = 0; i < nwrite_paths; i++)
 		ll_allow(rfd, write_paths[i], rw, handled);
+	/* a private tmpfs (own mount namespace) is the script's scratch */
+	if (sandbox_script_private_tmp)
+		ll_allow(rfd, "/tmp", rw, handled);
+	script_net_rules(rfd, abi);
 
 	if (syscall(SYS_landlock_restrict_self, rfd, 0) == -1) {
 		close(rfd);
@@ -331,6 +340,42 @@ sandbox_daemon_allow_connect(int port)
 }
 
 #ifdef HAVE_LINUX_LANDLOCK_H
+/*
+ * With --sandbox-daemon, a script the launcher starts (sandbox_ns.c) is
+ * not under the daemon's Landlock ruleset, so its own ruleset carries
+ * the daemon's TCP rules: no bind, connect only to the proxy ports.
+ */
+static void
+script_net_handled(struct landlock_ruleset_attr *ra, int abi)
+{
+#ifdef LANDLOCK_ACCESS_NET_BIND_TCP
+	if (!honeyd_sandbox_daemon || abi < 4)
+		return;
+	ra->handled_access_net = LANDLOCK_ACCESS_NET_BIND_TCP;
+	if (!daemon_connect_any)
+		ra->handled_access_net |= LANDLOCK_ACCESS_NET_CONNECT_TCP;
+#endif
+}
+
+static void
+script_net_rules(int rfd, int abi)
+{
+#ifdef LANDLOCK_ACCESS_NET_BIND_TCP
+	struct landlock_net_port_attr np;
+	int i;
+
+	if (!honeyd_sandbox_daemon || abi < 4 || daemon_connect_any)
+		return;
+	for (i = 0; i < ndaemon_ports; i++) {
+		memset(&np, 0, sizeof(np));
+		np.allowed_access = LANDLOCK_ACCESS_NET_CONNECT_TCP;
+		np.port = daemon_ports[i];
+		(void)syscall(SYS_landlock_add_rule, rfd,
+		    LANDLOCK_RULE_NET_PORT, &np, 0);
+	}
+#endif
+}
+
 static int
 daemon_landlock(char *net, size_t netlen)
 {

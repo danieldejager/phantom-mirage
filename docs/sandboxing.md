@@ -65,6 +65,61 @@ the privilege drop above:
   equivalent) and **still runs**. This keeps services up on older
   kernels. Check the log if you depend on it.
 
+### Per-script namespaces
+
+With `--sandbox-scripts`, every **service script** (a `tcp`/`udp port`
+command; subsystems are not affected) also runs in its own namespaces:
+
+| Namespace | Effect |
+|---|---|
+| user | unprivileged; the script's uid/gid are mapped 1:1, nothing else |
+| mount | `/` is private, `/tmp` is a fresh 64 MB tmpfs (writable, gone when the script exits) |
+| PID | the script is pid 1 and sees only its own processes; killing it kills them all |
+| IPC, UTS | no shared SysV IPC / POSIX queues; hostname `phantom-mirage-script` |
+| network | only a downed `lo`, so no network at all. Scripts get their connection on stdin/stdout, so they normally don't need one |
+
+`--sandbox-script-net=PATH` (repeatable, absolute) keeps the host
+network for scripts whose command line contains `PATH` as a word, for
+proxy-style scripts. They still get every other namespace.
+
+**How it fits with `--sandbox-daemon`.** The daemon's seccomp allowlist
+and Landlock both forbid `unshare` and `mount` (Landlock refuses mounts
+to any restricted process), and children inherit both. So honeyd forks a
+small launcher (`pm-script-ns`, `sandbox_ns.c`) right after its
+privilege drop, after the Landlock paths are collected and before its
+own filters go on. For each connection the daemon still forks a child as
+before (so pid tracking, timeouts and reaping are unchanged). That child
+(`pm-script-wait`) passes the connection, stderr pipe, argv and
+environment to the launcher over a socketpair and waits. The launcher
+forks, enters the namespaces, mounts `/tmp` and forks the script as
+pid 1. The script then gets the script sandbox (Landlock with `/tmp`
+writable, the deny-list) and, with `--sandbox-daemon`, also the daemon's
+allowlist and its Landlock TCP rules (no bind, connect only to proxy
+ports). So nothing is looser than when the daemon forked the script
+itself. The exit status (including "killed by SIGSYS") is passed back
+and reported as before. If the daemon's child goes away, the launcher
+kills the script's PID namespace. If the daemon dies, the launcher dies
+too. The daemon's allowlist gained nothing.
+
+**Degrading.** At start the launcher tries everything once (all six
+namespaces, the id maps, the tmpfs) and logs either `sandbox: scripts run
+in their own user, mount, PID, IPC, UTS and network namespaces with a
+private /tmp` or `sandbox: unprivileged user namespaces unavailable
+(<errno>); scripts run WITHOUT namespaces or a private /tmp (Landlock and
+seccomp still apply)`. Typical reasons are `user.max_user_namespaces=0`,
+Ubuntu's `kernel.apparmor_restrict_unprivileged_userns=1`, Debian's
+older `kernel.unprivileged_userns_clone=0`, or Docker's default seccomp
+or AppArmor profile.
+
+**Caveats.**
+* Scripts must not live in `/tmp`, because they would be hidden by the
+  private one.
+* The launcher itself is not under the daemon's filters, since it must
+  call `unshare` and `mount`. It runs as the daemon's dropped user, has
+  closed all the daemon's descriptors, and only takes requests from the
+  daemon over an inherited socketpair.
+* Python `internal` services run inside the daemon and get none of this.
+
 Tested on Debian 13 (kernel 6.12, Landlock ABI 6) and in the GitHub
 Actions container. In the Docker image the option starts and the
 privilege checks are verified, but the image's example config has no
@@ -183,16 +238,15 @@ bind and the status page start). Children inherit the ruleset.
   stdin/stdout, but they can still open sockets. Landlock ABI 4+ can
   restrict TCP bind/connect, but proxy-style scripts need outbound
   connections. This is not done yet.
-* **No namespaces.** Scripts see the host's network, PID and IPC
-  namespaces; `/proc` is hidden by Landlock, not unshared. A per-script
-  user and mount namespace (or a separate container per service) would
-  close this, but unprivileged user namespaces are blocked by Docker's
-  default seccomp profile and disabled on some distributions.
+* **Namespaces need unprivileged user namespaces.** Without them (see
+  "Degrading" above) scripts share the host's network, PID and IPC
+  namespaces and have no `/tmp`. Subsystems never get namespaces,
+  because they need the daemon's sockets.
 * **Python services run in-process.** These are scripts started through
   the embedded interpreter (`cmd_python`), so they are not sandboxed
   beyond the daemon's own hardening.
-* **Read-only /tmp.** Scripts that write scratch files must be given a
-  directory with `--sandbox-allow-write`.
+* **No /tmp without namespaces.** In the fallback, scripts that write
+  scratch files must be given a directory with `--sandbox-allow-write`.
 * **The daemon's allowlist is broad.** `--sandbox-daemon` gives it
   Landlock and a seccomp allowlist, but that list has to be broad (sockets, file I/O,
   `execve`) because the daemon reopens logs and configs on
@@ -226,6 +280,14 @@ bind and the status page start). Children inherit the ruleset.
   get `EACCES` writing outside its writable dirs, succeed in its log dir,
   and (ABI 4+) get `EACCES` on a TCP connect. `HD_LANDLOCK=require`
   makes that job and the arm64 job fail if Landlock isn't active.
+* `ci/script_ns.sh` runs a probe script on two ports, with and without
+  `--sandbox-daemon`. The isolated one must report pid 1, hostname
+  `phantom-mirage-script`, only a downed `lo`, and a private `/tmp`; the
+  `--sandbox-script-net` one must see the host's interfaces. The
+  **script-ns** jobs (Ubuntu 24.04 amd64 and arm64, directly on the
+  runner with `HD_NS=require`) run it, then again with
+  `user.max_user_namespaces=0` to check the logged fallback. The ASan
+  and arm64 container jobs run it too, and get the fallback.
 * The **Docker** job checks the same `/proc/1/status` fields in the
   image (the bounding set is exempt: no `CAP_SETPCAP`), and that
   `--sandbox-scripts` starts.

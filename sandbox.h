@@ -42,4 +42,14 @@ void sandbox_daemon_allow_write(const char *path);
 void sandbox_daemon_allow_connect(int port);
 int sandbox_daemon_landlock(void);
 
+/* --sandbox-scripts: per-script namespaces (sandbox_ns.c) */
+void sandbox_ns_start(void);
+void sandbox_ns_exec(const char *execcmd, char * const argv[], uid_t uid,
+    gid_t gid, int nofiles);
+int sandbox_add_net_script(const char *path);
+/* set in a script child that has its own private /tmp */
+extern int sandbox_script_private_tmp;
+/* the daemon's allowlist in a script started by the launcher, quietly */
+int sandbox_daemon_child(void);
+
 #endif /* _SANDBOX_H_ */

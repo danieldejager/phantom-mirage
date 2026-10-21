@@ -403,6 +403,9 @@ jobs:
           bash ci/sandbox_daemon.sh
           # pid file: start/stop/restart, stale file, second instance
           bash ci/pidfile.sh
+          # per-script namespaces: the container refuses them, so this
+          # checks the logged fallback (the script-ns job checks them)
+          bash ci/script_ns.sh
           # Again as under debian/phantom-mirage.service: no_new_privs, the unit's
           # capability bounding set, writable state only below /run.
           # (ProtectSystem=strict needs mounts, which the CI container
@@ -566,6 +569,7 @@ jobs:
         run: |
           bash ci/sandbox_daemon.sh
           bash ci/pidfile.sh
+          bash ci/script_ns.sh
           cd regress
           bad=0
           for t in general.py detect.py routing.py nmap.py; do
@@ -590,6 +594,62 @@ jobs:
             regress-sbd-*.log
             regress/nmap.log
           if-no-files-found: ignore
+
+  script-ns:
+    name: Ubuntu 24.04 / ${{ matrix.arch }} --sandbox-scripts namespaces
+    # Directly on the runner, not in a container: Docker's default
+    # AppArmor profile refuses the mounts a private /tmp needs.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            os: ubuntu-24.04
+          - arch: arm64
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool bison flex pkg-config \
+            libpcap-dev libevent-dev libdumbnet-dev zlib1g-dev libedit-dev \
+            iproute2 procps python3
+
+      - name: Build
+        run: |
+          ./autogen.sh
+          ./configure --prefix=/usr
+          make -j$(nproc)
+
+      - name: Allow unprivileged user namespaces
+        # Ubuntu 24.04 restricts them for unconfined programs by default
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          sudo sysctl -w kernel.unprivileged_userns_clone=1 || true
+          uname -r; cat /sys/kernel/security/lsm || true
+
+      - name: "--sandbox-scripts: per-script namespaces (#16)"
+        run: |
+          mkdir -p ns-logs
+          sudo HD_NS=require HD_LOGDIR=$PWD/ns-logs bash ci/script_ns.sh
+
+      - name: "Fallback is logged when user namespaces are off"
+        run: |
+          sudo sysctl -w user.max_user_namespaces=0
+          sudo HD_LOGDIR=$PWD/ns-logs bash ci/script_ns.sh
+          grep -q 'unprivileged user namespaces unavailable' ns-logs/script-ns-scripts.log
+          sudo sysctl -w user.max_user_namespaces=63000
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: script-ns-${{ matrix.arch }}
+          path: ns-logs/
 
   docker:
     name: Docker image (amd64 + arm64)
