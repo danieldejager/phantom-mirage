@@ -1,0 +1,44 @@
+[Unit]
+Description=Honeyd virtual honeypot daemon
+Documentation=man:honeyd(8)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Same settings as the SysV script. INTERFACE, NETWORK and OPTIONS come
+# from /etc/default/honeyd (RUN= is ignored; enable the unit instead).
+EnvironmentFile=-/etc/default/honeyd
+# honeyd starts as root to open pcap/raw sockets, then drops to the
+# honeyd user itself (-u/-g take numeric IDs, hence the shell).
+ExecStartPre=/bin/sh -c 'exec /usr/bin/honeyd --verify-config -f /etc/honeypot/honeyd.conf $${INTERFACE:+-i $$INTERFACE} $OPTIONS $NETWORK'
+ExecStart=/bin/sh -c 'exec /usr/bin/honeyd -d -f /etc/honeypot/honeyd.conf -l /var/log/honeypot/honeyd.log -p /etc/honeypot/nmap-os-db -a /etc/honeypot/nmap.assoc -0 /etc/honeypot/pf.os -x /etc/honeypot/xprobe2.conf -m /etc/honeypot/nmap-mac-prefixes -u $$(id -u honeyd) -g $$(id -g honeyd) $${INTERFACE:+-i $$INTERFACE} $OPTIONS $NETWORK'
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+
+# Only what honeyd needs before its own privilege drop (same set as the
+# Docker image: raw sockets, interface/ARP setup, setuid/setgid).
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN CAP_SETUID CAP_SETGID
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+# /run: pid file /run/honeyd.pid
+ReadWritePaths=/var/log/honeypot /run
+RuntimeDirectory=honeyd
+RuntimeDirectoryPreserve=no
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_PACKET AF_NETLINK
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

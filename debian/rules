@@ -43,3 +43,6 @@ override_dh_installlogrotate:
 
 override_dh_auto_test:
 	# Upstream regress/ needs root + veth; covered by the CI jobs.
+
+override_dh_installsystemd:
+	dh_installsystemd -phoneyd --no-enable --no-start --no-stop-on-upgrade
