@@ -250,6 +250,7 @@ jobs:
         # no capabilities (incl. bounding/ambient), no_new_privs.
         # --sandbox-scripts: script children also get Landlock + seccomp.
         # SIGHUP/SIGUSR1 must keep working with the hardened process.
+        shell: bash
         run: |
           D=$PWD
           apt-get install -y --no-install-recommends procps util-linux >/dev/null
