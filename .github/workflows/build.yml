@@ -323,6 +323,7 @@ jobs:
   fuzz:
     name: Debian 13 / libFuzzer (smoke)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     container:
       image: debian:13
     env:
@@ -360,7 +361,8 @@ jobs:
           for t in packet config macprefix; do
             mkdir -p "work/$t"
             cp fuzz/corpus/$t/* "work/$t/"
-            fuzz/out/fuzz_$t -fork=2 -ignore_crashes=1 -max_total_time=60 \
+            # timeout: a stuck fork job must not hold up the build
+            timeout -k 10 120 fuzz/out/fuzz_$t -fork=2 -ignore_crashes=1 -max_total_time=60 -timeout=10 \
               -max_len=4096 -artifact_prefix="fuzz-artifacts/$t-" \
               "work/$t" > "fuzz-$t.log" 2>&1 || true
             tail -n 1 "fuzz-$t.log"
