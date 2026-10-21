@@ -42,6 +42,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
+#include <stdint.h>
 #include <err.h>
 #include <stdarg.h>
 #include <string.h>
@@ -451,14 +453,15 @@ set		: SET template DEFAULT PROTO ACTION action
 	{
 		if ($2 == NULL || $4 == 0)
 			break;
-		$2->timestamp = $4 * 2;
+		/* NUMBER <= INT_MAX, so doubling in 32-bit unsigned is safe */
+		$2->timestamp = (uint32_t)$4 * 2;
 	}
 		| SET template DROPRATE IN rate
 	{
 		if ($2 == NULL)
 			break;
-		if ($5 > 100) {
-			yyerror("Droprate too high: %f", $5);
+		if (!($5 >= 0 && $5 <= 100)) {
+			yyerror("Droprate must be between 0 and 100: %f", $5);
 			break;
 		}
 
@@ -468,8 +471,8 @@ set		: SET template DEFAULT PROTO ACTION action
 	{
 		if ($2 == NULL)
 			break;
-		if ($5 > 100) {
-			yyerror("Droprate too high: %f", $5);
+		if (!($5 >= 0 && $5 <= 100)) {
+			yyerror("Droprate must be between 0 and 100: %f", $5);
 			break;
 		}
 
@@ -870,13 +873,23 @@ latency		: /* empty */ { $$ = 0; }
 packetloss	: /* empty */ { $$ = 0; }
 		| LOSS rate
 	{
+		if (!($2 >= 0 && $2 <= 100)) {
+			yyerror("Packet loss must be between 0 and 100: %f", $2);
+			YYERROR;
+		}
 		$$ = $2 * 100;
 	}
 ;
 bandwidth	: /* empty */ { $$ = 0; }
 		| BANDWIDTH NUMBER NUMBER
 	{
-		$$ = $2 * $3;
+		int64_t bw = (int64_t)$2 * $3;
+
+		if (bw > INT_MAX) {
+			yyerror("Bandwidth too large: %d * %d", $2, $3);
+			YYERROR;
+		}
+		$$ = bw;
 	}
 		| BANDWIDTH NUMBER
 	{

@@ -45,6 +45,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <limits.h>
+#include <math.h>
 #include <err.h>
 #include <stdarg.h>
 #include <string.h>
@@ -192,8 +195,28 @@ include		{ BEGIN(incl); }
 		  }
 		}
 [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+  { yylval.string = strdup(yytext); return IPSTRING; }
-[0-9]+		{ yylval.number = atoi(yytext); return NUMBER; }
-[0-9]+\.[0-9]+  { yylval.floatp = atof(yytext); return FLOAT; }
+[0-9]+		{
+			char *end;
+			long val;
+
+			/* atoi() is undefined on overflow (#68) */
+			errno = 0;
+			val = strtol(yytext, &end, 10);
+			if (errno == ERANGE || *end != '\0' || val > INT_MAX) {
+				yyerror("Number too large: %s", yytext);
+				val = 0;
+			}
+			yylval.number = (int)val;
+			return NUMBER;
+		}
+[0-9]+\.[0-9]+  {
+			yylval.floatp = strtod(yytext, NULL);
+			if (!isfinite(yylval.floatp)) {
+				yyerror("Number too large: %s", yytext);
+				yylval.floatp = 0;
+			}
+			return FLOAT;
+		}
 [\$A-Za-z][\.\(\)\/A-Za-z_\-0-9\*]* { yylval.string = strdup(yytext); return STRING; }
 \"[^\"]+\" { yylval.string = strdup(yytext); return CMDSTRING; }
 \.		{ return DOT; }

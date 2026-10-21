@@ -77,7 +77,7 @@ then:
 | #62 | packet | `honeyd_recv_cb` reads the Ethernet source before checking `caplen >= 14` | fixed |
 | #65 | packet | `personality.c` ISN generator converts a negative or > 2^32 `double` to `uint32_t` | fixed |
 | #66 | config | `parse.y`: an illegal IP address yields an unset `ipaddr`, so `addr_ntoa()` returns NULL into `strcmp`/`strdup` (`templ_compare`, `template_create`) | fixed (`parse.c` is now generated at build time) |
-| #68 | config | `parse.y`/`lex.l`: unchecked arithmetic on numeric values (`uptime`, `droprate`, `loss`, `bandwidth`; `atoi` wrap) → signed overflow / float-cast UB | open |
+| #68 | config | `parse.y`/`lex.l`: unchecked arithmetic on numeric values (`uptime`, `droprate`, `loss`, `bandwidth`; `atoi` wrap) → signed overflow / float-cast UB | fixed |
 
 Reproducers for open findings go in `fuzz/crashes/open/` (named
 `<target>-<issue>-*`). CI does not replay them. Once a finding is fixed,
