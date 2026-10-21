@@ -6,7 +6,7 @@ This page separates **Facts** (verified in the code or in the build run on 2026-
 
 ### Age and maintenance
 - Code base is Niels Provos' Honeyd 1.5/1.6 (copyright 2002–2007) plus DataSoft/Nova additions (nmap 2nd-gen fingerprint parser in personality.c, broadcast scripts `bcast_insert`/`bcast_trigger` config.c:539–600, DHCP-assigned templates, `HONEYD_TEMPLATE_NAME`/`HONEYD_INTERFACE` env vars command.c:249–253, `~/.config/honeyd` handling honeyd.c :550–585). Version string: 1.6d.
-- Build needs `-fpermissive -fcommon` on GCC 14 (see [06](06-build-and-dependencies.md)). Python support targets Python 2 (`Py_InitModule`, pyextend.c:800; configure looks for `python2.4`). debian/control depends on `python-support` and `libpcre3-dev`, both gone from current Debian.
+- Build needs `-fpermissive -fcommon` on GCC 14 (see [06](06-build-and-dependencies.md)). Python support was Python 2 only. Since #36 pyextend.c uses the Python 3 C API behind `--with-python` (off by default, [docs/python.md](../python.md)), and the web UI scripts are still Python 2. debian/control depends on `python-support` and `libpcre3-dev`, both gone from current Debian.
 
 ### Privileges
 - Needs raw packet access: libpcap capture (`pcap_open_live`, interface.c:369) and libdnet raw IP / Ethernet send (`ip_open` honeyd.c, `eth_open`). On Linux that means root or `CAP_NET_RAW` + `CAP_NET_ADMIN` (promiscuous mode).
@@ -21,7 +21,7 @@ This page separates **Facts** (verified in the code or in the build run on 2026-
 - **Control socket** `/var/run/honeyd/honeyd.sock` (privileged): any client can issue config commands, including `add <t> tcp port N "<command>"`, which makes Honeyd execute that command when a connection arrives (as the template's uid). Treat socket access as root-equivalent. Since #14, `ui_init()` creates the socket in a root-owned `/var/run/honeyd` directory (0700) with mode 0600. It refuses a directory that is a symlink or not owned by root, only ever replaces an existing *socket*, and checks `SO_PEERCRED` on every connection: only root (or honeyd's own uid) is accepted. To let a group use `honeydctl`, start honeyd with `HONEYD_UI_GROUP=<group>`. The directory then becomes 0750 and the socket 0660 with that group, and peers whose primary gid matches are accepted. Supplementary groups pass the file permissions but fail the peer check, so run `honeydctl` with that group as the primary gid (e.g. `sg <group> honeydctl`).
 - **Proxy actions** let a honeypot open outbound connections to real hosts (`proxy_connect`, honeyd.c:1349).
 - **Stats** are sent over UDP with an HMAC-SHA1 keyed by the configured password (stats.c:101–135); the password is given on the command line.
-- **Embedded web server** (webserver/server.py, Python 2) is started by `pyextend_webserver_init` when built with Python.
+- **Embedded web server** (webserver/server.py) is started by `pyextend_webserver_init` when built with Python. The scripts are still Python 2, so under Python 3 the import fails and honeyd carries on without the web UI (#36).
 
 ### Concrete code defects spotted while reading
 - `determine_path()` honeyd.c:1065: `malloc(strlen(abspath) + strlen(*input))` is two bytes short (missing "/" and NUL) and the second `malloc(strlen(buffer))` is one byte short; both are followed by `strcpy`/`strcat` → heap overflow. Reached from command-line options (honeyd.c:3666–3697), so local-only, but it corrupts the heap on every run that passes a relative path.
@@ -35,7 +35,7 @@ This page separates **Facts** (verified in the code or in the build run on 2026-
 ### Short term (get it running safely)
 1. Fix the build properly instead of flags: add `#include <string.h>` to the configure test, move header globals to `extern` + one definition, rename `configure.in` → `configure.ac`, fix the `libhoneyd.so` rule for parallel make.
 2. Fix `determine_path()` (use `asprintf`) and the `mkdir` mode.
-3. Build without Python (default) unless the web UI is required; porting pyextend.c to Python 3 is a separate project.
+3. Build without Python (the default) unless you need embedded services. pyextend.c is ported to Python 3 (#36), and the web UI scripts are not.
 4. Create the UI socket with mode 0600 (or put it in a root-owned directory) and document that access equals code execution.
 
 ### Dockerising

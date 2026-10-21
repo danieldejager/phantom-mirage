@@ -427,98 +427,60 @@ AC_SUBST(LIBCURSES)
 AC_PATH_PROG(PATH_RRDTOOL, rrdtool)
 AC_SUBST(PATH_RRDTOOL)
 
+dnl Embedded Python 3 for "internal" service scripts (#36). Off by
+dnl default; --with-python[=/path/to/python3] turns it on.
 AC_ARG_WITH(python,
-[  --with-python           support for python services ],
+[  --with-python[[=PYTHON3]]  embed Python 3 for internal service scripts ],
 [ case "$withval" in
-  no)
-    DO_PYTHON=""
-    ;;
-  *)
-    DO_PYTHON=define
-    ;;
- esac ], [])
+  no)  DO_PYTHON="" ;;
+  yes) DO_PYTHON=define ;;
+  *)   DO_PYTHON=define; PATH_PYTHON="$withval" ;;
+ esac ], [DO_PYTHON=""])
 
-AC_PATH_PROG(PATH_PYTHON, python)
-if test x"$PATH_PYTHON" != x -a x"$DO_PYTHON" = xdefine ; then
-   pv_gv=`$PATH_PYTHON -c 'import sys; print sys.version[[:3]] > "2.3.0"'`
-   if test "$pv_gv" == "False" ; then
-      AC_PATH_PROG(PATH_PYTHON24, python2.4)
-      if test x"$PATH_PYTHON24" != x ; then
-        PATH_PYTHON=$PATH_PYTHON24
-        DO_PYTHON=define
-      else
-        AC_ERROR(need at least Python 2.4)
-      fi
-   else
-      DO_PYTHON=define
-   fi
-else
-  DO_PYTHON=""
-fi
+AC_PATH_PROGS(PATH_PYTHON, python3)
 AC_SUBST(PATH_PYTHON)
 
-dnl Libraries and flags for embedded Python.
-dnl FIXME: I wish there was a less icky way to get this.
+PYEXTEND=""
+PYTHONLIB=""
+PYTHONINC=""
 if test x"$DO_PYTHON" = xdefine ; then
-    AC_MSG_CHECKING(for Python linkage)
-    py_prefix=`$PATH_PYTHON -c 'import sys; print sys.prefix'`
-    py_ver=`$PATH_PYTHON -c 'import sys; print sys.version[[:3]]'`
-    py_libdir="${py_prefix}/lib/python${py_ver}"
-    PYTHONINC="-I${py_prefix}/include/python${py_ver}"
-    py_libs=`grep '^LIBS=' $py_libdir/config/Makefile | sed -e 's/^.*=//'`
-    py_libc=`grep '^LIBC=' $py_libdir/config/Makefile | sed -e 's/^.*=//'`
-    py_libm=`grep '^LIBM=' $py_libdir/config/Makefile | sed -e 's/^.*=//'`
-    py_liblocalmod=`grep '^LOCALMODLIBS=' $py_libdir/config/Makefile | sed -e 's/^.*=//'`
-    py_libbasemod=`grep '^BASEMODLIBS=' $py_libdir/config/Makefile | sed -e 's/^.*=//'`
-    PYTHONLIB="-L$py_libdir/config $py_libs $py_libc $py_libm -lpython$py_ver $py_liblocalmod $py_libbasemod"
-    PYTHON_LIB=`echo $PYTHON_LIB | sed -e 's/[ \\t]*/ /g'`
-    AC_MSG_RESULT($py_libdir)
+    if test x"$PATH_PYTHON" = x ; then
+        AC_MSG_ERROR([--with-python given but no python3 found])
+    fi
+    AC_MSG_CHECKING(for Python 3 >= 3.8)
+    if $PATH_PYTHON -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' ; then
+        AC_MSG_RESULT(yes)
+    else
+        AC_MSG_RESULT(no)
+        AC_MSG_ERROR([--with-python needs Python 3.8 or newer])
+    fi
+    AC_MSG_CHECKING(for Python embedding flags)
+    PATH_PYCONFIG="${PATH_PYTHON}-config"
+    if test -x "$PATH_PYCONFIG" || command -v "$PATH_PYCONFIG" >/dev/null 2>&1 ; then
+        PYTHONINC=`$PATH_PYCONFIG --includes`
+        PYTHONLIB=`$PATH_PYCONFIG --ldflags --embed`
+    else
+        AC_MSG_RESULT(no)
+        AC_MSG_ERROR([$PATH_PYCONFIG not found; install the Python 3 development package (e.g. python3-dev)])
+    fi
+    AC_MSG_RESULT($PYTHONINC)
+    save_CPPFLAGS="$CPPFLAGS"; save_LIBS="$LIBS"
+    CPPFLAGS="$CPPFLAGS $PYTHONINC"; LIBS="$PYTHONLIB $LIBS"
+    AC_MSG_CHECKING(that we can link with libpython)
+    AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <Python.h>]],
+        [[Py_Initialize(); Py_FinalizeEx();]])],
+        [AC_MSG_RESULT(yes)],
+        [AC_MSG_RESULT(no)
+         AC_MSG_ERROR([cannot link an embedded Python 3 program, see config.log])])
+    CPPFLAGS="$save_CPPFLAGS"; LIBS="$save_LIBS"
     AC_DEFINE(HAVE_PYTHON, 1, [Define if we want to link with Python support])
     PYEXTEND="pyextend.o pydataprocessing.o pydatahoneyd.o"
-
-    # Figure out if we have our modules
-    AC_MSG_CHECKING(for Python dnet module)
-    py_dnet=`$PATH_PYTHON -c 'import dnet; print "ok"' 2>/dev/null`
-    AM_CONDITIONAL([COND_REGRESS], [test x"$py_dnet" = xok])
-    if test x"$py_dnet" = xok; then
-        AC_DEFINE(HAVE_PYDNET, 1,
-	          [Define if Python knows about the dnet modules])
-	AC_MSG_RESULT(yes)
-    else
-        AC_MSG_RESULT(no - regression tests will not run)
-    fi
-
-    # run these tests only if the dnet python module is available
-    if test x"$py_dnet" = xok; then
-      AC_MSG_CHECKING(for Python pcap module)
-      py_pcap=`$PATH_PYTHON -c 'import pcap; print "ok"' 2>/dev/null`
-      AM_CONDITIONAL([COND_PYPCAP], [test x"$py_pcap" != xok])
-      if test x"$py_pcap" = xok; then
-  	AC_MSG_RESULT(yes)
-      else
-          AC_MSG_RESULT(no)
-      fi
-  
-      AC_MSG_CHECKING(for Python dpkt module)
-      py_dpkt=`$PATH_PYTHON -c 'import dpkt; print "ok"' 2>/dev/null`
-      AM_CONDITIONAL([COND_PYDPKT], [test x"$py_dpkt" != xok])
-      if test x"$py_dpkt" = xok; then
-  	AC_MSG_RESULT(yes)
-      else
-          AC_MSG_RESULT(no)
-      fi
-    else
-      AM_CONDITIONAL([COND_PYPCAP], [test x != x])
-      AM_CONDITIONAL([COND_PYDPKT], [test x != x])
-    fi
-  else
-    AM_CONDITIONAL([COND_PYPCAP], [test x != x])
-    AM_CONDITIONAL([COND_PYDPKT], [test x != x])
-    AM_CONDITIONAL([COND_REGRESS], [test x != x])
-    PYEXTEND=""
-    PYTHONLIB=""
-    PYTHONINC=""
 fi
+dnl The bundled Python 2 dpkt/pypcap and the old regress hook are not built
+dnl any more; regress/ uses the system python3-dpkt (#36).
+AM_CONDITIONAL([COND_PYPCAP], [false])
+AM_CONDITIONAL([COND_PYDPKT], [false])
+AM_CONDITIONAL([COND_REGRESS], [false])
 AC_SUBST(PYEXTEND)
 AC_SUBST(PYTHONLIB)
 AC_SUBST(PYTHONINC)

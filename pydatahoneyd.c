@@ -63,6 +63,7 @@
 
 #include <event.h>
 
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include <marshal.h>
 
@@ -124,8 +125,8 @@ PyObject* PyConvertRecord(struct record *record)
 		TAILQ_FOREACH(hash, &record->hashes, next) {
 			PyObject *digest;
 
-			digest = Py_BuildValue("s#",
-			    hash->digest, sizeof(hash->digest));
+			digest = Py_BuildValue("y#",
+			    hash->digest, (Py_ssize_t)sizeof(hash->digest));
 			assert(digest != NULL);
 			if (PyList_Append(list, digest) == -1) {
 				PyErr_Print();
@@ -174,8 +175,8 @@ pyrecord_test(void)
 {
 	char *some_code =
 	    "def TestProcessing(input):\n"
-	    "  print '\t\t', input\n"
-	    "  return [ [ input['src'], '\x01' ] ]\n"
+	    "  print('\t\t', input)\n"
+	    "  return [ [ input['src'], b'\x01' ] ]\n"
 	    "output_record = TestProcessing(input_record)\n";
 
 	PyObject *pValue, *pRes;
@@ -220,6 +221,7 @@ pyrecord_test(void)
 		Py_DECREF(pValue);
 	
 		fprintf(stderr, "\t\tResult len: %d\n", res_len);
+		free(result);
 	
 		free(record);
 	}

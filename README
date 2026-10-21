@@ -40,8 +40,9 @@ To install dependencies in ArchLinux:
 # First get these packages
 $ pacman -S libdnet libpcap libevent pcre libedit bison flex libtool automake
 
-For the regression framework to run, you need to install the Python
-module for libdnet.  You might need Python 2.4 for the best results.
+Python is optional. The regression tests in regress/ need python3 and
+python3-dpkt. Embedded Python 3 service scripts ("internal" services) need
+./configure --with-python and python3-dev (see docs/python.md).
 
 To build honeyd, run the following commands:
 
@@ -50,10 +51,7 @@ $ ./configure
 $ make
 $ sudo make install
 
-If your compilation stops due to Python related errors, you can try to
-run configure as
-
-$ ./configure --without-python
+Python support is off unless you pass --with-python. See docs/python.md.
 
 If you get compilation warnings on Linux bitch to the people responsible
 for the conditional header file idioticy.

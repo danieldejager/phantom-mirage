@@ -43,7 +43,7 @@ void pyextend_exit(void);
 
 #define PYEXTEND_MAX_REQUEST_SIZE	16384
 
-void pyextend_webserver_init(char *address, int port, char *root_dir);
+int pyextend_webserver_init(char *address, int port, char *root_dir);
 void pyextend_webserver_exit(void);
 void pyextend_webserver_verify_setup(const char *);
 void pyextend_webserver_fix_permissions(const char *, uid_t, gid_t);
