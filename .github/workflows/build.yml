@@ -393,8 +393,12 @@ jobs:
         # phantom-mirage confined to its syscall allowlist. A denied call logs
         # "sandbox-daemon: denied syscall N" (daemon) or "killed by
         # SIGSYS" (child) and fails the step; ci/sandbox_daemon.sh also
-        # checks that an off-list call (mount) is caught.
+        # checks that an off-list call (mount) is caught, and that
+        # Landlock keeps the daemon to its log/socket/graphs dirs and
+        # refuses TCP connects (HD_LANDLOCK=require: must be active).
         shell: bash
+        env:
+          HD_LANDLOCK: require
         run: |
           bash ci/sandbox_daemon.sh
           # Again as under debian/phantom-mirage.service: no_new_privs, the unit's
@@ -553,6 +557,8 @@ jobs:
 
       - name: "--sandbox-daemon: services + regress/ under the allowlist (arm64)"
         shell: bash
+        env:
+          HD_LANDLOCK: require
         run: |
           bash ci/sandbox_daemon.sh
           cd regress

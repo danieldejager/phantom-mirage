@@ -138,6 +138,41 @@ x86_64). If the filter can't be installed, phantom-mirage exits.
   user and mount namespace with `/` remounted read-only. The CI
   container refuses mounts.
 
+### Landlock for the daemon
+
+With `--sandbox-daemon`, phantom-mirage also puts *itself* under Landlock, just
+before the seccomp filter (so after the privilege drop, the UI socket
+bind and the status page start). Children inherit the ruleset.
+
+* **Read-only** (read, list, execute): `/usr`, `/bin`, `/sbin`, `/lib*`,
+  `/etc`, `/opt`, `/proc`, `/dev/{urandom,random,zero}`, the data dir
+  (`/usr/share/phantom-mirage` or `PHANTOM_MIRAGE_DATADIR`) and the lib dir (`/usr/lib/phantom-mirage`), the
+  directories of the config file and of `-p -x -a -0 -m`, the working
+  directory, the webserver root, every `PYTHONPATH` entry, and every
+  absolute path in a script port or subsystem command line.
+* **Writable** (create, write, truncate, unlink; no device nodes, no
+  cross-directory renames): the directories of `-l`, `-s`,
+  `--json-log` and the DHCP dump file, the control socket dir
+  (`/run/phantom-mirage`), `<webserver-root>/graphs`, `/tmp` only when
+  rrdtool is enabled, and any `--sandbox-allow-write` dir. `/dev/null`
+  is writable. Everything else gets `EACCES`.
+* **Network** (Landlock ABI 4, Linux 6.7+): TCP `bind` is denied (the
+  daemon's listening sockets already exist) and TCP `connect` is
+  limited to the ports of statically configured `proxy` actions. If a
+  proxy target is dynamic (`proxy $ipsrc:23`), connect is left
+  unrestricted. Below ABI 4 there are no network rules.
+* **Degrading.** phantom-mirage logs one of:
+  * `sandbox-daemon: Landlock ABI <n> active: <r> read-only, <w>
+    writable paths; network: <...>`, or
+  * `sandbox-daemon: Landlock unavailable (<errno>); the daemon is NOT
+    filesystem-restricted (seccomp only)` (kernel older than 5.13,
+    Landlock not in `lsm=`, or a container profile that blocks it).
+    phantom-mirage then keeps running with seccomp only.
+* **Caveats.** Rules are fixed at start-up: a SIGHUP reload that adds a
+  script outside the allowed directories, or moves a log, gets
+  `EACCES`, so restart instead. Scripts that write scratch files need
+  `--sandbox-allow-write`. The pid file can't be removed on exit.
+
 ## Known gaps (why this is opt-in)
 
 * **Deny-list, not allowlist.** Service scripts are arbitrary programs
@@ -158,8 +193,8 @@ x86_64). If the filter can't be installed, phantom-mirage exits.
   beyond the daemon's own hardening.
 * **Read-only /tmp.** Scripts that write scratch files must be given a
   directory with `--sandbox-allow-write`.
-* **The daemon itself** gets no Landlock. `--sandbox-daemon` gives it a
-  seccomp allowlist, but that list has to be broad (sockets, file I/O,
+* **The daemon's allowlist is broad.** `--sandbox-daemon` gives it
+  Landlock and a seccomp allowlist, but that list has to be broad (sockets, file I/O,
   `execve`) because the daemon reopens logs and configs on
   SIGHUP/SIGUSR1, loads plugins with `dlopen`, and its children
   inherit the filter. Scripts or plugins that use calls outside the
@@ -187,7 +222,10 @@ x86_64). If the filter can't be installed, phantom-mirage exits.
   SIGHUP/SIGUSR1, with and without `--sandbox-scripts`. Any
   `denied syscall` or `killed by SIGSYS` line fails the step, and a
   negative check (a `mount` call through phantom-mirage-ctl `!`) must be logged
-  and must kill the daemon.
+  and must kill the daemon. Through phantom-mirage-ctl `!`, the daemon must also
+  get `EACCES` writing outside its writable dirs, succeed in its log dir,
+  and (ABI 4+) get `EACCES` on a TCP connect. `HD_LANDLOCK=require`
+  makes that job and the arm64 job fail if Landlock isn't active.
 * The **Docker** job checks the same `/proc/1/status` fields in the
   image (the bounding set is exempt: no `CAP_SETPCAP`), and that
   `--sandbox-scripts` starts.

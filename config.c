@@ -1332,3 +1332,21 @@ template_test(void)
 
 	template_packet_test();
 }
+
+/* Calls f on every port and default action of every template (#16) */
+void
+template_action_iterate(void (*f)(struct action *))
+{
+	struct template *tmpl;
+	struct port *port;
+
+	SPLAY_FOREACH(tmpl, templtree, &templates) {
+		SPLAY_FOREACH(port, porttree, &tmpl->ports)
+			f(&port->action);
+		SPLAY_FOREACH(port, porttree, &tmpl->bcasts)
+			f(&port->action);
+		f(&tmpl->tcp);
+		f(&tmpl->udp);
+		f(&tmpl->icmp);
+	}
+}

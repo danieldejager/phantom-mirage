@@ -10,10 +10,12 @@
 #   HD_WRAP   command prefix for phantom-mirage (e.g. strace)
 #   HD_LEARN  1: run without --sandbox-daemon (strace collection) and
 #             skip the filter checks and the negative check
+#   HD_LANDLOCK  "require": fail unless the daemon reports Landlock active
+#             (default: also accept the logged "Landlock unavailable")
 set -uo pipefail
 D=$PWD
 W=${HD_WORK:-/tmp/hdsd}
-rm -rf $W; install -d -m 1777 $W $W/rw
+rm -rf $W; install -d -m 1777 $W $W/rw $W/log
 ip route replace 10.99.0.0/24 dev lo
 cp ci/svc_escape.sh $W/svc_escape.sh
 rm -rf $W/htdocs; cp -r webserver/htdocs $W/htdocs
@@ -42,7 +44,7 @@ run() {
     --webserver-port=8080 --webserver-root=$W/htdocs \
     -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
     -0 $D/pf.os -m $D/nmap-mac-prefixes \
-    -l $W/phantom-mirage.log -s $W/service.log --json-log=$W/events.jsonl \
+    -l $W/log/phantom-mirage.log -s $W/log/service.log --json-log=$W/log/events.jsonl \
     --heartbeat=1 ${HD_EXTRA:-} "$@" > $log 2>&1 &
   hp=$!
   for i in $(seq 1 40); do
@@ -71,6 +73,23 @@ PY
   grep -q '^42' $W/ctl.out || { echo "$mode: phantom-mirage-ctl ! failed" >&2; cat $W/ctl.out; rc=1; }
   echo 'list template' | timeout 5 ./phantom-mirage-ctl > $W/ctl2.out 2>&1 || true
   grep -q '10.99.0.10' $W/ctl2.out || { echo "$mode: phantom-mirage-ctl list failed" >&2; rc=1; }
+  if [ -z "$SBD" ]; then :; elif grep -q 'sandbox-daemon: Landlock ABI' $log; then
+    # Landlock on the daemon: writes outside the log/socket/graphs dirs
+    # and TCP connects (no proxy configured) are refused with EACCES.
+    echo "! import ctypes, socket; c = ctypes.CDLL(None, use_errno=True); r = c.open(b'$W/ll_probe', 0o1101, 0o644); e = ctypes.get_errno(); g = c.open(b'$W/log/ll_ok', 0o1101, 0o644); print('LL', r, e, g >= 0, socket.socket().connect_ex(('127.0.0.1', 8080)))" |
+      timeout 5 ./phantom-mirage-ctl > $W/ctl3.out 2>&1 || true
+    cat $W/ctl3.out
+    grep -q "^LL -1 13 True" $W/ctl3.out || { echo "$mode: Landlock fs rules not enforced" >&2; rc=1; }
+    [ -e $W/ll_probe ] && { echo "$mode: Landlock let the daemon write $W" >&2; rc=1; }
+    abi=$(sed -n 's/.*sandbox-daemon: Landlock ABI \([0-9]*\).*/\1/p' $log | head -1)
+    if [ "${abi:-0}" -ge 4 ]; then
+      grep -q "^LL -1 13 True 13" $W/ctl3.out || { echo "$mode: Landlock TCP connect not denied" >&2; rc=1; }
+    fi
+  elif [ "${HD_LANDLOCK:-}" = require ]; then
+    echo "$mode: Landlock required but not active" >&2; rc=1
+  else
+    grep -q 'sandbox-daemon: Landlock unavailable' $log || { echo "$mode: Landlock state not logged" >&2; rc=1; }
+  fi
   hd=$(pgrep -n -x phantom-mirage || true)
   if [ -n "$hd" ]; then
     kill -HUP $hd; sleep 1; kill -USR1 $hd; sleep 1

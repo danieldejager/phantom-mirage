@@ -167,6 +167,7 @@ void		template_print(struct evbuffer*, struct template *);
 /* Iterate across all templates and call the callback function for each */
 int		template_iterate(int (*f)(struct template *, void *),
 		    void *arg);
+void		template_action_iterate(void (*)(struct action *));
 
 #define template_free(x)	do {					\
 	if ((x) == NULL)						\
