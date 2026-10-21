@@ -45,11 +45,25 @@ The command also matches templates based on wild cards similar
 to file system globbing.
 .El
 .Sh FILES
-.Bl -tag -width /var/run/honeyd.sock
-.It Pa /var/run/honeyd.pid
+.Bl -tag -width /var/run/honeyd/honeyd.sock
+.It Pa /var/run/honeyd/honeyd.sock
 The default socket that
 .Nm
 connects to.
+.Nm Honeyd
+creates it in a root-owned directory with mode 0700, the socket itself
+with mode 0600, and checks the peer credentials of every connection, so
+by default only root may use
+.Nm .
+If
+.Nm honeyd
+is started with the environment variable
+.Ev HONEYD_UI_GROUP
+set to a group name, the directory becomes 0750 and the socket 0660
+with that group, and clients whose primary group matches are accepted
+(e.g. run
+.Ic sg Ar group Nm ) .
+Access to the socket is equivalent to code execution.
 .El
 .Sh SEE ALSO
 .Xr honeyd 8

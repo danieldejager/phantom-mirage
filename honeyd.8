@@ -621,6 +621,13 @@ value in the command line has to be
 .Bl -tag -width {prefix}/share/honeyd/xprobe2.conf
 .It Pa /var/run/honeyd.pid
 The PID of the current daemon.
+.It Pa /var/run/honeyd/honeyd.sock
+The management console socket used by
+.Xr honeydctl 1 ;
+root-only by default, see
+.Xr honeydctl 1
+for
+.Ev HONEYD_UI_GROUP .
 .It Pa {prefix}/lib/honeyd/webserver/
 Python modules and web server documents used by the internal webserver.
 .It Pa {prefix}/lib/honeyd/libhoneyd.so
