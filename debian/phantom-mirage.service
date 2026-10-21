@@ -8,20 +8,27 @@ Wants=network-online.target
 Type=simple
 # Same settings as the SysV script. INTERFACE, NETWORK and OPTIONS come
 # from /etc/default/phantom-mirage (RUN= is ignored; enable the unit instead).
+# Sandboxing is on by default (#16). SANDBOX can be overridden in
+# /etc/default/phantom-mirage, but see RestrictNamespaces= below first.
+Environment="SANDBOX=--sandbox-daemon --sandbox-scripts"
 EnvironmentFile=-/etc/default/phantom-mirage
 # phantom-mirage starts as root to open pcap/raw sockets, then drops to the
 # phantom-mirage user itself (-u/-g take numeric IDs, hence the shell).
 ExecStartPre=/bin/sh -c 'exec /usr/bin/phantom-mirage --verify-config -f /etc/phantom-mirage/phantom-mirage.conf $${INTERFACE:+-i $$INTERFACE} $OPTIONS $NETWORK'
-ExecStart=/bin/sh -c 'exec /usr/bin/phantom-mirage -d -f /etc/phantom-mirage/phantom-mirage.conf -l /var/log/phantom-mirage/phantom-mirage.log -p /etc/phantom-mirage/nmap-os-db -a /etc/phantom-mirage/nmap.assoc -0 /etc/phantom-mirage/pf.os -x /etc/phantom-mirage/xprobe2.conf -m /etc/phantom-mirage/nmap-mac-prefixes -u $$(id -u phantom-mirage) -g $$(id -g phantom-mirage) $${INTERFACE:+-i $$INTERFACE} $OPTIONS $NETWORK'
-# Optional (#16): confine the daemon, and everything it starts, to a
-# seccomp syscall allowlist after its privilege drop. Add
-# --sandbox-daemon (and optionally --sandbox-scripts) to OPTIONS in
-# /etc/default/phantom-mirage. It is the only syscall filter here (this unit sets
-# no SystemCallFilter) and works with NoNewPrivileges and
-# ProtectSystem=strict below; a denied call is logged as
-# "sandbox-daemon: denied syscall N" and stops phantom-mirage with SIGSYS
-# (Restart=on-failure brings it back). See docs/sandboxing.md.
-ExecReload=/bin/kill -HUP $MAINPID
+ExecStart=/bin/sh -c 'exec /usr/bin/phantom-mirage -d -f /etc/phantom-mirage/phantom-mirage.conf -l /var/log/phantom-mirage/phantom-mirage.log -p /etc/phantom-mirage/nmap-os-db -a /etc/phantom-mirage/nmap.assoc -0 /etc/phantom-mirage/pf.os -x /etc/phantom-mirage/xprobe2.conf -m /etc/phantom-mirage/nmap-mac-prefixes -u $$(id -u phantom-mirage) -g $$(id -g phantom-mirage) $${INTERFACE:+-i $$INTERFACE} $SANDBOX $OPTIONS $NETWORK'
+# Sandboxing (#16), on by default through SANDBOX above:
+# --sandbox-daemon confines the daemon, and everything it starts, to a
+# seccomp syscall allowlist and Landlock after its privilege drop. It is
+# the only syscall filter here (this unit sets no SystemCallFilter) and
+# works with NoNewPrivileges and ProtectSystem=strict below; a denied call
+# is logged as "sandbox-daemon: denied syscall N" and stops phantom-mirage
+# with SIGSYS (Restart=on-failure brings it back). --sandbox-scripts runs
+# each service script in its own user/mount/PID/IPC/UTS/network
+# namespaces with a private /tmp. If either is missing, phantom-mirage
+# logs a warning at start. See docs/sandboxing.md.
+# "+": the daemon runs as phantom-mirage and the bounding set below has
+# no CAP_KILL, so a sandboxed root kill(1) would get EPERM
+ExecReload=+/bin/kill -HUP $MAINPID
 Restart=on-failure
 
 # Only what phantom-mirage needs before its own privilege drop (same set as the
@@ -45,7 +52,12 @@ ProtectKernelLogs=yes
 ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes
-RestrictNamespaces=yes
+# Relaxed for --sandbox-scripts, whose launcher creates per-script
+# namespaces. This is only safe with --sandbox-daemon on: its seccomp
+# allowlist keeps unshare/setns away from the daemon itself. If you remove
+# --sandbox-daemon (or --sandbox-scripts) from SANDBOX, set
+# RestrictNamespaces=yes back in a drop-in (systemctl edit phantom-mirage).
+RestrictNamespaces=user mnt pid ipc uts net
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes

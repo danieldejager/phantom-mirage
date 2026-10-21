@@ -171,8 +171,9 @@ x86_64). If the filter can't be installed, phantom-mirage exits.
   makes phantom-mirage exit with "cannot install seccomp filter".
 * On start-up the daemon logs `sandbox-daemon: seccomp allowlist active
   (<n> syscalls)`.
-* **Under systemd** (`debian/phantom-mirage.service`, not enabled by default):
-  add `--sandbox-daemon` to `OPTIONS` in `/etc/default/phantom-mirage`. The unit
+* **Under systemd** (`debian/phantom-mirage.service`): **on by default.**
+  The unit sets `SANDBOX="--sandbox-daemon --sandbox-scripts"` (see
+  "systemd defaults" below). The unit
   sets no `SystemCallFilter`, so this allowlist is the only syscall
   filter. It does not conflict with the unit's other settings:
   * `NoNewPrivileges=yes`: `--sandbox-daemon` sets no_new_privs anyway,
@@ -227,6 +228,48 @@ bind and the status page start). Children inherit the ruleset.
   script outside the allowed directories, or moves a log, gets
   `EACCES`, so restart instead. Scripts that write scratch files need
   `--sandbox-allow-write`. The pid file is emptied, not removed, on exit.
+
+## systemd defaults
+
+`debian/phantom-mirage.service` runs the daemon with
+`--sandbox-daemon --sandbox-scripts` (`Environment=SANDBOX=…`, which
+`/etc/default/phantom-mirage` may override) and with
+`RestrictNamespaces=user mnt pid ipc uts net` instead of `yes`, so the
+script launcher can create per-script namespaces.
+
+> **The relaxed `RestrictNamespaces=` depends on `--sandbox-daemon`.**
+> Its seccomp allowlist is what keeps `unshare`/`setns`/`clone`
+> namespace flags away from the daemon itself. If you remove
+> `--sandbox-daemon` (or `--sandbox-scripts`) from `SANDBOX`, also set
+> `RestrictNamespaces=yes` back in a drop-in (`systemctl edit
+> phantom-mirage`).
+
+As a fail-safe, phantom-mirage started by systemd (`INVOCATION_ID` set)
+without either flag logs, at `LOG_CRIT` and on stderr (so in the journal):
+`WARNING: running under systemd WITHOUT --sandbox-daemon …: the daemon
+and/or its scripts are NOT sandboxed …`. It still starts.
+
+On Ubuntu 24.04 and later, unprivileged user namespaces are restricted
+for unconfined programs (`kernel.apparmor_restrict_unprivileged_userns=1`).
+There scripts fall back to no namespaces (logged) unless that sysctl is 0
+or an AppArmor profile grants `userns`. Debian 13 allows them.
+
+CI (**systemd** jobs, Ubuntu 24.04 amd64 and arm64, directly on the
+runner with systemd as PID 1, via `ci/systemd_unit.sh`) builds and
+installs the .deb and runs the unit with its defaults:
+* `ProtectSystem=strict` is in effect.
+* The daemon runs as `phantom-mirage` with `NoNewPrivs: 1` and
+  `Seccomp: 2`, and the journal reports the allowlist, Landlock and the
+  script namespaces.
+* A script port reports pid 1, a downed `lo` only and a private `/tmp`.
+  The hostname stays the host's, because the unit's `ProtectHostname=yes`
+  forbids `sethostname`; the script still has its own UTS namespace.
+* The pid file matches `MainPID` (root 0644) and is rewritten on restart.
+  The socket is root 0600 in a root 0700 dir, and `/run/phantom-mirage`
+  is gone after stop.
+* `systemctl reload` delivers SIGHUP (`ExecReload=+…`: the bounding set
+  has no `CAP_KILL`), and nothing is denied.
+* A drop-in with `SANDBOX=` gives the warning.
 
 ## Known gaps (why this is opt-in)
 

@@ -29,8 +29,11 @@ NETWORK=10.0.0.0/8
 # configuration).
 OPTIONS="--disable-webserver"
 
-# Optional syscall/filesystem sandboxing (see docs/sandboxing.md):
-#OPTIONS="--disable-webserver --sandbox-daemon --sandbox-scripts"
+# Sandboxing (see docs/sandboxing.md) is on by default: the systemd
+# unit sets SANDBOX="--sandbox-daemon --sandbox-scripts". To turn it off,
+# set SANDBOX here AND set RestrictNamespaces=yes in a unit drop-in
+# (systemctl edit phantom-mirage); the unit only relaxes it for these.
+#SANDBOX=""
  
 # Remove --disable-webserver if you want
 # to start up the web server. You will need to ask phantom-mirage
