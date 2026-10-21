@@ -32,8 +32,15 @@ routing.py gate CI (sanitizer job). Regenerate with `make generate` and
 review the diff when honeyd's behaviour changes on purpose.
 
 nmap.py (Python 3, #36) binds a fixed list of personalities from
-../nmap-os-db, runs real nmap -O (-S 192.0.2.1 --send-eth over hdt1,
-192.18.0.0/15 routed via hdt0) against each and records whether nmap's
-answer is EXACT, a GUESS, OTHER or NONE in nmap.output.1. It needs the
-nmap binary and is part of `make test` and the CI gate. Full nmap output
-of the last run is left in regress/nmap.log.
+../nmap-os-db and runs real nmap -O against each. nmap runs in its own
+network namespace (hdnmap) on hdt1 as 192.0.2.1, so nothing it uses is a
+local address on honeyd's side and honeyd's replies leave through hdt0
+as they would to a remote scanner. nmap.output.1 records MATCH (the
+personality is in nmap's OS details or OS guesses), OTHER or NONE per
+personality. Exact-vs-guess is not compared: nmap's timing-based tests
+(ISN rate etc.) move a few personalities between "OS details" and a top
+"Aggressive OS guess" from run to run. Full output (EXACT/GUESS per
+target) is left in regress/nmap.log. Needs nmap, and ip netns
+(CAP_SYS_ADMIN in a container). REGRESS_HONEYD_ARGS adds honeyd options,
+e.g. "-u 0 -g 0" to run the suite in an unprivileged
+`unshare -rnm` namespace.

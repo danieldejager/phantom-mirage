@@ -113,7 +113,9 @@ jobs:
     container:
       image: debian:13
       # NET_ADMIN: the subsystem step routes a honeypot subnet over lo.
-      options: --cap-add=NET_ADMIN
+      # SYS_ADMIN: regress/nmap.py runs nmap in its own network namespace
+      # (ip netns needs mount/unshare).
+      options: --cap-add=NET_ADMIN --cap-add=SYS_ADMIN
     env:
       # Findings fail the job. Leak detection is off because honeyd keeps
       # its config, personalities and assoc tables for the whole process

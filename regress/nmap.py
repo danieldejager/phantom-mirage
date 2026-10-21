@@ -8,10 +8,12 @@
 # Binds a fixed set of personalities from ../nmap-os-db to 192.18.0.x,
 # runs real nmap OS detection against each over the regress veth pair
 # (regress.py) and writes, per personality, how nmap classified it:
-#   EXACT    nmap's OS details are exactly the configured personality
-#   GUESS    the personality is among nmap's OS guesses
+#   MATCH    nmap's OS details or OS guesses name the personality
 #   OTHER    nmap named something else
 #   NONE     nmap had no OS match
+# (Whether nmap reports an exact "OS details" line or only a top guess
+# depends on timing-based tests such as TCP ISN rate, so the two are not
+# told apart; nmap.log has the full output, EXACT/GUESS per target.)
 # The result is compared with nmap.output.1. honeyd runs with -R 1, so
 # its answers are the same every run. Needs root, nmap, python3-dpkt.
 #
@@ -37,6 +39,7 @@ PERSONALITIES = [
     "HP LaserJet 4250 printer",
 ]
 SRC = "192.0.2.1"
+NETNS = "hdnmap"
 OUTPUT = "nmap.output.1"
 
 
@@ -53,6 +56,11 @@ def known(db):
     if missing:
         sys.stderr.write("not in %s: %s\n" % (db, missing))
         sys.exit(1)
+
+
+def cleanup(reg):
+    subprocess.call(["ip", "netns", "del", NETNS], stderr=subprocess.DEVNULL)
+    reg.RemoveAllRoutes()
 
 
 def make_configuration(filename):
@@ -80,9 +88,8 @@ def classify(name, text):
 
 
 def nmap(ip):
-    cmd = ["nmap", "-n", "-Pn", "-e", regress.TEST_IF, "-S", SRC,
-           "--send-eth", "-O", "--osscan-guess", "--max-os-tries", "1",
-           "-p", "1,23", ip]
+    cmd = ["ip", "netns", "exec", NETNS, "nmap", "-n", "-Pn", "-O",
+           "--osscan-guess", "--max-os-tries", "1", "-p", "1,23", ip]
     p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                        timeout=180)
     return p.stdout.decode(errors="replace")
@@ -97,20 +104,22 @@ def main():
     reg = regress.regress("Nmap fingerprints", "../honeyd", "config.nmap",
                           debug="-d" in flags)
     reg.generate = "-g" in flags
-    # nmap goes through the kernel: route the honeypots out hdt1 with
-    # static neighbour entries for hdt0's MAC (a "via 10.250.0.2" route is
-    # refused, the gateway is a local address). The kernel blackholes
-    # what reaches hdt0; honeyd sees it on the wire.
-    mac = ":".join("%02x" % b for b in reg.hd_mac)
-    steps = [("ip", "route", "replace", "192.18.0.0/15", "dev",
-              regress.TEST_IF)]
-    steps += [("ip", "neigh", "replace", target(i), "lladdr", mac,
-               "nud", "permanent", "dev", regress.TEST_IF)
-              for i in range(len(PERSONALITIES))]
+    # nmap runs in its own network namespace on hdt1 (192.0.2.1), so
+    # nothing it uses is a local address for honeyd's side: honeyd's
+    # replies go out hdt0 and nmap sees them like a remote scanner would.
+    ns = ["ip", "-n", NETNS]
+    steps = [("ip", "netns", "add", NETNS),
+             ("ip", "link", "set", regress.TEST_IF, "netns", NETNS),
+             ns + ["link", "set", "lo", "up"],
+             ns + ["addr", "add", "10.250.0.1/30", "dev", regress.TEST_IF],
+             ns + ["addr", "add", SRC + "/32", "dev", regress.TEST_IF],
+             ns + ["link", "set", regress.TEST_IF, "up"],
+             ns + ["route", "add", "192.18.0.0/15", "via", "10.250.0.2",
+                   "dev", regress.TEST_IF, "src", SRC]]
     for st in steps:
         if subprocess.call(st):
             sys.stderr.write("failed: %s\n" % " ".join(st))
-            reg.RemoveAllRoutes()
+            cleanup(reg)
             sys.exit(1)
     sys.stderr.write("\tRunning nmap -O against %d personalities: " %
                      len(PERSONALITIES))
@@ -120,12 +129,14 @@ def main():
         for i, name in enumerate(PERSONALITIES):
             text = nmap(target(i))
             res = classify(name, text)
-            lines.append("%s %s\n" % (res, name))
+            lines.append("%s %s\n" % (
+                "MATCH" if res in ("EXACT", "GUESS") else res, name))
             logs.append("== %s (%s) -> %s\n%s" % (target(i), name, res, text))
             sys.stderr.write(res[0])
             sys.stderr.flush()
     finally:
         reg.stop_honeyd()
+        subprocess.call(["ip", "netns", "del", NETNS])
     sys.stderr.write("\n")
     fd, got = tempfile.mkstemp(prefix="nmap.output.")
     with os.fdopen(fd, "w") as f:
