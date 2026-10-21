@@ -1,3 +1,11 @@
+honeyd (1.6.8.1) unstable; urgency=medium
+
+  * Modernise packaging: debhelper compat 13 (dh sequencer), Python 3
+    (python3 Recommends), current build-deps incl. bison and flex.
+  * Build, lint and install the .deb in CI.
+
+ -- Dan de Jager <36914577+danieldejager@users.noreply.github.com>  Thu, 22 Oct 2026 05:00:00 +1100
+
 honeyd (1.6.8) quantal; urgency=low
 
   * Add the ability for honeypots to send periodic broadcasts

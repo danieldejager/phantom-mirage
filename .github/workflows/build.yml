@@ -402,6 +402,58 @@ jobs:
             honeyd-py-ctl.out
           if-no-files-found: ignore
 
+  deb:
+    name: Debian 13 / .deb package
+    runs-on: ubuntu-latest
+    container: debian:13
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src/honeyd
+
+      - name: Install packaging tools and build-deps
+        working-directory: src/honeyd
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential devscripts equivs lintian
+          mk-build-deps -i -r -t 'apt-get -y --no-install-recommends' debian/control
+
+      - name: dpkg-buildpackage -us -uc -b
+        working-directory: src/honeyd
+        run: dpkg-buildpackage -us -uc -b
+
+      - name: lintian (report only)
+        working-directory: src
+        run: |
+          lintian --info --display-info *.changes 2>&1 | tee lintian.txt || true
+          { echo '### lintian'; echo '```'; cat lintian.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install the .deb with apt and run it
+        working-directory: src
+        run: |
+          set -x
+          test ! -e /usr/bin/honeyd
+          DEBIAN_FRONTEND=noninteractive apt-get install -y ./honeyd_*.deb ./honeyd-common_*.deb
+          dpkg -L honeyd
+          test "$(command -v honeyd)" = /usr/bin/honeyd
+          dpkg -S /usr/bin/honeyd
+          honeyd --version
+          test -e /etc/honeypot/honeyd.conf
+          test -e /usr/share/honeyd/nmap-os-db
+          getent passwd honeyd
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: honeyd-deb
+          path: |
+            src/*.deb
+            src/*.buildinfo
+            src/*.changes
+            src/lintian.txt
+          if-no-files-found: error
+
   docker:
     name: Docker image (amd64 + arm64)
     runs-on: ubuntu-latest
