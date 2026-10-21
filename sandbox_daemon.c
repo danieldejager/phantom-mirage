@@ -84,6 +84,15 @@ sd_sigsys(int sig, siginfo_t *si, void *ctx)
 	_exit(128 + SIGSYS);
 }
 
+static int sd_quiet;
+
+int
+sandbox_daemon_child(void)
+{
+	sd_quiet = 1;
+	return (sandbox_daemon());
+}
+
 int
 sandbox_daemon(void)
 {
@@ -136,11 +145,18 @@ sandbox_daemon(void)
 	if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0) == -1)
 		return (-1);
 #endif
-	syslog(LOG_NOTICE, "sandbox-daemon: seccomp allowlist active "
-	    "(%zu syscalls)", n);
+	if (!sd_quiet)
+		syslog(LOG_NOTICE, "sandbox-daemon: seccomp allowlist "
+		    "active (%zu syscalls)", n);
 	return (0);
 }
 #else
+int
+sandbox_daemon_child(void)
+{
+	return (sandbox_daemon());
+}
+
 int
 sandbox_daemon(void)
 {

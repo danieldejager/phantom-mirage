@@ -232,6 +232,7 @@ static struct option honeyd_long_opts[] = {
 	{"sandbox-scripts", 0, &honeyd_sandbox_scripts, 1},
 	{"sandbox-daemon", 0, &honeyd_sandbox_daemon, 1},
 	{"sandbox-allow-write", required_argument, NULL, 'S'},
+	{"sandbox-script-net", required_argument, NULL, 'N'},
 	{0, 0, 0, 0}
 };
 
@@ -266,6 +267,9 @@ usage(void)
 	    "                         x86_64/arm64); see docs/sandboxing.md.\n"
 	    "  --sandbox-allow-write=DIR\n"
 	    "                         Let sandboxed scripts write below DIR.\n"
+	    "  --sandbox-script-net=PATH\n"
+	    "                         With --sandbox-scripts, keep the host network\n"
+	    "                         for scripts whose command line has PATH.\n"
         "  -t ipFile              Dumps currently used DHCP IP addresses to ipFile\n"
 	    "  -i interface           Listen on interface.\n"
 	    "  -p file                Read nmap-style fingerprints from file.\n"
@@ -3816,15 +3820,17 @@ sbd_action(struct action *action)
 }
 
 static void
-honeyd_sandbox_daemon_landlock(const char *datadir)
+honeyd_sandbox_daemon_landlock(const char *datadir, void (*before)(void))
 {
 	extern struct subsystemqueue subsystems;
 	extern char *ui_file;
 	struct subsystem *sub;
 	char buf[1024], *pp, *p, *tok;
 
-	if (!honeyd_sandbox_daemon)
+	if (!honeyd_sandbox_daemon) {
+		before();
 		return;
+	}
 
 	/* read-only: config, data and script dirs (libs are in sandbox.c) */
 	sbd_dir(config.config, 0);
@@ -3858,6 +3864,7 @@ honeyd_sandbox_daemon_landlock(const char *datadir)
 	if (honeyd_rrdtool_path != NULL && strlen(honeyd_rrdtool_path))
 		sandbox_daemon_allow_write("/tmp");	/* honeyd_traffic.rrd */
 
+	before();
 	sandbox_daemon_landlock();
 }
 
@@ -4045,6 +4052,13 @@ main(int argc, char *argv[])
 			if (sandbox_add_write_path(optarg) == -1) {
 				fprintf(stderr, "--sandbox-allow-write: need an "
 				    "absolute path (max 16)\n");
+				exit(EXIT_FAILURE);
+			}
+			break;
+		case 'N':
+			if (sandbox_add_net_script(optarg) == -1) {
+				fprintf(stderr, "--sandbox-script-net: need an "
+				    "absolute path (max 32)\n");
 				exit(EXIT_FAILURE);
 			}
 			break;
@@ -4352,8 +4366,10 @@ main(int argc, char *argv[])
 		syslog(LOG_WARNING, "Running with root privileges.");
 	}
 
-	/* Opt-in: Landlock, then the seccomp allowlist for the daemon (#16) */
-	honeyd_sandbox_daemon_landlock(datadir);
+	/* --sandbox-scripts: the per-script namespace launcher must be
+	 * forked before the daemon's own filters (they forbid unshare and
+	 * mount), but after the paths for Landlock were collected (#16) */
+	honeyd_sandbox_daemon_landlock(datadir, sandbox_ns_start);
 	if (sandbox_daemon() == -1) {
 		syslog(LOG_ERR, "--sandbox-daemon: cannot install seccomp "
 		    "filter: %m");

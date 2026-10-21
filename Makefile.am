@@ -79,7 +79,7 @@ pkgincludedir = $(honeydincludedir)
 pkginclude_HEADERS = hooks.h plugins.h plugins_config.h debug.h
 
 phantom_mirage_SOURCES	= honeyd.c command.c parse.y lex.l config.c personality.c sandbox.c sandbox.h \
-	sandbox_daemon.c sandbox_daemon_list.h \
+	sandbox_daemon.c sandbox_daemon_list.h sandbox_ns.c \
 	util.c ipfrag.c router.c tcp.c udp.c xprobe_assoc.c log.c \
 	fdpass.c atomicio.c subsystem.c hooks.c plugins.c \
 	plugins_config.c pool.c interface.c arp.c gre.c \
