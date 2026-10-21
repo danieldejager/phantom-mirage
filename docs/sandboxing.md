@@ -296,8 +296,13 @@ installed and unused, and the package installs as before.
   * Unix sockets for the requests and the passed descriptors, and
     `kill` for its own children.
   * Scripts in `/{usr/,}bin`, `/etc/phantom-mirage` and
-    `/usr/share/phantom-mirage` may only be exec'd with
-    `px -> &phantom-mirage-script`.
+    `/usr/share/phantom-mirage` are exec'd with `phantom-mirage-script`
+    stacked: before the exec the launcher writes
+    `stack phantom-mirage-script` to `/proc/self/attr/apparmor/exec`
+    (`change_profile -> &phantom-mirage-script`). If that write fails while
+    it is confined by `pm-script-ns`, the script is not run.
+  * Both profiles use `attach_disconnected` (syslog from the private mount
+    namespace), and `dac_override`/`dac_read_search` are explicitly denied.
 * **`phantom-mirage-script`**, stacked on the launcher's profile:
   * Under `no_new_privs`, which the daemon sets, AppArmor only allows
     stacking, not a plain profile change.
