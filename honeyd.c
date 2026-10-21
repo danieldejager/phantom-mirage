@@ -230,6 +230,7 @@ static struct option honeyd_long_opts[] = {
 	{"sensor-id", required_argument, NULL, 'I'},
 	{"heartbeat", required_argument, NULL, 'H'},
 	{"sandbox-scripts", 0, &honeyd_sandbox_scripts, 1},
+	{"sandbox-daemon", 0, &honeyd_sandbox_daemon, 1},
 	{"sandbox-allow-write", required_argument, NULL, 'S'},
 	{0, 0, 0, 0}
 };
@@ -260,6 +261,9 @@ usage(void)
 	    "  --heartbeat=SECONDS    Write a JSON heartbeat event every SECONDS.\n"
 	    "  --sandbox-scripts      Run scripts and subsystems under Landlock +\n"
 	    "                         seccomp (Linux); see docs/sandboxing.md.\n"
+	    "  --sandbox-daemon       Confine honeyd itself to a seccomp syscall\n"
+	    "                         allowlist after the privilege drop (Linux\n"
+	    "                         x86_64/arm64); see docs/sandboxing.md.\n"
 	    "  --sandbox-allow-write=DIR\n"
 	    "                         Let sandboxed scripts write below DIR.\n"
         "  -t ipFile              Dumps currently used DHCP IP addresses to ipFile\n"
@@ -3567,7 +3571,11 @@ void
 honeyd_sigchld(int fd, short what, void *arg)
 {
 	pid_t pid;
-	while ((pid = waitpid(-1, NULL, WNOHANG)) > 0) {
+	int status;
+	while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+		if (WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS)
+			syslog(LOG_WARNING, "child %d killed by SIGSYS "
+			    "(seccomp: denied syscall)", (int)pid);
 		/* Ignore the rrdtool driver for children accounting */
 		if (honeyd_rrd_drv != NULL && honeyd_rrd_drv->pid == pid)
 			continue;
@@ -4116,6 +4124,13 @@ main(int argc, char *argv[])
 		    honeyd_uid, honeyd_gid);
 	} else {
 		syslog(LOG_WARNING, "Running with root privileges.");
+	}
+
+	/* Opt-in: seccomp allowlist for the daemon from here on (#16) */
+	if (sandbox_daemon() == -1) {
+		syslog(LOG_ERR, "--sandbox-daemon: cannot install seccomp "
+		    "filter: %m");
+		exit(EXIT_FAILURE);
 	}
 
 	// Clear/create the IP list file if we're using it

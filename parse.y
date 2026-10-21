@@ -79,11 +79,13 @@ int hydwarn(char *, ...);
 int hydprintf(char *, ...);
 void *hyd_scan_string(char *);
 int hyd_delete_buffer(void *);
+void hydrestart(FILE *);
 
 #define yylex hydlex
 #define yyparse hydparse
 #define yy_scan_string hyd_scan_string
 #define yy_delete_buffer hyd_delete_buffer
+#define yyrestart hydrestart
 #define yyerror hyderror
 #define yywarn hydwarn
 #define yyprintf hydprintf
@@ -1277,6 +1279,12 @@ parse_configuration(FILE *input, char *name)
 	lineno = 1;
 	filename = name;
 	yyin = input;
+	/*
+	 * parse_line() (honeydctl) deletes its string buffer, but the
+	 * scanner still points into it; restart so a later config reread
+	 * (SIGHUP) does not write into freed memory.
+	 */
+	yyrestart(input);
 	yyparse();
 	return (errors ? -1 : 0);
 }

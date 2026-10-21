@@ -13,6 +13,14 @@ EnvironmentFile=-/etc/default/honeyd
 # honeyd user itself (-u/-g take numeric IDs, hence the shell).
 ExecStartPre=/bin/sh -c 'exec /usr/bin/honeyd --verify-config -f /etc/honeypot/honeyd.conf $${INTERFACE:+-i $$INTERFACE} $OPTIONS $NETWORK'
 ExecStart=/bin/sh -c 'exec /usr/bin/honeyd -d -f /etc/honeypot/honeyd.conf -l /var/log/honeypot/honeyd.log -p /etc/honeypot/nmap-os-db -a /etc/honeypot/nmap.assoc -0 /etc/honeypot/pf.os -x /etc/honeypot/xprobe2.conf -m /etc/honeypot/nmap-mac-prefixes -u $$(id -u honeyd) -g $$(id -g honeyd) $${INTERFACE:+-i $$INTERFACE} $OPTIONS $NETWORK'
+# Optional (#16): confine the daemon, and everything it starts, to a
+# seccomp syscall allowlist after its privilege drop. Add
+# --sandbox-daemon (and optionally --sandbox-scripts) to OPTIONS in
+# /etc/default/honeyd. It is the only syscall filter here (this unit sets
+# no SystemCallFilter) and works with NoNewPrivileges and
+# ProtectSystem=strict below; a denied call is logged as
+# "sandbox-daemon: denied syscall N" and stops honeyd with SIGSYS
+# (Restart=on-failure brings it back). See docs/sandboxing.md.
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 
