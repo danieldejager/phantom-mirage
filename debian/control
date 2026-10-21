@@ -13,7 +13,6 @@ Package: honeyd
 Architecture: any
 Depends: adduser (>= 3.52), ${shlibs:Depends}, ${misc:Depends}
 Recommends: python3, farpd, honeyd-common, rrdtool
-
 Suggests: iisemulator
 Homepage: http://www.honeyd.org
 Description: Small daemon that creates virtual hosts simulating their services and behaviour
