@@ -31,5 +31,9 @@ over 5 consecutive runs. All tests in general.py, detect.py and
 routing.py gate CI (sanitizer job). Regenerate with `make generate` and
 review the diff when honeyd's behaviour changes on purpose.
 
-nmap.py is not ported: it needs an nmap.prints file that is no longer in
-the tree and BSD's lo0, and is no longer part of `make test`.
+nmap.py (Python 3, #36) binds a fixed list of personalities from
+../nmap-os-db, runs real nmap -O (-S 192.0.2.1 --send-eth over hdt1,
+192.18.0.0/15 routed via hdt0) against each and records whether nmap's
+answer is EXACT, a GUESS, OTHER or NONE in nmap.output.1. It needs the
+nmap binary and is part of `make test` and the CI gate. Full nmap output
+of the last run is left in regress/nmap.log.

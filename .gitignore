@@ -90,3 +90,5 @@ os-test/results*
 /parse.h
 /lex.c
 __pycache__/
+/regress/config.nmap
+/regress/nmap.log

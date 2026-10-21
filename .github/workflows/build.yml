@@ -355,14 +355,15 @@ jobs:
         # of honeyd's randomness, the harness masks only wall-clock and
         # kernel-chosen fields (regress/IMPORTANT_NOTES.txt). Runs the
         # suite 3 times; any mismatch or harness error fails the job.
+        # nmap.py runs real nmap -O against fixed personalities.
         shell: bash
         run: |
-          apt-get install -y --no-install-recommends python3-dpkt diffutils >/dev/null
+          apt-get install -y --no-install-recommends python3-dpkt diffutils nmap >/dev/null
           cd regress
           echo "### regress/ (gating)" >> "$GITHUB_STEP_SUMMARY"
           bad=0
           for run in 1 2 3; do
-            for t in general.py detect.py routing.py; do
+            for t in general.py detect.py routing.py nmap.py; do
               log="../regress-${t%.py}-$run.log"
               set +e; timeout -k 10 300 python3 "$t" > "$log" 2>&1; rc=$?; set -e
               cat "$log"
@@ -388,6 +389,7 @@ jobs:
             events.jsonl
             honeyd.log
             regress-*.log
+            regress/nmap.log
             honeyd-py*.log
             honeyd-py-ctl.out
           if-no-files-found: ignore

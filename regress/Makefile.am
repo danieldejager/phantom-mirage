@@ -8,7 +8,7 @@
 # anything else = the harness itself broke.
 
 PYTHON3 = python3
-TESTS_PY = general.py detect.py routing.py
+TESTS_PY = general.py detect.py routing.py nmap.py
 
 all:
 	@echo "To run the regression tests: cd regress && make test"
@@ -20,6 +20,7 @@ check:
 	@[ "`id -u`" -eq 0 ] || { echo "Need to run the test suite as root!"; exit 1; }
 	@command -v $(PYTHON3) >/dev/null || { echo "No $(PYTHON3) interpreter, tests will not work"; exit 1; }
 	@$(PYTHON3) -c 'import dpkt' 2>/dev/null || { echo "Need python3-dpkt"; exit 1; }
+	@command -v nmap >/dev/null || { echo "Need nmap (nmap.py)"; exit 1; }
 
 # Generate output for all tests
 generate: check
@@ -36,4 +37,5 @@ clean-local:
 EXTRA_DIST = config.1 config.2 detect.py general.py nmap.py \
 	regress.py dnet_compat.py routing.py detect.output.1 detect.output.2 \
 	detect.output.3 detect.output.4 \
-	gen.output.1 gen.output.2 route.output.1 IMPORTANT_NOTES.txt
+	gen.output.1 gen.output.2 route.output.1 nmap.output.1 \
+	IMPORTANT_NOTES.txt
