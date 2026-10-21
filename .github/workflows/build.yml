@@ -1,0 +1,70 @@
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  debian13:
+    name: Debian 13 / GCC 14 (baseline with legacy flags)
+    runs-on: ubuntu-latest
+    container: debian:13
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool bison flex pkg-config \
+            libpcap-dev libevent-dev libdumbnet-dev zlib1g-dev libedit-dev
+
+      - name: Toolchain versions
+        run: gcc --version | head -1 && autoconf --version | head -1
+
+      - name: Configure
+        # Legacy flags are a temporary baseline. Removing them is issue #18.
+        run: |
+          ./autogen.sh
+          CC="gcc -fpermissive -fcommon" ./configure --prefix=/usr
+
+      - name: Build
+        # Serial make: the libhoneyd.so rule races under -j (issue #18).
+        run: make 2>&1 | tee build.log
+
+      - name: Count compiler warnings
+        run: |
+          n=$(grep -c "warning:" build.log || true)
+          echo "Compiler warnings: $n" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test
+        # Runs from the build tree. `make install` needs Python 2 for
+        # scripts/lib/init.py, so it is left out until issue #36.
+        run: |
+          D=$PWD
+          # honeyd refuses to start without its compiled-in data dir.
+          mkdir -p /usr/share/honeyd
+          ./honeyd --version
+          ./honeyd --verify-config -f $D/ci/smoke.conf -i lo --disable-webserver \
+            -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
+            -0 $D/pf.os -m $D/nmap-mac-prefixes
+          for b in honeydctl honeydstats hsniff; do test -x ./$b; done
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: |
+            build.log
+            config.log
+          if-no-files-found: ignore
