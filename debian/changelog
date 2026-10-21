@@ -10,7 +10,7 @@ phantom-mirage (1.7.0-2) unstable; urgency=medium
     phantom-mirage-sniff; preload library libphantom-mirage.so.
   * Paths: /usr/share/phantom-mirage, /usr/lib/phantom-mirage,
     /etc/phantom-mirage, /var/log/phantom-mirage,
-    /run/phantom-mirage/phantom-mirage.sock, /run/phantom-mirage.pid,
+    /run/phantom-mirage/phantom-mirage.sock, /run/phantom-mirage/phantom-mirage.pid,
     ~/.config/phantom-mirage.
   * systemd unit phantom-mirage.service, /etc/default/phantom-mirage,
     init script and system user phantom-mirage.
