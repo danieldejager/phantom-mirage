@@ -1439,9 +1439,8 @@ pyextend_webserver_verify_setup(const char *root_dir)
 	} dirs[] = { 
 		{ "styles", R_OK },
 		{ "images", R_OK },
-		{ ".", W_OK|R_OK },
+		{ ".", R_OK },
 		{ "graphs", W_OK|R_OK },
-		{ "templates", W_OK|R_OK },
 		{ NULL, 0 }
 	};
 	struct _dirs *p;
@@ -1476,9 +1475,9 @@ pyextend_webserver_init(char *address, int port, char *root_dir)
 	Py_XDECREF(pName);
 
 	/*
-	 * The bundled webserver (webserver/, htmltmpl) is still Python 2
-	 * code (#36). Under Python 3 it does not import, so carry on
-	 * without it instead of refusing to start.
+	 * webserver/server.py is a read-only status page (#36). If it
+	 * does not import, carry on without it instead of refusing to
+	 * start.
 	 */
 	if (pModule == NULL) {
 		PyErr_Print();

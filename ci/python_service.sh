@@ -23,8 +23,12 @@ if ./honeyd --verify-config -f /tmp/hdpy/bad.conf -i lo --disable-webserver \
   cat /tmp/hdpy/bad.log; echo "missing python module was accepted" >&2; exit 1
 fi
 grep -q 'Bad python module' /tmp/hdpy/bad.log
-# No --disable-webserver: the Python 2 webserver must not stop startup.
+# Status page on its default address (127.0.0.1) and a test port. honeyd
+# runs as 65534 after startup and graphs/ must be writable (rrdtool).
+rm -rf /tmp/hdpy/htdocs; cp -r $D/webserver/htdocs /tmp/hdpy/htdocs
+chown -R 65534:65534 /tmp/hdpy/htdocs/graphs
 PYTHONPATH=$D/scripts/python timeout 60 ./honeyd -d -f /tmp/hdpy/py.conf -i lo \
+  --webserver-port=8080 --webserver-root=/tmp/hdpy/htdocs \
   -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
   -0 $D/pf.os -m $D/nmap-mac-prefixes \
   -l /tmp/hdpy/honeyd.log -s /tmp/hdpy/service.log > honeyd-py.log 2>&1 &
@@ -50,6 +54,28 @@ for n in range(3):
     s.close()
 print("python service: 3 connections OK")
 PY
+# Read-only status page (webserver/server.py)
+python3 - <<'PY' || rc=1
+import urllib.request, urllib.error
+def get(path, method="GET"):
+    req = urllib.request.Request("http://127.0.0.1:8080" + path, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status, r.headers, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers, e.read()
+st, h, body = get("/")
+assert st == 200, st
+assert h["Content-Type"].startswith("text/html"), h["Content-Type"]
+for want in (b"Honeyd", b"Uptime:", b"10.99.0.10", b"Active TCP Connections",
+             b"Input Bytes"):
+    assert want in body, want
+assert get("/styles/layout.css")[0] == 200
+assert get("/server.py")[0] == 404
+assert get("/styles/../../server.py")[0] == 404
+assert get("/", "POST")[0] == 501
+print("status page OK (%d bytes)" % len(body))
+PY
 # honeydctl "!" runs Python inside honeyd (pyextend_run)
 echo '! import honeyd; print(6 * 7, honeyd.version)' | timeout 5 ./honeydctl > honeyd-py-ctl.out 2>&1 || true
 cat honeyd-py-ctl.out
@@ -61,6 +87,7 @@ cat honeyd-py.log
 echo "--- service log"; cat /tmp/hdpy/service.log || true
 cp /tmp/hdpy/service.log honeyd-py-service.log 2>/dev/null || true
 if grep -E 'runtime error|ERROR: AddressSanitizer' honeyd-py.log; then rc=1; fi
-grep -q 'internal webserver disabled' honeyd-py.log || { echo "webserver fallback not logged" >&2; rc=1; }
+grep -q 'HTTP server listening on 127.0.0.1:8080' honeyd-py.log || { echo "webserver not on 127.0.0.1" >&2; rc=1; }
+if grep -q 'internal webserver disabled' honeyd-py.log; then echo "webserver disabled" >&2; rc=1; fi
 grep -q 'python echo .* bytes from' /tmp/hdpy/service.log || { echo "honeyd.log() not in service log" >&2; rc=1; }
 exit $rc

@@ -289,10 +289,12 @@ jobs:
         # honeyd built --with-python; an "internal" Python 3 service
         # (scripts/python/echo_banner.py) answers three connections over lo,
         # honeyd.log() reaches the service log, honeydctl "!" runs Python,
-        # and the not-yet-ported Python 2 webserver must not stop startup.
+        # and the read-only status page (webserver/) answers on 127.0.0.1.
         # Uses the 10.99.0.0/24 route over lo from the subsystem step.
         shell: bash
-        run: ci/python_service.sh
+        run: |
+          python3 ci/test_webserver.py
+          ci/python_service.sh
 
       - name: Privilege hardening + script sandbox (sanitized, #16)
         # Default: honeyd and every script child run with all IDs 65534,
