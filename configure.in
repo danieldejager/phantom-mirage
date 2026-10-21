@@ -560,6 +560,7 @@ AC_CACHE_CHECK([for msg_accrights field in struct msghdr],
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <stdlib.h>
 int main() {
 #ifdef msg_accrights
 exit(1);
@@ -597,6 +598,7 @@ AC_CACHE_CHECK([for msg_control field in struct msghdr],
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <stdlib.h>
 int main() {
 #ifdef msg_control
 exit(1);
@@ -653,6 +655,7 @@ LIBS=$DNETLIB
         AC_TRY_RUN(
 #include <sys/types.h>
 #include <stdlib.h>
+#include <string.h>
 #include <dnet.h>
 int
 main(int argc, char **argv)
@@ -726,6 +729,7 @@ AC_MSG_CHECKING(if underscores are needed for symbols)
 AC_TRY_RUN(
 #include <dlfcn.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 int underscoreprobe(void) { return (31415); }
 
@@ -751,6 +755,7 @@ AC_MSG_CHECKING(if we can access libc without dlopen)
 AC_TRY_RUN(
 #include <dlfcn.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 int
 main(int argc, char **argv)
@@ -778,6 +783,7 @@ if test "$HAVEMETHOD" = "no"; then
         AC_TRY_RUN(
         #include <dlfcn.h>
         #include <stdio.h>
+        #include <stdlib.h>
     
         int
         main(int argc, char **argv)
