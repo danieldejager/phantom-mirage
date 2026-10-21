@@ -1,0 +1,14 @@
+create t
+set t personality "Linux 2.6.32"
+add t tcp port 23 "sh scripts/telnet.sh $ipsrc"
+add t tcp port 25 proxy $ipsrc:25
+add t udp port 53 proxy 8.8.8.8:53
+set t ethernet "00:11:22:33:44:55"
+annotate "Linux 2.6.32" fragment old
+set t uptime 3600
+set t droprate in 10
+set t maxfds 20
+clone t2 t
+delete t2
+bind 10.0.0.9 t
+delete 10.0.0.9

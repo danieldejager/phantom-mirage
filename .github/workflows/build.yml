@@ -319,3 +319,59 @@ jobs:
           docker logs "$cid"
           docker rm -f "$cid"
           docker image ls honeyd:ci --format 'Image size: {{.Size}}' | tee -a "$GITHUB_STEP_SUMMARY"
+
+  fuzz:
+    name: Debian 13 / libFuzzer (smoke)
+    runs-on: ubuntu-latest
+    container:
+      image: debian:13
+    env:
+      # Leaks: see the sanitizers job. Every target allocates long-lived
+      # state on purpose, so LSan is noise here too.
+      ASAN_OPTIONS: detect_leaks=0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool bison flex pkg-config \
+            libpcap-dev libevent-dev libdumbnet-dev zlib1g-dev libedit-dev \
+            clang libclang-rt-dev
+
+      - name: Build fuzz targets
+        run: fuzz/build.sh
+
+      - name: Replay seed corpora (gate)
+        # Every committed seed must run clean. A regression in a fixed bug
+        # fails here.
+        run: |
+          for t in packet config macprefix; do
+            fuzz/out/fuzz_$t -runs=0 fuzz/corpus/$t
+          done
+
+      - name: Fuzz each target for 60s (informational)
+        # Short exploratory run. Known open findings (see docs/fuzzing.md)
+        # can still be hit, so crashes are reported and uploaded rather
+        # than failing the build.
+        run: |
+          mkdir -p fuzz-artifacts
+          for t in packet config macprefix; do
+            mkdir -p "work/$t"
+            cp fuzz/corpus/$t/* "work/$t/"
+            fuzz/out/fuzz_$t -fork=2 -ignore_crashes=1 -max_total_time=60 \
+              -max_len=4096 -artifact_prefix="fuzz-artifacts/$t-" \
+              "work/$t" > "fuzz-$t.log" 2>&1 || true
+            tail -n 1 "fuzz-$t.log"
+            n=$(ls fuzz-artifacts | grep -c "^$t-" || true)
+            echo "fuzz_$t: $n crashing input(s)" | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Upload crashing inputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz-artifacts/
+          if-no-files-found: ignore
