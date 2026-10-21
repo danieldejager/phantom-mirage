@@ -4,7 +4,7 @@
 
 - **GNU Autotools.** `autogen.sh` runs aclocal/libtoolize/autoheader/automake/autoconf over `configure.in` (old name; modern autoconf expects `configure.ac`) and `Makefile.am`. Package version: `AM_INIT_AUTOMAKE(honeyd, 1.6d)` (configure.in:8).
 - **Targets** (`Makefile.am`): `bin_PROGRAMS = honeyd honeydctl honeydstats hsniff`; optional `smtp`, `proxy` subsystems; `libhoneyd.so` built by a hand-written libtool rule ("libtool is so broken" comment) from honeyd_overload.c, atomicio.c, fdpass.c; data files installed to `$(datadir)/honeyd` (nmap-os-db, xprobe2.conf, nmap.assoc, pf.os, nmap-mac-prefixes, config.sample …). Plugin headers (hooks.h, plugins.h, plugins_config.h, debug.h) are installed so third-party plugins can be built; `honeyd_LDFLAGS = -export-dynamic` exposes daemon symbols to dlopen'd plugins.
-- **Generated parser:** `parse.y` → `parse.c` (yacc/bison) and `lex.l` → `lex.c` (flex). Pre-generated `parse.c`/`lex.c` are committed too.
+- **Generated parser:** `parse.y` → `parse.c`/`parse.h` (bison/yacc) and `lex.l` → `lex.c` (flex) are generated at build time and are not committed (see #66/#69), so `bison` and `flex` are required build dependencies.
 - **Optional subdirectories:** `pypcap`, `dpkt` (Python modules, for Python support) and `regress` (tests).
 - **Debian packaging:** `debian/` (control, rules, init script, logrotate) and `generateDebs`.
 
