@@ -442,6 +442,12 @@ jobs:
           test -e /etc/honeypot/honeyd.conf
           test -e /usr/share/honeyd/nmap-os-db
           getent passwd honeyd
+          # systemd unit: shipped, valid, not enabled (matches --no-start)
+          test -f /usr/lib/systemd/system/honeyd.service
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd
+          systemd-analyze verify /usr/lib/systemd/system/honeyd.service
+          systemd-analyze security --offline=yes /usr/lib/systemd/system/honeyd.service | tail -n 1 || true
+          test ! -e /etc/systemd/system/multi-user.target.wants/honeyd.service
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
