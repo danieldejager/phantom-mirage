@@ -35,7 +35,7 @@ mapfile -t S < <(find scripts -type f \( -name '*.sh' -o -name '*.pl' -o -name '
 echo "ns-services: ${#S[@]} scripts"
 interp() { case $1 in *.sh) echo sh;; *.pl) echo perl;; *.py) echo python3;; esac; }
 
-W=$(mktemp -d /var/tmp/hdsvc.XXXXXX); chmod 755 $W
+W=$(mktemp -d /var/tmp/hdsvc.XXXXXX); chmod 1777 $W
 conf=$W/svc.conf
 {
   echo 'create default'; echo 'set default default tcp action reset'
@@ -74,19 +74,19 @@ for i in "${!S[@]}"; do
   [ -n "$svclog" ] && before=$(wc -l < $svclog 2>/dev/null || echo 0)
   sout=$(REQ="$REQ" PORT=$port IP=$IP python3 - <<'PY'
 import os, socket
+d = b""
 req = os.environ["REQ"].encode().decode("unicode_escape").encode()
 try:
     s = socket.create_connection((os.environ["IP"], int(os.environ["PORT"])), timeout=5)
     s.sendall(req)
-    s.shutdown(socket.SHUT_WR)
     d = b""
-    s.settimeout(5)
+    s.settimeout(3)
     while len(d) < 4096:
         b = s.recv(4096)
         if not b: break
         d += b
 except Exception:
-    d = b""
+    pass
 print(len(d))
 PY
 )
@@ -103,6 +103,7 @@ echo "ns-services: $ok/${#S[@]} scripts behave the same in the sandbox"
 
 if [ "${HD_SYSTEMD:-0}" != 1 ]; then
   kill -INT $hp 2>/dev/null; wait $hp
+  echo "=== daemon log"; tail -n 60 $L/ns-services.log
   if grep -E 'denied syscall|killed by SIGSYS|read-only root:|not running it' $L/ns-services.log; then fail "denial in the log"; fi
   cp $svclog $L/ns-services-service.log 2>/dev/null
 fi
