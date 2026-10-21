@@ -8,6 +8,8 @@
 # libhoneyd.so shim (see the subsystem step). Optional env:
 #   HD_EXTRA  extra honeyd args (e.g. "-u 0 -g 0" in a user namespace)
 #   HD_WRAP   command prefix for honeyd (e.g. strace)
+#   HD_LEARN  1: run without --sandbox-daemon (strace collection) and
+#             skip the filter checks and the negative check
 set -uo pipefail
 D=$PWD
 W=${HD_WORK:-/tmp/hdsd}
@@ -29,11 +31,14 @@ bind 10.99.0.10 linux
 CONF
 mkdir -p /var/run
 rc=0
+SBD=--sandbox-daemon
+ACTIVE='sandbox-daemon: seccomp allowlist active'
+if [ "${HD_LEARN:-0}" = 1 ]; then SBD=; ACTIVE='Demoting process privileges'; fi
 run() {
   mode=$1; shift
   log=${HD_LOGDIR:-$D}/sandbox-daemon-$mode.log
   PYTHONPATH=$D/scripts/python timeout 90 ${HD_WRAP:-} ./honeyd -d \
-    -f $W/sd.conf -i lo --sandbox-daemon \
+    -f $W/sd.conf -i lo $SBD \
     --webserver-port=8080 --webserver-root=$W/htdocs \
     -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
     -0 $D/pf.os -m $D/nmap-mac-prefixes \
@@ -41,7 +46,7 @@ run() {
     --heartbeat=1 ${HD_EXTRA:-} "$@" > $log 2>&1 &
   hp=$!
   for i in $(seq 1 40); do
-    grep -q 'Listen: .*:18080' $log && grep -q 'sandbox-daemon: seccomp allowlist active' $log && break
+    grep -q 'Listen: .*:18080' $log && grep -q "$ACTIVE" $log && break
     sleep 0.5
   done
   sleep 1
@@ -78,13 +83,14 @@ PY
   fi
   wait $hp
   echo "=== $mode"; cat $log
-  grep -q 'sandbox-daemon: seccomp allowlist active' $log || { echo "$mode: filter not reported active" >&2; rc=1; }
+  grep -q "$ACTIVE" $log || { echo "$mode: filter not reported active" >&2; rc=1; }
   if grep -E 'sandbox-daemon: denied syscall|killed by SIGSYS|runtime error|ERROR: AddressSanitizer' $log; then
     echo "$mode: denied syscall or sanitizer report" >&2; rc=1
   fi
 }
 run plain
 run scripts --sandbox-scripts --sandbox-allow-write=$W/rw
+[ "${HD_LEARN:-0}" = 1 ] && exit $rc
 
 # Negative check: a syscall off the list (mount, via honeydctl "!") must
 # be reported and kill the daemon with SIGSYS.
