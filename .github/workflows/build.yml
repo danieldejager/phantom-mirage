@@ -493,6 +493,8 @@ jobs:
           test -e /etc/phantom-mirage/phantom-mirage.conf
           test -e /usr/share/phantom-mirage/nmap-os-db
           getent passwd phantom-mirage
+          # log dir from debian/phantom-mirage.dirs, owned by the daemon user
+          test "$(stat -c '%U' /var/log/phantom-mirage)" = phantom-mirage
           # systemd unit: shipped, valid, not enabled (matches --no-start)
           test -f /usr/lib/systemd/system/phantom-mirage.service
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd

@@ -1,6 +1,6 @@
 usr/bin
 usr/share/phantom-mirage
 usr/lib/phantom-mirage
-etc/honeypot
+etc/phantom-mirage
 etc/default
-var/log/honeypot
+var/log/phantom-mirage

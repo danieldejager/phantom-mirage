@@ -73,6 +73,7 @@ PY
   wait $hp
   echo "=== $mode"; cat $log
   if grep -E 'denied syscall|killed by SIGSYS|runtime error|ERROR: AddressSanitizer' $log; then fail "$mode: denial or sanitizer report"; fi
+  for i in $(seq 1 20); do pgrep -f "$W/probe" > /dev/null || break; sleep 0.5; done
   pgrep -f "$W/probe" && fail "$mode: script left running"
   rm -f /tmp/ns_probe_a /tmp/ns_probe_b
 }
