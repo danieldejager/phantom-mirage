@@ -71,9 +71,6 @@ can already run commands as honeyd, so treat this as root-equivalent too
   still Python 2. When the `server` module does not import, honeyd logs
   `internal webserver disabled` and keeps running. It used to exit. Use
   `--disable-webserver` to skip the attempt.
-- **Bundled `dpkt/` and `pypcap/`.** These are Python 2 copies that are no
-  longer built (configure no longer enters those directories). `regress/`
-  uses the system `python3-dpkt`. They can be deleted in a follow-up.
 - `pydataprocessing.c` and `pydatahoneyd.c` (the honeydstats filter
   helpers) compile against Python 3 and pass `honeyd -T`, but nothing else
   uses them yet. Map filters must return `[[bytes key, bytes value], ...]`.
