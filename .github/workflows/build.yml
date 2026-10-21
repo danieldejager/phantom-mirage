@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   debian13:
-    name: Debian 13 / GCC 14 (baseline with legacy flags)
+    name: Debian 13 / GCC 14
     runs-on: ubuntu-latest
     container: debian:13
     steps:
@@ -32,14 +32,14 @@ jobs:
         run: gcc --version | head -1 && autoconf --version | head -1
 
       - name: Configure
-        # Legacy flags are a temporary baseline. Removing them is issue #18.
         run: |
           ./autogen.sh
-          CC="gcc -fpermissive -fcommon" ./configure --prefix=/usr
+          ./configure --prefix=/usr
 
       - name: Build
-        # Serial make: the libhoneyd.so rule races under -j (issue #18).
-        run: make 2>&1 | tee build.log
+        run: |
+          set -o pipefail
+          make -j$(nproc) 2>&1 | tee build.log
 
       - name: Count compiler warnings
         run: |

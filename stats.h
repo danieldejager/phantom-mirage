@@ -93,7 +93,7 @@ struct stats {
 
 enum {
 	M_COUNTER, M_TV_START, M_TV_END, M_RECORD, M_MAX
-} measurement_tags;
+};
 
 struct measurement {
 	uint32_t counter;
@@ -107,7 +107,7 @@ struct measurement {
 
 enum {
 	SIG_NAME, SIG_DIGEST, SIG_DATA, SIG_COMPRESSED_DATA, SIG_MAX
-} signature_tags;
+};
 
 struct signature {
 	char *name;

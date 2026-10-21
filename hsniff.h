@@ -36,7 +36,7 @@
 #define HSNIFF_MAX_INTERFACES		10
 #define HSNIFF_CON_EXPIRE		300
 
-struct event_base *hsniff_libevent_base;
+extern struct event_base *hsniff_libevent_base;
 
 struct tcp_segment {
 	TAILQ_ENTRY(tcp_segment) next;

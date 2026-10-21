@@ -28,7 +28,20 @@ AUTOMAKE_OPTIONS = foreign no-dependencies
 
 ## Bad hack with help from marius@monkey.org to actually get this 
 ## working on Linux
-LIBHONEYDFILES= honeyd_overload.lo atomicio.lo fdpass.lo
+## The preload objects get their own names: atomicio.c and fdpass.c are
+## also compiled into honeyd, and a libtool compile of foo.lo writes foo.o
+## too, so sharing names lets parallel make clobber honeyd's objects
+## mid-link (#18).
+LIBHONEYDFILES= libhoneyd-honeyd_overload.lo libhoneyd-atomicio.lo \
+		libhoneyd-fdpass.lo
+
+libhoneyd-honeyd_overload.lo: honeyd_overload.c config.h
+	$(LTCOMPILE) -c -o $@ $(srcdir)/honeyd_overload.c
+libhoneyd-atomicio.lo: atomicio.c config.h
+	$(LTCOMPILE) -c -o $@ $(srcdir)/atomicio.c
+libhoneyd-fdpass.lo: fdpass.c fdpass.h config.h
+	$(LTCOMPILE) -c -o $@ $(srcdir)/fdpass.c
+
 libhoneyd.so: $(LIBHONEYDFILES)
 	$(LIBTOOL) --mode=link $(CC) $(CFLAGS) -o libtmp$@.la \
 		-rpath $(libdir)/honeyd $(LIBHONEYDFILES) $(LIBS) $(LDFLAGS) \
