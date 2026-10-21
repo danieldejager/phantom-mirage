@@ -1,211 +1,139 @@
-import sys
+#!/usr/bin/env python3
+#
+# MSSQL (TDS) honeypot: answers the pre-login handshake with encryption
+# off, then rejects any login with error 18456 "Login failed for user."
+# Network I/O is bytes on stdin/stdout; a truncated or malformed packet
+# ends the session.
+
 import os
+import shutil
 import struct
-import binascii
-import time
+import subprocess
+import sys
+
+stdin = sys.stdin.buffer
+stdout = sys.stdout.buffer
+
+
+class Truncated(Exception):
+    pass
+
+
+def read(n):
+    data = stdin.read(n)
+    if len(data) != n:
+        raise Truncated()
+    return data
+
 
 class PreLoginToken:
-	def __init__(self):
-		self.tokenPosition = 0
-		self.type = 0
-		self.position = 0
-		self.length = 0
+    def __init__(self):
+        self.tokenPosition = 0
+        self.type = 0
+        self.position = 0
+        self.length = 0
+
 
 class TDSPacket:
-	def __init__(self):
-		self.type = 12
-		self.tokens = []
+    def __init__(self):
+        self.type = 12
+        self.tokens = []
+        self.payload = b""
+        self.tokenOffset = 0
 
-	# Returns string version of the packet
-	def writePacket(self):
-		ret = "";
-		ret += struct.pack("!B", self.type)
-		ret += struct.pack("!B", self.status)
-		ret += struct.pack("!H", self.length)
-		ret += struct.pack("!H", self.chan)
-		ret += struct.pack("!B", self.packet)
-		ret += struct.pack("!B", self.window)
+    def writePacket(self):
+        ret = struct.pack("!BBHHBB", self.type, self.status, self.length,
+                          self.chan, self.packet, self.window)
+        for token in self.tokens:
+            ret += struct.pack("!B", token.type)
+            if token.type != 255:
+                ret += struct.pack("!HH", token.position, token.length)
+        return ret + self.payload
 
-		for token in self.tokens:
-			ret += struct.pack("!B", token.type)
-			
-			if (token.type != 255):
-				ret += struct.pack("!H", token.position)
-				ret += struct.pack("!H", token.length)
-
-		ret += struct.pack(str(len(self.payload)) + "s", self.payload)
-
-		return ret
-
-	# Reads in a TDS packet. Really only parses pre-login packets.
-	def readPacket(self, stream):
-		self.type = struct.unpack("!B", stream.read(1))[0]
-		
-		self.status = struct.unpack("!B", stream.read(1))[0]
-		self.length = struct.unpack("!H", stream.read(2))[0]
-		self.chan = struct.unpack("!H", stream.read(2))[0]
-		self.packet = struct.unpack("!B", stream.read(1))[0]
-		self.window = struct.unpack("!B", stream.read(1))[0]
-
-		bytesRead = 8
-		
-		if self.type == 18:
-			while bytesRead < self.length:
-				# Read a token
-				token = PreLoginToken()
-				token.tokenPosition = bytesRead
-
-				token.type = struct.unpack("!B", stream.read(1))[0]
-				bytesRead += 1
-		
-				if (token.type == 255):
-					self.tokens.append(token)
-					break
-
-				token.position = struct.unpack("!H", stream.read(2))[0]
-				bytesRead += 2
-				token.length = struct.unpack("!H", stream.read(2))[0]
-				bytesRead += 2
-			
-				if token.type == 0:
-					self.tokenOffset = token.position
-
-				self.tokens.append(token)
+    def readPacket(self):
+        (self.type, self.status, self.length, self.chan, self.packet,
+         self.window) = struct.unpack("!BBHHBB", read(8))
+        if self.length < 8:
+            raise Truncated()
+        bytesRead = 8
+        if self.type == 18:
+            while bytesRead < self.length:
+                token = PreLoginToken()
+                token.tokenPosition = bytesRead
+                token.type = read(1)[0]
+                bytesRead += 1
+                if token.type == 255:
+                    self.tokens.append(token)
+                    break
+                token.position, token.length = struct.unpack("!HH", read(4))
+                bytesRead += 4
+                if token.type == 0:
+                    self.tokenOffset = token.position
+                self.tokens.append(token)
+        if bytesRead < self.length:
+            self.payload = read(self.length - bytesRead)
 
 
-			self.payloadStart = bytesRead + 1
-			if bytesRead < self.length:
-				self.payload = struct.unpack(str(self.length - bytesRead) + "s", stream.read(self.length - bytesRead))[0]
-		else:
-			self.payload = struct.unpack(str(self.length - bytesRead) + "s", stream.read(self.length - bytesRead))[0]
-
-		return True
-	
-	# Just for debugging, gives a human readable version of the packet	
-	def toString(self):
-		ret = ""
-		ret += "Type: " + str(self.type) + "\n"
-		ret += "Status: " + str(self.status) + "\n"
-		ret += "Length: " + str(self.length) + "\n"
-		ret += "Channel: " + str(self.chan) + "\n"
-		ret += "Packet: " + str(self.packet) + "\n"
-		ret += "Window: " + str(self.window) + "\n\n"
-
-		ret += "Payload: ";
-		ret += ":".join("{0:x}".format(ord(c)) for c in self.payload)
-		ret += "\n"
-
-		ret += "First byte is " + str(ord(self.payload[0])) + "\n"
-
-		for token in self.tokens:
-			ret += "Token: " + str(token.type) + "\n"
-			ret += "Token Position: " + str(token.tokenPosition) + "\n"
-			ret += "Position: " + str(token.position) + "\n"
-			ret += "Length: " + str(token.length) + "\n"
-			ret += "Value: "
-			foo = str(self.payload[token.position - (self.tokenOffset):(token.position + token.length - (self.tokenOffset))])
-			for char in foo:
-				ret += str(ord(char)) + " "
-			ret += "\n\n"
-
-		ret += "Payload size: " + str(len(self.payload))
-
-		return ret
-
-# Creates a generic login error response packet
 class LoginError:
-	def __init__(self):
-		self.tdstype = 4
-		self.status = 1
-		self.channel = 51
-		self.number = 1
-		self.window = 0
-		
-		self.token = 0xaa
-		self.error = 18456
-		self.state = 1
-		self.level = 14
-		self.errorMsg = "Login failed for user."
-		self.errorLength = len(self.errorMsg)
-		self.serverName = os.getenv("HONEYD_IP_DST")
-		self.serverNameLength = len(self.serverName)
-		self.processNameLength = 0
-		self.lineNumber = 1
-		self.length = 14 + 2*self.serverNameLength + 2*self.errorLength
-		self.tlength = 38 + 2*self.serverNameLength + 2*self.errorLength
+    """Generic login error response."""
 
-		self.doneToken = 0xfd
-		self.statusFlags = 2
-		self.op = 0
-		self.rows = 0
+    def __init__(self):
+        self.errorMsg = "Login failed for user."
+        self.serverName = os.getenv("HONEYD_IP_DST", "")[:255]
+
+    def writePacket(self):
+        msg = self.errorMsg.encode("utf-16-le")
+        server = self.serverName.encode("utf-16-le")
+        length = 14 + len(server) + len(msg)
+        tlength = 38 + len(server) + len(msg)
+        ret = struct.pack("!BBHHBB", 4, 1, tlength, 51, 1, 0)
+        ret += struct.pack("<BH", 0xaa, length)         # ERROR token
+        ret += struct.pack("<IBB", 18456, 1, 14)        # number, state, class
+        ret += struct.pack("<H", len(self.errorMsg)) + msg
+        ret += struct.pack("<B", len(self.serverName)) + server
+        ret += struct.pack("<B", 0)                     # process name
+        ret += struct.pack("<H", 1)                     # line number
+        ret += b"\x00\x00"
+        ret += struct.pack("<BH", 0xfd, 2)              # DONE token, status
+        ret += struct.pack("!HI", 0, 0)                 # op, rows
+        ret += struct.pack("!I", 0)
+        return ret
 
 
-	# Returns string version of the packet
-	def writePacket(self):
-		ret = ""
+def alert():
+    """Optional hook kept from the Nova integration; run only if present."""
+    tool = shutil.which("createNovaScriptAlert.py")
+    if tool:
+        subprocess.call([tool, os.getenv("HONEYD_IP_SRC", ""),
+                         os.getenv("HONEYD_INTERFACE", ""), "mssql",
+                         "Mssql database login attempt"])
 
-		ret += struct.pack('!B', self.tdstype)
-		ret += struct.pack('!B', self.status)
-		ret += struct.pack('!H', self.tlength)
-		
-		ret += struct.pack('!H', self.channel)
-		ret += struct.pack('!B', self.number)
 
-		ret += struct.pack('!B', self.window)
-		
-		ret += struct.pack('!B', self.token)
-		ret += struct.pack('!B', self.length)
-		ret += struct.pack('!B', 0)
-		ret += struct.pack('<I', self.error)
-		ret += struct.pack('!B', self.state)
-		ret += struct.pack('!B', self.level)
+def main():
+    while True:
+        tds = TDSPacket()
+        tds.readPacket()
+        if tds.type == 18:              # pre-login handshake
+            tds.type = 4
+            payload = bytearray(tds.payload)
+            for token in tds.tokens:
+                off = token.position - tds.tokenOffset
+                if token.type == 1 and 0 <= off < len(payload):
+                    payload[off] = 2                    # encryption off
+                if token.type == 3 and 0 <= off <= len(payload) - 4:
+                    payload[off:off + 4] = b"\x00" * 4  # zero thread ID
+            tds.payload = bytes(payload)
+            stdout.write(tds.writePacket())
+            stdout.flush()
+        elif tds.type in (16, 23):      # login attempts
+            stdout.write(LoginError().writePacket())
+            stdout.flush()
+            alert()
+            return
 
-		ret += struct.pack('!B', self.errorLength)
-		ret += struct.pack('!B', 0)
-		for char in self.errorMsg:
-			ret += struct.pack("<H", ord(char))
 
-		ret += struct.pack('!B', self.serverNameLength)
-		for char in self.serverName:
-			ret += struct.pack("<H", ord(char))
-
-		ret += struct.pack('!B', self.processNameLength)
-		ret += struct.pack('<H', self.lineNumber)
-
-		ret += struct.pack('!B', 0)
-		ret += struct.pack('!B', 0)
-
-		ret += struct.pack('!B', self.doneToken)
-		ret += struct.pack('<H', self.statusFlags)
-		ret += struct.pack('!H', self.op)
-		ret += struct.pack('!I', self.rows)
-		
-		ret += struct.pack('!I', 0)
-
-		return ret
-
-while True:
-	tds = TDSPacket()
-	tds.readPacket(sys.stdin)
-	# Type 18 is the pre-login handshake packet
-	if tds.type == 18:
-		# Modify the packet
-		tds.type = 4
-		for token in tds.tokens:
-			# Force encryption off
-			if (token.type == 1):
-				tds.payload = tds.payload[:token.position - tds.tokenOffset] + chr(2) + tds.payload[token.position - tds.tokenOffset + 1:]
-			# Zero the thread ID
-			if (token.type == 3):
-				tds.payload = tds.payload[:token.position - tds.tokenOffset] + chr(0) + chr(0) + chr(0) + chr(0) + tds.payload[token.position - tds.tokenOffset + 4:]
-
-		sys.stdout.write(tds.writePacket())
-		sys.stdout.flush()
-	# Types 16 and 23 are login attempts
-	elif (tds.type == 16 or tds.type == 23):
-		answer = LoginError()
-		sys.stdout.write(answer.writePacket())
-		sys.stdout.flush()
-		os.system('createNovaScriptAlert.py "' + os.getenv("HONEYD_IP_SRC") + '" "' + os.getenv("HONEYD_INTERFACE") + '" "mssql" "Mssql database login attempt"') 
-		sys.exit(0)
-
+if __name__ == "__main__":
+    try:
+        main()
+    except (Truncated, BrokenPipeError):
+        pass

@@ -1,278 +1,183 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
+#
+# SMB honeypot that negotiates NT LM 0.12, accepts any session setup and
+# then refuses every tree connect (access denied). Network I/O is bytes on
+# stdin/stdout; a short, truncated or malformed request ends the session.
+#
+# argv[2] is a config file with lines like "NATIVE_OS Windows 5.1".
 
+import struct
 import sys
-import binascii
 
-native_os = ""
-primary_domain = ""
+native_os = b""
+primary_domain = b""
 time_zone = 0
-lan_manager = ""
+lan_manager = b""
+
+stdin = sys.stdin.buffer
+stdout = sys.stdout.buffer
+
+
+class Truncated(Exception):
+    pass
+
+
+def read(n):
+    data = stdin.read(n)
+    if len(data) != n:
+        raise Truncated()
+    return data
+
+
+def send(smb):
+    """Writes an SMB message with its NetBIOS session service header."""
+    stdout.write(b"\x00" + struct.pack(">I", len(smb))[1:] + smb)
+    stdout.flush()
+
+
+def header(command, status, flags2, pid, mid):
+    return (b"\xffSMB" + command + status +
+            b"\x88" +                   # Flags 1
+            flags2 +                    # Flags 2
+            b"\x00\x00" +               # PID high
+            b"\x00" * 8 +               # Signature
+            b"\x00\x00" +               # Reserved
+            b"\x00\x00" +               # Tree ID
+            pid +
+            b"\x00\x00" +               # User id
+            mid)
+
+
+def read_words_and_bytes():
+    word_count = read(1)[0]
+    read(word_count * 2)
+    byte_count = struct.unpack("<H", read(2))[0]
+    return read(byte_count)
+
 
 def GetRequest():
-    #Get netBIOS Session Service header
-    sys.stdin.read(4)
-    #Server component must be "0xffSMB"
-    server_component = sys.stdin.read(4)
-    if(server_component != "\xffSMB"):
+    read(4)                             # NetBIOS session service header
+    if read(4) != b"\xffSMB":
         return False
-    
-    ### SMB Header ###
-    smb_command = sys.stdin.read(1)     #SMB command
-    nt_status = sys.stdin.read(4)       #NT status 
-    flags1 = sys.stdin.read(1)          #Flags 1
-    flags2 = sys.stdin.read(2)          #Flags 2
-    pid_high = sys.stdin.read(2)        #PID high
-    signature = sys.stdin.read(8)       #Signature
-    pid_high = sys.stdin.read(2)        #Reserved
-    tree_id = sys.stdin.read(2)         #Tree ID
-    pid = sys.stdin.read(2)             #pid
-    uid = sys.stdin.read(2)             #User id
-    mid = sys.stdin.read(2)             #Multiplex id
+    smb_command = read(1)
+    read(4)                             # NT status
+    read(1)                             # Flags 1
+    read(2)                             # Flags 2
+    read(2)                             # PID high
+    read(8)                             # Signature
+    read(2)                             # Reserved
+    read(2)                             # Tree ID
+    pid = read(2)
+    read(2)                             # User id
+    mid = read(2)
 
-    ### Supported Request Types ###
-
-    #Negotiate Protocol Request
-    if(smb_command == "\x72"):
+    if smb_command == b"\x72":
         return HandleNegotiateProtocolRequest(pid, mid)
-
-    #Session Setup AndX Request (authenticate)
-    if(smb_command == "\x73"):
+    if smb_command == b"\x73":
         return HandleSessionSetupRequest(pid, mid)
-
-    #Tree Connect AndX Request
-    if(smb_command == "\x75"):
+    if smb_command == b"\x75":
         return HandleTreeConnectRequest(pid, mid)
-
-    #Tree Disconnect AndX Request
-    if(smb_command == "\x71"):
+    if smb_command == b"\x71":
         return HandleDisconnectRequest(pid, mid)
 
-    SendError("\x72", "\x00\x00\x00\x00", pid, mid)
+    SendError(b"\x72", b"\x00\x00\x00\x00", pid, mid)
     return True
 
-#pid = the Process ID that needs to be parroted back
-#mid = the Message ID that needs to be parroted back
+
 def HandleNegotiateProtocolRequest(pid, mid):
-    #Word Count
-    word_count = sys.stdin.read(1)
-    #Byte Count
-    byte_count = sys.stdin.read(2)
-    #convert to integer, read in that many bytes (reverse byte order)
-    remaining_bytes = ord(byte_count[0]) + ( 256 * ord(byte_count[1]))
-    requested_dialects = sys.stdin.read(remaining_bytes)
-    dialects = requested_dialects.split("\x00")
+    read(1)                             # Word count
+    byte_count = struct.unpack("<H", read(2))[0]
+    dialects = read(byte_count).split(b"\x00")
     chosen_dialect = -1
-    for i in range(0, len(dialects)-1):
-        #Shave off the 1st byte, as it is the Buffer Format
-        #sys.stderr.write(dialects[i][1:] + "\n")
-        if(dialects[i][1:] == "NT LM 0.12"):
+    for i in range(0, len(dialects) - 1):
+        # The first byte is the buffer format
+        if dialects[i][1:] == b"NT LM 0.12":
             chosen_dialect = i
             break
 
     if chosen_dialect == -1:
-        SendError('\x72', "\x00\x00\x00\x00", pid, mid)
-        return
+        SendError(b"\x72", b"\x00\x00\x00\x00", pid, mid)
+        return True
 
-    ### SMB Header ###
-    response = "\xffSMB" 
-    response += "\x72"              #SMB command
-    response += "\x00\x00\x00\x00"  #NT status 
-    response += "\x88"              #Flags 1
-    response += "\xc8\x41"          #Flags 2
-    response += "\x00\x00"          #PID high
-    response += "\x00\x00\x00\x00\x00\x00\x00\x00" #Signature
-    response += "\x00\x00"          #Reserved
-    response += "\x00\x00"          #Tree ID
-    response += pid                 #pid
-    response += "\x00\x00"          #User id
-    response += mid                 #Multiplex id
-
-    ### Response ###
-    #SMB Message Parameters
-    response += "\x11" #34 byte header (value x2)
-    response += chr(chosen_dialect) + "\x00"
-    response += "\x08" #most security off
-    response += "\x32\x00"
-    response += "\x01\x00"
-    response += "\x04\x41\x00\x00"
-    response += "\x00\x00\x01\x00"
-    response += "\x00\x00\x00\x00"
-    response += "\xf9\xf3\x01\x00" #capabilties (no extra security)
-    response += "\xa9\xbb\x01\x95\x73\x56\xce\x01" #TODO get system time
-    #Convert integer length to hex string in reverse byte order
-    response += chr(time_zone % 256) + chr(time_zone / 256) #Server time zone
-    response += "\x00"
-
-    byte_size = len(primary_domain) + 1
-    #Convert integer length to hex string in reverse byte order
-    response += chr(byte_size % 256) + chr(byte_size/256)
-    response += primary_domain + "\x00"
-    sys.stdout.write("\x00\x00\x00" + chr(len(response)) + response)
-    sys.stdout.flush()
+    response = header(b"\x72", b"\x00\x00\x00\x00", b"\xc8\x41", pid, mid)
+    response += b"\x11"                 # word count 17
+    response += struct.pack("<H", chosen_dialect)
+    response += b"\x08"                 # most security off
+    response += b"\x32\x00"
+    response += b"\x01\x00"
+    response += b"\x04\x41\x00\x00"
+    response += b"\x00\x00\x01\x00"
+    response += b"\x00\x00\x00\x00"
+    response += b"\xf9\xf3\x01\x00"     # capabilities (no extra security)
+    response += b"\xa9\xbb\x01\x95\x73\x56\xce\x01"   # TODO system time
+    response += struct.pack("<H", time_zone % 65536)
+    response += b"\x00"
+    response += struct.pack("<H", len(primary_domain) + 1)
+    response += primary_domain + b"\x00"
+    send(response)
     return True
+
 
 def HandleSessionSetupRequest(pid, mid):
-    ### Read Request Contents ###
-
-    #Word Count
-    word_count = sys.stdin.read(1)
-    remaining_bytes = ord(word_count) * 2
-    options = sys.stdin.read(remaining_bytes)
-
-    #Byte Count
-    byte_count = sys.stdin.read(2)
-    #convert to integer, read in that many bytes (reverse byte order)
-    remaining_bytes = ord(byte_count[0]) + ( 256 * ord(byte_count[1]))
-    rest = sys.stdin.read(remaining_bytes)
-
-    ### Create SMB Header ###
-    response = "\xffSMB"   
-    response += "\x73"      #SMB command
-    response += "\x00\x00\x00\x00" #NT status SUCCESS
-    response += "\x88"      #Flags 1
-    response += "\xc8\x41"  #Flags 2
-    response += "\x00\x00"  #PID high
-    response += "\x00\x00\x00\x00\x00\x00\x00\x00" #Signature 
-    response += "\x00\x00"  #Reserved
-    response += "\x00\x00"  #Tree ID
-    response += pid         #pid
-    response += "\x00\x00"  #User id
-    response += mid         #Multiplex id
-
-    ### Create Response ###
-
-    #SMB Message Parameters
-    response += "\x03" #6 byte start (value x2)
-    response += "\xff" #no further commands
-    response += "\x00" #reserved
-    response += "\xc7\x00" #AndXOffset
-    response += "\x00\x00" #Action: not logged in as GUEST
-
-    byte_size = len(native_os) + len(lan_manager) + len(primary_domain) + 3
-    #Convert integer length to hex string in reverse byte order
-    server_info = chr(byte_size % 256) + chr(byte_size/256)
-    server_info += native_os + "\x00" #Native OS
-    server_info += lan_manager + "\x00" #Native LAN manager
-    server_info += primary_domain + "\x00" #Primary Domain
-    response += server_info
-
-    #Prepend packet with NetBios Session Service header
-    sys.stdout.write("\x00\x00\x00" + chr(len(response)) + response)
-    sys.stdout.flush()
+    read_words_and_bytes()
+    response = header(b"\x73", b"\x00\x00\x00\x00", b"\xc8\x41", pid, mid)
+    response += b"\x03"                 # word count 3
+    response += b"\xff"                 # no further commands
+    response += b"\x00"                 # reserved
+    response += b"\xc7\x00"             # AndXOffset
+    response += b"\x00\x00"             # Action: not logged in as guest
+    info = (native_os + b"\x00" + lan_manager + b"\x00" +
+            primary_domain + b"\x00")
+    response += struct.pack("<H", len(info)) + info
+    send(response)
     return True
+
 
 def HandleTreeConnectRequest(pid, mid):
-    #Word Count
-    word_count = sys.stdin.read(1)
-    remaining_bytes = ord(word_count) * 2
-    options = sys.stdin.read(remaining_bytes)
-
-    #Byte Count
-    byte_count = sys.stdin.read(2)
-    #convert to integer, read in that many bytes (reverse byte order)
-    remaining_bytes = ord(byte_count[0]) + ( 256 * ord(byte_count[1]))
-    rest = sys.stdin.read(remaining_bytes)
-
-    ### Create SMB Header ###
-    response = "\xffSMB"    
-    response += "\x75"      #SMB command
-    response += "\x22\x00\x00\xc0" #NT status 
-    response += "\x88"      #Flags 1
-    response += "\xc8\x41"  #Flags 2
-    response += "\x00\x00"  #PID high
-    response += "\x00\x00\x00\x00\x00\x00\x00\x00" #Signature 
-    response += "\x00\x00"  #Reserved
-    response += "\x00\x00"  #Tree ID
-    response += pid         #pid
-    response += "\x00\x00"  #User id
-    response += mid         #Multiplex id
-
-    ### Create Response ###
-
-    response += "\x00\x00\x00"
-
-    #Prepend packet with NetBios Session Service header
-    sys.stdout.write("\x00\x00\x00" + chr(len(response)) + response)
-    sys.stdout.flush()
+    read_words_and_bytes()
+    # STATUS_ACCESS_DENIED
+    send(header(b"\x75", b"\x22\x00\x00\xc0", b"\xc8\x41", pid, mid) +
+         b"\x00\x00\x00")
     return True
+
 
 def HandleDisconnectRequest(pid, mid):
-    #Word Count
-    word_count = sys.stdin.read(1)
-    remaining_bytes = ord(word_count) * 2
-    options = sys.stdin.read(remaining_bytes)
-
-    #Byte Count
-    byte_count = sys.stdin.read(2)
-    #convert to integer, read in that many bytes (reverse byte order)
-    remaining_bytes = ord(byte_count[0]) + ( 256 * ord(byte_count[1]))
-    rest = sys.stdin.read(remaining_bytes)
-
-    ### Create SMB Header ###
-    response = "\xffSMB"    
-    response += "\x71"      #SMB command
-    response += "\x00\x00\x00\x00" #NT status 
-    response += "\x88"      #Flags 1
-    response += "\xc8\x01"  #Flags 2
-    response += "\x00\x00"  #PID high
-    response += "\x00\x00\x00\x00\x00\x00\x00\x00" #Signature 
-    response += "\x00\x00"  #Reserved
-    response += "\x00\x00"  #Tree ID
-    response += pid         #pid
-    response += "\x00\x00"  #User id
-    response += mid         #Multiplex id
-
-    ### Create Response ###
-
-    response += "\x00\x00\x00"
-
-    #Prepend packet with NetBios Session Service header
-    sys.stdout.write("\x00\x00\x00" + chr(len(response)) + response)
-    sys.stdout.flush()
-    return True
-   
-
-#error_code = 1 byte SMB Command
-#status = 4 byte NT status code
-#pid = the Process ID that needs to be parroted back
-#mid = the Message ID that needs to be parroted back
-def SendError(error_code, status, pid, mid):
-    ### SMB Header ###
-    error_message = "\xffSMB"
-    error_message += error_code
-    error_message += status
-    error_message += "\x88"
-    error_message += "\xc8\x41"
-    error_message += "\x00\x00"
-    error_message += "\x00\x00\x00\x00\x00\x00\x00\x00"
-    error_message += "\x00\x00\x00\x00"
-    error_message += "\x00\x00"
-    error_message += pid
-    error_message += "\x00\x00"
-    error_message += mid
-
-    ### Response ###
-    error_message += "\x00\x00\x00"
-
-    sys.stdout.write(error_message)
-    sys.stdout.flush()
+    read_words_and_bytes()
+    send(header(b"\x71", b"\x00\x00\x00\x00", b"\xc8\x01", pid, mid) +
+         b"\x00\x00\x00")
     return True
 
 
-#Read Arguments
-for line in open(sys.argv[2],'r'):
-    if(line.split(' ', 1)[0] == "NATIVE_OS"):
-        native_os = line.split(' ', 1)[1].rstrip()
-    if(line.split(' ', 1)[0] == "PRIMARY_DOMAIN"):
-        primary_domain = line.split(' ', 1)[1].rstrip()
-    if(line.split(' ', 1)[0] == "TIME_ZONE"):
-        time_zone = int(line.split(' ', 1)[1].rstrip())
-    if(line.split(' ', 1)[0] == "LAN_MANAGER"):
-        lan_manager = line.split(' ', 1)[1].rstrip()
+def SendError(command, status, pid, mid):
+    send(header(command, status, b"\xc8\x41", pid, mid) + b"\x00\x00\x00")
+    return True
 
 
-#Main Loop. Keep accepting requests until one comes back bad
-keep_going = True
-while keep_going == True:
-    keep_going = GetRequest()    
+def read_config(path):
+    global native_os, primary_domain, time_zone, lan_manager
+    with open(path, "rb") as f:
+        for line in f:
+            key, _, value = line.partition(b" ")
+            value = value.rstrip()
+            if key == b"NATIVE_OS":
+                native_os = value
+            elif key == b"PRIMARY_DOMAIN":
+                primary_domain = value
+            elif key == b"TIME_ZONE":
+                time_zone = int(value)
+            elif key == b"LAN_MANAGER":
+                lan_manager = value
 
+
+def main():
+    if len(sys.argv) > 2:
+        read_config(sys.argv[2])
+    try:
+        while GetRequest():
+            pass
+    except (Truncated, BrokenPipeError):
+        pass
+
+
+if __name__ == "__main__":
+    main()

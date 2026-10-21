@@ -85,3 +85,16 @@ sanitizer job fetches the page from a running honeyd.
 `pydataprocessing.c` and `pydatahoneyd.c` were ported to Python 3 in #77.
 They compile with `--with-python` and pass `honeyd -T`. Map filters must
 return `[[bytes key, bytes value], ...]`.
+
+## Service scripts under scripts/
+
+The external Python service scripts run as `python3` (`#!/usr/bin/env
+python3`) and do all network I/O as bytes on stdin/stdout:
+`misc/smb-autofail.py`, `win32/mssql.py`, `win32/nbns.py`,
+`linux/mysql.py`, `broadcasts/nbns-wpad-query.py` and
+`linux/mdns/mdns.py` (with `linux/mdns/dns.py`). A short, truncated or
+malformed request ends the session or gets no reply instead of a
+traceback. The UDP responders (nbns, mdns) read one datagram and do not
+wait for EOF. `ci/test_scripts.py` feeds each one a canned request and
+checks the reply, then feeds non-UTF-8 bytes, NULs, truncated and random
+packets and checks that it exits cleanly without a traceback or hang.
