@@ -23,9 +23,12 @@ if ./honeyd --verify-config -f /tmp/hdpy/bad.conf -i lo --disable-webserver \
   cat /tmp/hdpy/bad.log; echo "missing python module was accepted" >&2; exit 1
 fi
 grep -q 'Bad python module' /tmp/hdpy/bad.log
-# Status page on its default address (127.0.0.1) and a test port.
+# Status page on its default address (127.0.0.1) and a test port. honeyd
+# runs as 65534 after startup and graphs/ must be writable (rrdtool).
+rm -rf /tmp/hdpy/htdocs; cp -r $D/webserver/htdocs /tmp/hdpy/htdocs
+chown -R 65534:65534 /tmp/hdpy/htdocs/graphs
 PYTHONPATH=$D/scripts/python timeout 60 ./honeyd -d -f /tmp/hdpy/py.conf -i lo \
-  --webserver-port=8080 --webserver-root=$D/webserver/htdocs \
+  --webserver-port=8080 --webserver-root=/tmp/hdpy/htdocs \
   -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
   -0 $D/pf.os -m $D/nmap-mac-prefixes \
   -l /tmp/hdpy/honeyd.log -s /tmp/hdpy/service.log > honeyd-py.log 2>&1 &
