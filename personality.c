@@ -1372,8 +1372,15 @@ parse_seq(struct personality *pers, int off, char *line)
 				/* If conversion worked without fail */
 				if(endpt != p2)
 				{
-					pers->tstamphz = pow(2, exponent);
-					//TODO: Watch for integer overflow here
+					/*
+					 * TS is log2 of the timestamp rate in hex.
+					 * nmap-os-db has values up to 0x22 (2^34 Hz,
+					 * i.e. effectively random timestamps) that do
+					 * not fit in an int: clamp to 2^30 Hz.
+					 */
+					if (exponent > 30)
+						exponent = 30;
+					pers->tstamphz = 1 << exponent;
 				}
 				else
 				{
