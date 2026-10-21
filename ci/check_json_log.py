@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Validate a honeyd --json-log file (issue #24) for the CI subsystem test.
 
-usage: check_json_log.py EVENTS.jsonl
+usage: check_json_log.py EVENTS.jsonl [SENSOR_ID]
 """
 import json
 import re
 import sys
 
 TS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$")
-REQUIRED = {"ts", "v", "event", "proto", "proto_num"}
-EVENTS = {"packet", "connection.start", "connection.end", "service"}
+REQUIRED = {"ts", "v", "event", "sensor_id"}
+FLOW = {"proto", "proto_num"}
+EVENTS = {"packet", "connection.start", "connection.end", "service",
+          "heartbeat"}
+SENSOR = sys.argv[2] if len(sys.argv) > 2 else None
 
 events = []
 with open(sys.argv[1], "rb") as f:
@@ -20,6 +23,12 @@ with open(sys.argv[1], "rb") as f:
         assert not missing, f"line {n}: missing {missing}"
         assert TS.match(ev["ts"]), f"line {n}: bad ts {ev['ts']}"
         assert ev["v"] == 1 and ev["event"] in EVENTS, f"line {n}: {ev}"
+        assert isinstance(ev["sensor_id"], str) and ev["sensor_id"], \
+            f"line {n}: bad sensor_id"
+        if SENSOR is not None:
+            assert ev["sensor_id"] == SENSOR, f"line {n}: {ev['sensor_id']}"
+        if ev["event"] != "heartbeat":
+            assert not FLOW - ev.keys(), f"line {n}: missing proto"
         events.append(ev)
 
 def pick(kind, **kw):
@@ -47,6 +56,13 @@ want = 'say "hi" \\ \x01 \xff'
 assert any(e["message"].rstrip("\n") == want for e in svc), \
     f"service escaping: {[e['message'] for e in svc]}"
 
+hb = pick("heartbeat")
+assert hb, "no heartbeat events"
+for e in hb:
+    for k in ("uptime_s", "packets_in", "packets_out", "connections"):
+        assert isinstance(e[k], int) and e[k] >= 0, f"heartbeat {k}: {e}"
+    assert "proto" not in e and "src_ip" not in e, f"heartbeat: {e}"
+
 print(f"OK: {len(events)} events, {len(starts)} connection.start, "
       f"{len(ends)} connection.end, {len(synacks)} SYN-ACK packets, "
-      f"{len(svc)} service")
+      f"{len(svc)} service, {len(hb)} heartbeat")

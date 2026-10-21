@@ -12,6 +12,9 @@
 .Op Fl dP
 .Op Fl l Ar logfile
 .Op Fl s Ar servicelog
+.Op Fl -json-log Ns = Ns Ar file
+.Op Fl -sensor-id Ns = Ns Ar id
+.Op Fl -heartbeat Ns = Ns Ar seconds
 .Op Fl p Ar fingerprints
 .Op Fl 0 Ar p0f-file
 .Op Fl m Ar file \" here is the command for changing command line arguments for the nmap router prefix file
@@ -113,6 +116,25 @@ Log packets and connections to the logfile specified by
 Logs information from service scripts to the log file
 specified by
 .Ar servicelog .
+.It Fl -json-log Ns = Ns Ar file
+Also write one JSON object per line for each connection, packet and
+service event to
+.Ar file
+.Pq Dq -
+for standard output.
+See docs/json-log.md for the schema.
+.It Fl -sensor-id Ns = Ns Ar id
+Set the
+.Dq sensor_id
+field included in every JSON event.
+The default is the hostname.
+.It Fl -heartbeat Ns = Ns Ar seconds
+Write a JSON
+.Dq heartbeat
+event every
+.Ar seconds
+with the uptime and packet and connection counters.
+Off by default.
 .It Fl p Ar fingerprints
 Read
 .Nm nmap

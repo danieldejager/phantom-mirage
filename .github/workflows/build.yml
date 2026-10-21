@@ -255,6 +255,7 @@ jobs:
             -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
             -0 $D/pf.os -m $D/nmap-mac-prefixes \
             -l /tmp/hdlogs/honeyd.log --json-log=/tmp/hdlogs/events.jsonl \
+            --sensor-id=ci-sensor-1 --heartbeat=1 \
             > honeyd-sub.log 2>&1 &
           for i in $(seq 1 30); do
             grep -q 'Listen: .*:18080' honeyd-sub.log && break; sleep 0.5
@@ -277,7 +278,7 @@ jobs:
           # Text log still written as before; JSON log valid with the schema
           grep -q 'tcp(6) S ' /tmp/hdlogs/honeyd.log
           cp /tmp/hdlogs/events.jsonl /tmp/hdlogs/honeyd.log .
-          python3 ci/check_json_log.py events.jsonl | tee -a "$GITHUB_STEP_SUMMARY"
+          python3 ci/check_json_log.py events.jsonl ci-sensor-1 | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Privilege hardening + script sandbox (sanitized, #16)
         # Default: honeyd and every script child run with all IDs 65534,
@@ -445,9 +446,12 @@ jobs:
           docker logs "$cid"
           docker rm -f "$cid"
           # HONEYD_JSON_LOG=stdout passes --json-log=- to honeyd (#24)
-          cid=$(docker run -d $caps $ro -e HONEYD_JSON_LOG=stdout honeyd:ci)
+          cid=$(docker run -d $caps $ro -e HONEYD_JSON_LOG=stdout \
+            -e HONEYD_SENSOR_ID=docker-ci -e HONEYD_HEARTBEAT=1 honeyd:ci)
           sleep 5
           docker exec "$cid" sh -c 'tr "\0" " " < /proc/1/cmdline' | grep -q -- '--json-log=-'
+          docker exec "$cid" sh -c 'tr "\0" " " < /proc/1/cmdline' | grep -q -- '--sensor-id=docker-ci'
+          docker logs "$cid" 2>/dev/null | grep -q '"event":"heartbeat","sensor_id":"docker-ci"'
           docker exec "$cid" grep -q '^Uid:.*65534' /proc/1/status
           docker logs "$cid"
           docker rm -f "$cid"

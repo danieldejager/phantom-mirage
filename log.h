@@ -45,5 +45,8 @@ char *honeyd_logdate(void);
 int honeyd_json_open(const char *);
 void honeyd_json_close(void);
 void honeyd_json_reopen(void);
+void honeyd_json_set_sensor(const char *);
+void honeyd_json_heartbeat(long, uint64_t, uint64_t, uint64_t);
+extern uint64_t honeyd_json_connections;
 
 #endif /* _LOG_ */

@@ -8,6 +8,8 @@
 #   HONEYD_JSON_LOG    optional: "stdout" writes JSON Lines events (#24) to
 #                      the container's stdout (for a log shipper); any
 #                      other value is a file path writable by nobody
+#   HONEYD_SENSOR_ID   optional: sensor_id in JSON events (default hostname)
+#   HONEYD_HEARTBEAT   optional: JSON heartbeat interval in seconds
 #
 # Any arguments are appended to the honeyd command line. Arguments
 # starting with --version/--help/--verify-config are passed straight to
@@ -28,6 +30,8 @@ case "${HONEYD_JSON_LOG:-}" in
 stdout|-) set -- "$@" --json-log=- ;;
 *)	set -- "$@" --json-log="$HONEYD_JSON_LOG" ;;
 esac
+[ -n "${HONEYD_SENSOR_ID:-}" ] && set -- "$@" --sensor-id="$HONEYD_SENSOR_ID"
+[ -n "${HONEYD_HEARTBEAT:-}" ] && set -- "$@" --heartbeat="$HONEYD_HEARTBEAT"
 for i in $ifs; do set -- -i "$i" "$@"; done
 
 # honeyd needs these at runtime; with a read-only rootfs mount a tmpfs
