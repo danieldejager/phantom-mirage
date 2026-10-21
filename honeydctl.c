@@ -93,7 +93,7 @@
 char Buffer[LINELEN];
 
 #define CTLNAME		"honeydctl"
-#define HONEYD_SOCK	"/var/run/honeyd.sock"
+#define HONEYD_SOCK	"/var/run/honeyd/honeyd.sock"
 
 int
 usage()

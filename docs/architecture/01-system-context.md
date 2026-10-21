@@ -32,7 +32,7 @@ flowchart TB
     subgraph host["Honeyd host (Linux/BSD, root at start)"]
         honeyd["honeyd daemon<br/>honeyd.c main()"]
         honeydctl["honeydctl CLI<br/>honeydctl.c"]
-        uisock[("/var/run/honeyd.sock<br/>ui.h UI_FIFO")]
+        uisock[("/var/run/honeyd/honeyd.sock<br/>ui.h UI_FIFO")]
         cfg[("config file<br/>-f, parse.y / lex.l")]
         fp[("fingerprint DBs<br/>nmap-os-db, xprobe2.conf,<br/>nmap.assoc, pf.os, nmap-mac-prefixes")]
         scripts["service scripts<br/>scripts/ (sh, perl, ...)<br/>forked per connection"]
@@ -61,7 +61,7 @@ flowchart TB
 | Container | Source | Notes |
 |---|---|---|
 | `honeyd` | honeyd.c and most other `.c` files (`honeyd_SOURCES` in Makefile.am) | Single-threaded libevent loop (`event_base_dispatch`, honeyd.c ~3990). |
-| `honeydctl` | honeydctl.c | Connects to `UI_FIFO` (`/var/run/honeyd.sock`, ui.h:47); commands are parsed by the same grammar as the config file (`ui` rule, parse.y:925), so templates can be changed live. |
+| `honeydctl` | honeydctl.c | Connects to `UI_FIFO` (`/var/run/honeyd/honeyd.sock`, ui.h:54); commands are parsed by the same grammar as the config file (`ui` rule, parse.y:925), so templates can be changed live. |
 | `honeydstats` | honeydstats_main.c, honeydstats.c, analyze.c, filter.c, keycount.c | Separate process that aggregates stats reports sent by `stats.c` (enabled with honeyd's stats options). |
 | `hsniff` | hsniff.c | Stand-alone sniffer tool; not part of the honeypot path. |
 | Fingerprint DBs | nmap-os-db, xprobe2.conf, nmap.assoc, pf.os, nmap-mac-prefixes | Loaded at startup in `main()`; paths overridable with `-p`, `-x`, `-a`, `-0`, `-m`. |

@@ -76,5 +76,5 @@ flowchart TB
 - **Service launcher (command.c)** – `generic_connect()` (honeyd.c:1416) chooses by `enum status`: fork a script (`cmd_fork`, command.c:374), proxy to a real host (`proxy_connect`), hand the connection to a subsystem (`cmd_subsystem_schedule_connect`), or call Python (`cmd_python`).
 - **Subsystems (subsystem.c + honeyd_overload.c)** – long-running real programs started with `libhoneyd.so` preloaded; their `socket/bind/listen/connect` calls are turned into `struct subsystem_command` messages and Honeyd passes them file descriptors (fdpass.c).
 - **Hooks/plugins** – `hooks_dispatch()` (hooks.c:207) lets dlopen'd plugins see incoming/outgoing packets; `option` statements in config feed plugins_config.c.
-- **UI** – `ui_init()` (ui.c:351) listens on `/var/run/honeyd.sock`; each line is fed to the yacc parser, so the live control language equals the config language.
+- **UI** – `ui_init()` (ui.c:351) listens on `/var/run/honeyd/honeyd.sock`; each line is fed to the yacc parser, so the live control language equals the config language.
 - **Logging/stats** – `honeyd_log_probe()` / `honeyd_log_flownew()` etc. (log.c); stats.c sends aggregated records to honeydstats; rrdtool.c optionally pipes to rrdtool.
