@@ -1,0 +1,28 @@
+# What a phantom-mirage service script may do (#16), shared by the
+# pm-script-ns launcher profile and the phantom-mirage-script profile
+# stacked on it. Landlock and seccomp (--sandbox-scripts) restrict scripts
+# further; this is the AppArmor outer bound.
+
+  /{usr/,}bin/ r,
+  /{usr/,}bin/* mr,
+  /etc/** r,
+  /usr/share/** r,
+  /etc/phantom-mirage/** r,
+  /usr/share/phantom-mirage/** r,
+  /usr/lib/** mr,
+
+  /tmp/ r,
+  owner /tmp/** rwk,
+  /dev/null rw,
+  /dev/urandom r,
+  owner @{PROC}/@{pid}/{stat,status,maps,cmdline,fd/} r,
+
+  # The connection is on stdin/stdout (unix); proxy-style scripts may
+  # connect out (still limited by Landlock with --sandbox-daemon).
+  unix (send, receive, getattr, getopt, setopt, shutdown) type=stream,
+  unix (send, receive, getattr, getopt, setopt) type=dgram,
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network inet6 dgram,
+  network netlink raw,

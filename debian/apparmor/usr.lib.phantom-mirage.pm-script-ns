@@ -1,0 +1,73 @@
+# AppArmor profile for the phantom-mirage --sandbox-scripts launcher (#16).
+#
+# phantom-mirage execs /usr/lib/phantom-mirage/pm-script-ns, which creates
+# a user/mount/PID/IPC/UTS/network namespace and a private /tmp for every
+# service script. Ubuntu 24.04+ (kernel.apparmor_restrict_unprivileged_userns=1)
+# only lets confined programs whose profile says "userns," create user
+# namespaces; this profile grants that to the launcher and nothing else.
+# The daemon itself stays unconfined; its own seccomp allowlist and
+# Landlock (--sandbox-daemon) keep it away from namespaces.
+#
+# Scripts are exec'd with the "phantom-mirage-script" profile STACKED on
+# this one (px -> &...): stacking is what AppArmor allows under
+# no_new_privs, and the stack is the intersection, so scripts get neither
+# "userns" nor any capability. Local additions (e.g. scripts outside
+# /etc/phantom-mirage and /usr/share/phantom-mirage):
+#   /etc/apparmor.d/local/usr.lib.phantom-mirage.pm-script-ns
+#   /etc/apparmor.d/local/phantom-mirage-script
+# These must be added to both profiles, since the stack is their intersection.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile pm-script-ns /usr/lib/phantom-mirage/pm-script-ns {
+  include <abstractions/base>
+
+  # The reason for this profile.
+  userns,
+
+  # Only effective inside the launcher's own user namespace (it has no
+  # capabilities in the initial one): private mounts and the hostname.
+  capability sys_admin,
+
+  mount options=(rw, rprivate) -> /,
+  mount fstype=tmpfs options=(rw, nosuid, nodev) tmpfs -> /tmp/,
+  mount fstype=proc options=(rw, nosuid, nodev, noexec) proc -> /proc/,
+
+  /usr/lib/phantom-mirage/pm-script-ns mr,
+  @{PROC}/@{pid}/uid_map w,
+  @{PROC}/@{pid}/gid_map w,
+  @{PROC}/@{pid}/setgroups w,
+
+  # Requests from the daemon, and the descriptors passed with them.
+  unix (send, receive, getattr, getopt, setopt) type=seqpacket,
+  unix (send, receive, getattr, getopt, setopt) type=stream,
+  unix (send, receive, getattr, getopt, setopt) type=dgram,
+  signal (receive) peer=unconfined,
+  signal (send) set=(kill) peer=pm-script-ns,
+  signal (send) set=(kill) peer=pm-script-ns//&phantom-mirage-script,
+
+  # Scripts: only through the stacked script profile.
+  /{usr/,}bin/* px -> &phantom-mirage-script,
+  /etc/phantom-mirage/** px -> &phantom-mirage-script,
+  /usr/share/phantom-mirage/** px -> &phantom-mirage-script,
+
+  # What a script may do, again (the stack is the intersection).
+  include <abstractions/phantom-mirage-script>
+
+  include if exists <local/usr.lib.phantom-mirage.pm-script-ns>
+}
+
+profile phantom-mirage-script {
+  include <abstractions/base>
+  include <abstractions/phantom-mirage-script>
+
+  /{usr/,}bin/* ix,
+  /etc/phantom-mirage/** ix,
+  /usr/share/phantom-mirage/** ix,
+  signal (receive) peer=pm-script-ns,
+  signal peer=pm-script-ns//&phantom-mirage-script,
+
+  include if exists <local/phantom-mirage-script>
+}

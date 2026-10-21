@@ -339,6 +339,61 @@ sandbox_daemon_allow_connect(int port)
 		daemon_connect_any = 1;
 }
 
+/*
+ * The exec'd script launcher (sandbox_ns.c) needs the sandbox settings:
+ * "-d" (--sandbox-daemon), "-w DIR" (--sandbox-allow-write), "-p PORT"
+ * (daemon TCP connect port), "-a" (connect unrestricted).
+ */
+int
+sandbox_state_argv(char **argv, int max, char *ports, size_t plen)
+{
+	int n = 0, i;
+	size_t off = 0;
+
+#define ADD(x) do { if (n >= max - 1) return (-1); argv[n++] = (x); } while (0)
+	if (honeyd_sandbox_daemon)
+		ADD("-d");
+	if (daemon_connect_any)
+		ADD("-a");
+	for (i = 0; i < nwrite_paths; i++) {
+		ADD("-w");
+		ADD((char *)write_paths[i]);
+	}
+	for (i = 0; i < ndaemon_ports; i++) {
+		int l = snprintf(ports + off, plen - off, "%u",
+		    daemon_ports[i]);
+		if (l < 0 || (size_t)l >= plen - off)
+			return (-1);
+		ADD("-p");
+		ADD(ports + off);
+		off += l + 1;
+	}
+#undef ADD
+	argv[n] = NULL;
+	return (n);
+}
+
+int
+sandbox_state_parse(int argc, char **argv)
+{
+	int i;
+
+	honeyd_sandbox_scripts = 1;
+	for (i = 0; i < argc; i++) {
+		if (strcmp(argv[i], "-d") == 0)
+			honeyd_sandbox_daemon = 1;
+		else if (strcmp(argv[i], "-a") == 0)
+			daemon_connect_any = 1;
+		else if (strcmp(argv[i], "-w") == 0 && i + 1 < argc)
+			sandbox_add_write_path(argv[++i]);
+		else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc)
+			sandbox_daemon_allow_connect(atoi(argv[++i]));
+		else
+			return (-1);
+	}
+	return (0);
+}
+
 #ifdef HAVE_LINUX_LANDLOCK_H
 /*
  * With --sandbox-daemon, a script the launcher starts (sandbox_ns.c) is

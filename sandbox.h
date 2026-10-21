@@ -52,4 +52,11 @@ extern int sandbox_script_private_tmp;
 /* the daemon's allowlist in a script started by the launcher, quietly */
 int sandbox_daemon_child(void);
 
+/* the exec'd launcher (PATH_HONEYDLIB/pm-script-ns): its main(), and
+ * passing the sandbox settings to it */
+#define SANDBOX_LAUNCHER	"pm-script-ns"
+int sandbox_ns_main(int argc, char **argv);
+int sandbox_state_argv(char **argv, int max, char *ports, size_t plen);
+int sandbox_state_parse(int argc, char **argv);
+
 #endif /* _SANDBOX_H_ */

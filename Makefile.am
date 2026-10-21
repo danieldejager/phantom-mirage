@@ -197,6 +197,13 @@ EXTRA_DIST = $(man_MANS) $(WEBDIR_FILES)		  \
 	pydataprocessing.c pydataprocessing.h \
 	pydatahoneyd.c pydatahoneyd.h scripts
 
+# The --sandbox-scripts launcher is the same binary under its own name, so
+# that an AppArmor profile can grant "userns" to it alone (#16).
+install-exec-hook:
+	$(mkdir_p) "$(DESTDIR)$(honeydlibdir)"
+	cp -f "$(DESTDIR)$(bindir)/phantom-mirage$(EXEEXT)" \
+	    "$(DESTDIR)$(honeydlibdir)/pm-script-ns$(EXEEXT)"
+
 install-data-local:
 	$(mkdir_p) "$(DESTDIR)$(honeyddatadir)"
 	(cd $(top_srcdir) && tar -cf - $(top_srcdir)/webserver) | \

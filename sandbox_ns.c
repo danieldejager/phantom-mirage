@@ -394,10 +394,18 @@ ns_launcher(int ctl, pid_t parent)
 	}
 }
 
+/*
+ * The launcher is exec'd as PATH_HONEYDLIB/pm-script-ns (the same binary
+ * installed under that name) so that it, and only it, can get its own
+ * AppArmor profile granting "userns" (debian/apparmor). If that file
+ * isn't there (build tree), the forked child becomes the launcher itself.
+ */
 void
 sandbox_ns_start(void)
 {
-	int sv[2];
+	static const char path[] = PATH_HONEYDLIB "/" SANDBOX_LAUNCHER;
+	char fdbuf[16], ppbuf[16], ports[1024], *argv[256];
+	int sv[2], n;
 	pid_t pid, parent = getpid();
 
 	if (!honeyd_sandbox_scripts)
@@ -416,11 +424,44 @@ sandbox_ns_start(void)
 	}
 	if (pid == 0) {
 		close(sv[0]);
+		argv[0] = SANDBOX_LAUNCHER;
+		snprintf(fdbuf, sizeof(fdbuf), "%d", sv[1]);
+		snprintf(ppbuf, sizeof(ppbuf), "%ld", (long)parent);
+		argv[1] = fdbuf;
+		argv[2] = ppbuf;
+		n = sandbox_state_argv(argv + 3, 256 - 3, ports, sizeof(ports));
+		if (n >= 0 && access(path, X_OK) == 0 &&
+		    fcntl(sv[1], F_SETFD, 0) == 0) {
+			char *envp[] = { NULL };
+			execve(path, argv, envp);
+			syslog(LOG_WARNING, "sandbox: exec %s: %m; running "
+			    "the script launcher in-process", path);
+			fcntl(sv[1], F_SETFD, FD_CLOEXEC);
+		}
 		ns_launcher(sv[1], parent);
 		_exit(0);
 	}
 	close(sv[1]);
 	ns_ctl = sv[0];
+}
+
+/* main() of the exec'd launcher: pm-script-ns FD PARENT [settings] */
+int
+sandbox_ns_main(int argc, char **argv)
+{
+	int fd;
+
+	openlog("phantom-mirage", LOG_PERROR | LOG_PID | LOG_CONS, LOG_DAEMON);
+	if (argc < 3 || (fd = atoi(argv[1])) < 3 ||
+	    sandbox_state_parse(argc - 3, argv + 3) == -1) {
+		syslog(LOG_ERR, "%s: started without a valid control socket "
+		    "(it is run by phantom-mirage --sandbox-scripts)",
+		    SANDBOX_LAUNCHER);
+		return (EXIT_FAILURE);
+	}
+	fcntl(fd, F_SETFD, FD_CLOEXEC);
+	ns_launcher(fd, (pid_t)atol(argv[2]));
+	return (0);
 }
 
 /*
@@ -539,6 +580,7 @@ sandbox_ns_exec(const char *execcmd, char * const argv[], uid_t uid,
 #else /* !__linux__ */
 
 void sandbox_ns_start(void) { }
+int sandbox_ns_main(int argc, char **argv) { return (1); }
 void
 sandbox_ns_exec(const char *execcmd, char * const argv[], uid_t uid,
     gid_t gid, int nofiles)
