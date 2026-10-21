@@ -73,10 +73,34 @@ command; subsystems are not affected) also runs in its own namespaces:
 | Namespace | Effect |
 |---|---|
 | user | unprivileged; the script's uid/gid are mapped 1:1, nothing else |
-| mount | `/` is private, `/tmp` is a fresh 64 MB tmpfs (writable, gone when the script exits) |
+| mount | a minimal **read-only root** (below); `/tmp` is a fresh 64 MB tmpfs (writable, gone when the script exits) |
 | PID | the script is pid 1 and sees only its own processes; killing it kills them all |
 | IPC, UTS | no shared SysV IPC / POSIX queues; hostname `phantom-mirage-script` |
 | network | only a downed `lo`, so no network at all. Scripts get their connection on stdin/stdout, so they normally don't need one |
+
+**Read-only root.** The script's pid 1 (in the launcher, before Landlock,
+seccomp and the exec; `sandbox_root.c`) mounts a tmpfs on `/tmp`.
+It fills it with read-only bind mounts, then `pivot_root`s into it and
+detaches the host's root.
+* **What is bound:**
+  * Read-only: `/usr/bin`, `/usr/sbin` and `/usr/lib*` (interpreters,
+    tools, libraries, the Python stdlib), `/usr/share/perl*`, and the
+    top-level `bin`/`sbin`/`lib*` (as the host's symlinks on merged-`/usr`
+    systems).
+  * Also read-only: the data dir, the working directory, the directory of
+    every absolute path in the command (the script dir), and
+    `/etc/ld.so.cache` and `/etc/alternatives`.
+  * Read-write: the `--sandbox-allow-write` dirs.
+* **What is synthetic:** `/etc` holds only small `passwd`, `group` and
+  `hosts` files. `/dev` holds only `null`, `zero`, `random` and
+  `urandom`. `/proc` is a fresh one where the kernel allows it; under the
+  systemd unit's `ProtectProc` it doesn't, and scripts go without.
+* **What is left out:** everything else, for example `/etc/shadow`,
+  `/etc/hostname`, `/home`, `/root`, `/var` and `/run`.
+* **If it fails:** when the root can't be built (while namespaces work),
+  the script isn't run (`sandbox: read-only root: <step>: <errno>`).
+* **Without namespaces:** scripts run on the host's root as before; the
+  launcher's start-up log line says so.
 
 `--sandbox-script-net=PATH` (repeatable, absolute) keeps the host
 network for scripts whose command line contains `PATH` as a word, for
@@ -104,9 +128,9 @@ too. The daemon's allowlist gained nothing.
 **Degrading.** At start the launcher tries everything once (all six
 namespaces, the id maps, the tmpfs) and logs either `sandbox: scripts run
 in their own user, mount, PID, IPC, UTS and network namespaces with a
-private /tmp` or `sandbox: unprivileged user namespaces unavailable
-(<errno>); scripts run WITHOUT namespaces or a private /tmp (Landlock and
-seccomp still apply)`. Typical reasons are `user.max_user_namespaces=0`,
+private /tmp and a minimal read-only root` or `sandbox: unprivileged user
+namespaces unavailable (<errno>); scripts run WITHOUT namespaces, a
+private /tmp or a read-only root (Landlock and seccomp still apply)`. Typical reasons are `user.max_user_namespaces=0`,
 Ubuntu's `kernel.apparmor_restrict_unprivileged_userns=1`, Debian's
 older `kernel.unprivileged_userns_clone=0`, or Docker's default seccomp
 or AppArmor profile.
@@ -406,6 +430,16 @@ installed and unused, and the package installs as before.
   runner with `HD_NS=require`) run it, then again with
   `user.max_user_namespaces=0` to check the logged fallback. The ASan
   and arm64 container jobs run it too, and get the fallback.
+* **Read-only root.** The probe scripts (`ci/script_ns.sh`,
+  `ci/systemd_unit.sh`) must fail to read `/etc/shadow` and
+  `/etc/hostname` and to list `/home`.
+  * `ci/ns_services.sh` runs every service script under `scripts/` (sh,
+    Perl, Python 3; 42 of them) directly and through phantom-mirage with
+    namespaces. A script that answers directly must answer in the sandbox
+    too, with no sandbox-only "No such file", "Can't locate" or
+    `ModuleNotFoundError`.
+  * It runs on amd64, on arm64 and against the installed package under
+    systemd.
 * **Launcher syscall audit.** The script-ns jobs and the systemd jobs
   (amd64 and arm64) attach `strace -f` to the running `pm-script-ns`
   while scripts are served (including a failing exec). They then run

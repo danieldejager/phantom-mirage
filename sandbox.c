@@ -49,6 +49,13 @@ sandbox_add_write_path(const char *path)
 	return (0);
 }
 
+int
+sandbox_write_paths(const char * const **p)
+{
+	*p = write_paths;
+	return (nwrite_paths);
+}
+
 #ifdef __linux__
 
 #include <sys/prctl.h>

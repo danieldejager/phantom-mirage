@@ -18,6 +18,7 @@ cat > $W/probe.sh <<'SH'
 #!/bin/sh
 echo "pid=$$ host=$(uname -n) links=$(ip -o link | wc -l) loup=$(ip -o link show lo | grep -c LOWER_UP)"
 echo probe > /tmp/ns_probe_$1 && echo "tmp=$(cat /tmp/ns_probe_$1)"
+echo "shadow=$(cat /etc/shadow >/dev/null 2>&1 && echo y || echo n) etchostname=$(cat /etc/hostname >/dev/null 2>&1 && echo y || echo n) home=$(ls /home >/dev/null 2>&1 && echo y || echo n)"
 SH
 cp $W/probe.sh $W/probe_net.sh
 cat > $W/ns.conf <<CONF
@@ -72,6 +73,9 @@ PY
     # the host network: same interfaces, lo up (a new netns has lo down)
     grep -q "links=$(ip -o link | wc -l) loup=1 " <<<"$net" || fail "$mode: --sandbox-script-net script lost the host network: $net"
     [ -e /tmp/ns_probe_a ] && fail "$mode: /tmp is not private"
+    for x in "$isol" "$net"; do
+      grep -q 'shadow=n etchostname=n home=n' <<<"$x" || fail "$mode: script sees host files: $x"
+    done
   elif [ "${HD_NS:-}" = require ]; then
     fail "$mode: namespaces required but unavailable"
   else

@@ -577,6 +577,15 @@ jobs:
           mkdir -p lt
           sudo HD_APPARMOR=require HD_LTRACE=$PWD/lt bash src/phantom-mirage/ci/systemd_unit.sh
 
+      - name: Existing service scripts in the read-only root (systemd)
+        run: |
+          since=$(date '+%Y-%m-%d %H:%M:%S')
+          sudo systemctl start phantom-mirage; sleep 3
+          sudo HD_SYSTEMD=1 bash src/phantom-mirage/ci/ns_services.sh
+          sudo systemctl stop phantom-mirage
+          ! sudo journalctl -u phantom-mirage --since "$since" --no-pager | grep -E 'denied syscall|killed by SIGSYS|read-only root:|not running it'
+          ! sudo journalctl -k --since "$since" --no-pager | grep -E 'apparmor="(DENIED|ALLOWED)"'
+
       - name: Syscall audit of the launcher allowlist
         run: |
           ls lt
@@ -720,6 +729,11 @@ jobs:
           sudo HD_NS=require HD_LOGDIR=$PWD/ns-logs HD_LTRACE=$PWD/lt bash ci/script_ns.sh
           ls lt
           sudo bash ci/syscall_audit.sh --launcher lt/* | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Existing service scripts in the read-only root
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends perl util-linux
+          sudo HD_LOGDIR=$PWD/ns-logs bash ci/ns_services.sh
 
       - name: "Fallback is logged when user namespaces are off"
         run: |
