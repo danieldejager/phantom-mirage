@@ -277,6 +277,180 @@ sandbox_landlock(char * const argv[])
 }
 #endif /* HAVE_LINUX_LANDLOCK_H */
 
+/* ---- --sandbox-daemon: Landlock for the daemon itself (#16) ---- */
+
+#define MAX_DAEMON_PATHS	128
+#define MAX_DAEMON_PORTS	64
+static char *daemon_ro[MAX_DAEMON_PATHS], *daemon_rw[MAX_DAEMON_PATHS];
+static int ndaemon_ro, ndaemon_rw;
+static unsigned short daemon_ports[MAX_DAEMON_PORTS];
+static int ndaemon_ports, daemon_connect_any;
+
+static void
+daemon_add(char **list, int *n, const char *path)
+{
+	int i;
+
+	if (path == NULL || path[0] != '/' || *n >= MAX_DAEMON_PATHS)
+		return;
+	for (i = 0; i < *n; i++)
+		if (strcmp(list[i], path) == 0)
+			return;
+	if ((list[*n] = strdup(path)) != NULL)
+		(*n)++;
+}
+
+void
+sandbox_daemon_allow_read(const char *path)
+{
+	daemon_add(daemon_ro, &ndaemon_ro, path);
+}
+
+void
+sandbox_daemon_allow_write(const char *path)
+{
+	daemon_add(daemon_rw, &ndaemon_rw, path);
+}
+
+void
+sandbox_daemon_allow_connect(int port)
+{
+	int i;
+
+	if (port < 0) {
+		daemon_connect_any = 1;
+		return;
+	}
+	for (i = 0; i < ndaemon_ports; i++)
+		if (daemon_ports[i] == port)
+			return;
+	if (ndaemon_ports < MAX_DAEMON_PORTS)
+		daemon_ports[ndaemon_ports++] = port;
+	else
+		daemon_connect_any = 1;
+}
+
+#ifdef HAVE_LINUX_LANDLOCK_H
+static int
+daemon_landlock(char *net, size_t netlen)
+{
+	static const char *ro[] = {
+		"/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32",
+		"/etc", "/opt", "/proc", "/dev/urandom", "/dev/random",
+		"/dev/zero", PATH_HONEYDDATA, PATH_HONEYDLIB, NULL
+	};
+	struct landlock_ruleset_attr ra;
+	__u64 handled, rw;
+	int abi, rfd, i;
+
+	abi = syscall(SYS_landlock_create_ruleset, NULL, 0,
+	    LANDLOCK_CREATE_RULESET_VERSION);
+	if (abi < 1)
+		return (-1);
+
+	handled = LANDLOCK_ACCESS_FS_EXECUTE |
+	    LANDLOCK_ACCESS_FS_WRITE_FILE | LANDLOCK_ACCESS_FS_READ_FILE |
+	    LANDLOCK_ACCESS_FS_READ_DIR | LANDLOCK_ACCESS_FS_REMOVE_DIR |
+	    LANDLOCK_ACCESS_FS_REMOVE_FILE | LANDLOCK_ACCESS_FS_MAKE_CHAR |
+	    LANDLOCK_ACCESS_FS_MAKE_DIR | LANDLOCK_ACCESS_FS_MAKE_REG |
+	    LANDLOCK_ACCESS_FS_MAKE_SOCK | LANDLOCK_ACCESS_FS_MAKE_FIFO |
+	    LANDLOCK_ACCESS_FS_MAKE_BLOCK | LANDLOCK_ACCESS_FS_MAKE_SYM;
+#ifdef LANDLOCK_ACCESS_FS_REFER
+	if (abi >= 2)
+		handled |= LANDLOCK_ACCESS_FS_REFER;
+#endif
+	if (abi >= 3)
+		handled |= LL_TRUNCATE;
+	/* Writable dirs: no char/block device nodes, no cross-dir renames */
+	rw = handled & ~(LANDLOCK_ACCESS_FS_MAKE_CHAR |
+	    LANDLOCK_ACCESS_FS_MAKE_BLOCK);
+#ifdef LANDLOCK_ACCESS_FS_REFER
+	rw &= ~LANDLOCK_ACCESS_FS_REFER;
+#endif
+
+	memset(&ra, 0, sizeof(ra));
+	ra.handled_access_fs = handled;
+	snprintf(net, netlen, "none (needs Landlock ABI 4, kernel has %d)",
+	    abi);
+#ifdef LANDLOCK_ACCESS_NET_BIND_TCP
+	if (abi >= 4) {
+		ra.handled_access_net = LANDLOCK_ACCESS_NET_BIND_TCP;
+		if (!daemon_connect_any)
+			ra.handled_access_net |=
+			    LANDLOCK_ACCESS_NET_CONNECT_TCP;
+		snprintf(net, netlen, "TCP bind denied, TCP connect %s",
+		    daemon_connect_any ? "unrestricted (dynamic proxy target)"
+		    : "limited to the configured proxy ports");
+	}
+#else
+	snprintf(net, netlen, "none (built without Landlock network headers)");
+#endif
+	rfd = syscall(SYS_landlock_create_ruleset, &ra, sizeof(ra), 0);
+	if (rfd == -1)
+		return (-1);
+
+	for (i = 0; ro[i] != NULL; i++)
+		ll_allow(rfd, ro[i], LL_RO, handled);
+	for (i = 0; i < ndaemon_ro; i++)
+		ll_allow(rfd, daemon_ro[i], LL_RO, handled);
+	ll_allow(rfd, "/dev/null", LL_FILE, handled);
+	for (i = 0; i < ndaemon_rw; i++)
+		ll_allow(rfd, daemon_rw[i], rw, handled);
+	for (i = 0; i < nwrite_paths; i++)
+		ll_allow(rfd, write_paths[i], rw, handled);
+#ifdef LANDLOCK_ACCESS_NET_BIND_TCP
+	if (abi >= 4 && !daemon_connect_any) {
+		struct landlock_net_port_attr np;
+		for (i = 0; i < ndaemon_ports; i++) {
+			memset(&np, 0, sizeof(np));
+			np.allowed_access = LANDLOCK_ACCESS_NET_CONNECT_TCP;
+			np.port = daemon_ports[i];
+			if (syscall(SYS_landlock_add_rule, rfd,
+				LANDLOCK_RULE_NET_PORT, &np, 0) == -1)
+				syslog(LOG_WARNING, "sandbox-daemon: landlock "
+				    "rule for port %d: %s", daemon_ports[i],
+				    strerror(errno));
+		}
+	}
+#endif
+	/* no_new_privs is normally set already; required when still root */
+	prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
+	if (syscall(SYS_landlock_restrict_self, rfd, 0) == -1) {
+		close(rfd);
+		return (-1);
+	}
+	close(rfd);
+	return (abi);
+}
+#else
+static int
+daemon_landlock(char *net, size_t netlen)
+{
+	errno = ENOSYS;
+	return (-1);
+}
+#endif /* HAVE_LINUX_LANDLOCK_H */
+
+int
+sandbox_daemon_landlock(void)
+{
+	char net[96];
+	int abi;
+
+	if (!honeyd_sandbox_daemon)
+		return (0);
+	if ((abi = daemon_landlock(net, sizeof(net))) < 0) {
+		syslog(LOG_WARNING, "sandbox-daemon: Landlock unavailable "
+		    "(%s); the daemon is NOT filesystem-restricted (seccomp "
+		    "only)", strerror(errno));
+		return (0);
+	}
+	syslog(LOG_NOTICE, "sandbox-daemon: Landlock ABI %d active: "
+	    "%d read-only, %d writable paths; network: %s", abi,
+	    ndaemon_ro, ndaemon_rw + nwrite_paths, net);
+	return (abi);
+}
+
 #if defined(__x86_64__)
 #define SB_ARCH AUDIT_ARCH_X86_64
 #elif defined(__aarch64__)
@@ -476,6 +650,11 @@ sandbox_script(char * const argv[])
 }
 
 #else /* !__linux__ */
+
+void sandbox_daemon_allow_read(const char *path) { }
+void sandbox_daemon_allow_write(const char *path) { }
+void sandbox_daemon_allow_connect(int port) { }
+int sandbox_daemon_landlock(void) { return (0); }
 
 void sandbox_drop_caps_pre(void) { }
 int sandbox_verify_post(uid_t uid, gid_t gid) { return (0); }

@@ -34,4 +34,12 @@ int sandbox_daemon(void);
 
 extern int honeyd_sandbox_daemon;
 
+/* --sandbox-daemon: Landlock for the daemon.  Collect the paths and TCP
+ * connect ports first (port -1: any), then apply once, before the
+ * seccomp filter.  Degrades to a logged warning without Landlock. */
+void sandbox_daemon_allow_read(const char *path);
+void sandbox_daemon_allow_write(const char *path);
+void sandbox_daemon_allow_connect(int port);
+int sandbox_daemon_landlock(void);
+
 #endif /* _SANDBOX_H_ */

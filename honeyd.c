@@ -3651,6 +3651,107 @@ honeyd_sigusr(int fd, short what, void *arg)
 		honeyd_servicefp = honeyd_logstart(servicelog);
 }
 
+/* --sandbox-daemon: what the daemon may still touch once Landlock is on */
+
+static void
+sbd_dir(const char *path, int writable)
+{
+	char buf[1024], *p;
+
+	if (path == NULL || path[0] != '/')
+		return;
+	strlcpy(buf, path, sizeof(buf));
+	if ((p = strrchr(buf, '/')) != NULL)
+		*(p == buf ? p + 1 : p) = '\0';
+	if (writable)
+		sandbox_daemon_allow_write(buf);
+	else
+		sandbox_daemon_allow_read(buf);
+}
+
+/* absolute paths in a script / subsystem command line */
+static void
+sbd_command(const char *cmd)
+{
+	char buf[1024], *p, *tok;
+
+	if (cmd == NULL)
+		return;
+	strlcpy(buf, cmd, sizeof(buf));
+	for (p = buf; (tok = strsep(&p, " \t\"'")) != NULL; )
+		if (tok[0] == '/')
+			sandbox_daemon_allow_read(tok);
+}
+
+static void
+sbd_action(struct action *action)
+{
+	struct addrinfo *ai;
+
+	if (action->status == PORT_OPEN)
+		sbd_command(action->action);
+	else if (action->status == PORT_PROXY) {
+		if (action->aitop == NULL) {
+			sandbox_daemon_allow_connect(-1);
+			return;
+		}
+		for (ai = action->aitop; ai != NULL; ai = ai->ai_next) {
+			if (ai->ai_family == AF_INET)
+				sandbox_daemon_allow_connect(ntohs(
+				    ((struct sockaddr_in *)ai->ai_addr)->sin_port));
+			else if (ai->ai_family == AF_INET6)
+				sandbox_daemon_allow_connect(ntohs(
+				    ((struct sockaddr_in6 *)ai->ai_addr)->sin6_port));
+		}
+	}
+}
+
+static void
+honeyd_sandbox_daemon_landlock(const char *datadir)
+{
+	extern struct subsystemqueue subsystems;
+	extern char *ui_file;
+	struct subsystem *sub;
+	char buf[1024], *pp, *p, *tok;
+
+	if (!honeyd_sandbox_daemon)
+		return;
+
+	/* read-only: config, data and script dirs (libs are in sandbox.c) */
+	sbd_dir(config.config, 0);
+	sbd_dir(config.pers, 0);
+	sbd_dir(config.xprobe, 0);
+	sbd_dir(config.assoc, 0);
+	sbd_dir(config.osfp, 0);
+	sbd_dir(config.nmapMac, 0);
+	sandbox_daemon_allow_read(datadir);
+	if (getcwd(buf, sizeof(buf)) != NULL)
+		sandbox_daemon_allow_read(buf);
+	sandbox_daemon_allow_read(honeyd_webserver_root);
+	if ((pp = getenv("PYTHONPATH")) != NULL) {
+		strlcpy(buf, pp, sizeof(buf));
+		for (p = buf; (tok = strsep(&p, ":")) != NULL; )
+			sandbox_daemon_allow_read(tok);
+	}
+	template_action_iterate(sbd_action);
+	TAILQ_FOREACH(sub, &subsystems, next)
+		sbd_command(sub->cmdstring);
+
+	/* writable: logs, the control socket dir, the status page graphs */
+	sbd_dir(logfile, 1);
+	sbd_dir(servicelog, 1);
+	if (jsonlogfile != NULL && strcmp(jsonlogfile, "-") != 0)
+		sbd_dir(jsonlogfile, 1);
+	sbd_dir(templateDump, 1);
+	sbd_dir(ui_file, 1);
+	snprintf(buf, sizeof(buf), "%s/graphs", honeyd_webserver_root);
+	sandbox_daemon_allow_write(buf);
+	if (honeyd_rrdtool_path != NULL && strlen(honeyd_rrdtool_path))
+		sandbox_daemon_allow_write("/tmp");	/* honeyd_traffic.rrd */
+
+	sandbox_daemon_landlock();
+}
+
 struct _unittest {
 	char *name;
 	void (*cb)(void);
@@ -4147,7 +4248,8 @@ main(int argc, char *argv[])
 		syslog(LOG_WARNING, "Running with root privileges.");
 	}
 
-	/* Opt-in: seccomp allowlist for the daemon from here on (#16) */
+	/* Opt-in: Landlock, then the seccomp allowlist for the daemon (#16) */
+	honeyd_sandbox_daemon_landlock(datadir);
 	if (sandbox_daemon() == -1) {
 		syslog(LOG_ERR, "--sandbox-daemon: cannot install seccomp "
 		    "filter: %m");
