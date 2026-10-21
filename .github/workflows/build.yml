@@ -123,6 +123,14 @@ jobs:
         # No /usr/share/honeyd here: honeyd must start without it (#43).
         run: test ! -e /usr/share/honeyd
 
+      - name: Relative-path smoke test (sanitized, #10/#48)
+        # determine_path() turns relative paths into absolute ones; ASan
+        # catches any under-allocation regression here.
+        run: |
+          ./honeyd --verify-config -f ci/smoke.conf -i lo --disable-webserver \
+            -p nmap-os-db -x xprobe2.conf -a nmap.assoc \
+            -0 pf.os -m nmap-mac-prefixes
+
       - name: Smoke test (sanitized)
         run: |
           D=$PWD
