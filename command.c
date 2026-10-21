@@ -74,6 +74,7 @@
 #include "util.h"
 
 #include "interface.h"
+#include "sandbox.h"
 
 ssize_t atomicio(ssize_t (*)(), int, void *, size_t);
 
@@ -274,13 +275,21 @@ cmd_droppriv(uid_t uid, gid_t gid)
 
 	error[0] = '\0';
 
-	/* Lower privileges */
+	/* While still privileged: empty bounding/ambient capability sets */
+	sandbox_drop_caps_pre();
+
+	/* Lower privileges: supplementary groups, then gid, then uid */
 #ifdef HAVE_SETGROUPS
 	if (setgroups(1, &gid) == -1)
 		SETERROR((errline, sizeof(errline),
 			     "%s: setgroups(%d) failed\n", __func__, gid));
 #endif
-#ifdef HAVE_SETREGID
+#ifdef __linux__
+	/* Real, effective and saved IDs in one call */
+	if (setresgid(gid, gid, gid) == -1)
+		SETERROR((errline, sizeof(errline),
+			     "%s: setresgid(%d) failed\n", __func__, gid));
+#elif defined(HAVE_SETREGID)
 	if (setregid(gid, gid) == -1)
 		SETERROR((errline, sizeof(errline),
 			     "%s: setregid(%d) failed\n", __func__, gid));
@@ -291,7 +300,11 @@ cmd_droppriv(uid_t uid, gid_t gid)
 	if (setgid(gid) == -1)
 		SETERROR((errline, sizeof(errline), 
 			     "%s: setgid(%d) failed\n", __func__, gid));
-#ifdef HAVE_SETREUID
+#ifdef __linux__
+	if (setresuid(uid, uid, uid) == -1)
+		SETERROR((errline, sizeof(errline),
+			     "%s: setresuid(%d) failed\n", __func__, uid));
+#elif defined(HAVE_SETREUID)
 	if (setreuid(uid, uid) == -1)
 		SETERROR((errline, sizeof(errline),
 			     "%s: setreuid(%d) failed\n", __func__, uid));
@@ -330,6 +343,9 @@ cmd_droppriv(uid_t uid, gid_t gid)
 			     __func__));
 		goto error;
 	}
+
+	/* no_new_privs; verify saved IDs and capabilities are gone (#16) */
+	sandbox_verify_post(uid, gid);
 
 	return;
  error:
@@ -428,6 +444,7 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 		TRACE_RESET(perr[1], close(perr[1]));
 
 		cmd_environment(tmpl, hdr);
+		sandbox_script(argv);
 
 		if (execvp(execcmd, argv) == -1)
 		{
@@ -585,6 +602,7 @@ cmd_subsystem(struct template *tmpl, struct subsystem *sub,
 			exit(EXIT_FAILURE);
 		}
 
+		sandbox_script(argv);
 		if (execv(execcmd, argv) == -1)
 		{
 			syslog(LOG_ERR, "%s: execv(%s)", __func__, execcmd);

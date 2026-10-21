@@ -245,6 +245,60 @@ jobs:
           cp /tmp/hdlogs/events.jsonl /tmp/hdlogs/honeyd.log .
           python3 ci/check_json_log.py events.jsonl | tee -a "$GITHUB_STEP_SUMMARY"
 
+      - name: Privilege hardening + script sandbox (sanitized, #16)
+        # Default: honeyd and every script child run with all IDs 65534,
+        # no capabilities (incl. bounding/ambient), no_new_privs.
+        # --sandbox-scripts: script children also get Landlock + seccomp.
+        # SIGHUP/SIGUSR1 must keep working with the hardened process.
+        shell: bash
+        run: |
+          D=$PWD
+          apt-get install -y --no-install-recommends procps util-linux >/dev/null
+          install -d -m 755 /tmp/hdsb
+          install -d -m 1777 /tmp/hdsb/tmp /tmp/hdsb/rw
+          install -m 755 ci/sandbox_probe.sh /tmp/hdsb/sandbox_probe.sh
+          cat > /tmp/hdsb/sb.conf <<'CONF'
+          create default
+          set default default tcp action block
+          create linux
+          set linux personality "Linux 2.6.32"
+          set linux default tcp action reset
+          add linux subsystem "/tmp/subsys_echo"
+          add linux tcp port 2325 "/bin/sh /tmp/hdsb/sandbox_probe.sh"
+          bind 10.99.0.10 linux
+          CONF
+          run() {
+            mode=$1; shift
+            rm -f /tmp/hdsb/tmp/* /tmp/hdsb/rw/*
+            timeout 60 ./honeyd -d -f /tmp/hdsb/sb.conf -i lo --disable-webserver \
+              -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
+              -0 $D/pf.os -m $D/nmap-mac-prefixes "$@" > sb-$mode.log 2>&1 &
+            hp=$!
+            for i in $(seq 1 30); do
+              grep -q 'Listen: .*:18080' sb-$mode.log && break; sleep 0.5
+            done
+            # $hp is timeout(1); signal and inspect honeyd itself
+            hd=$(pgrep -n -P $hp -x honeyd)
+            ll=""
+            grep -q 'Landlock unavailable' sb-$mode.log && ll=no-landlock || true
+            python3 ci/check_sandbox.py $mode $hd $ll | tee -a "$GITHUB_STEP_SUMMARY"
+            rc=${PIPESTATUS[0]}
+            python3 -c "import socket; s=socket.create_connection(('10.99.0.10',18080),timeout=5); assert s.recv(16)==b'hello\\n'"
+            kill -HUP $hd; sleep 1; kill -USR1 $hd; sleep 1
+            kill -0 $hd
+            grep -q 'rereading configuration' sb-$mode.log
+            python3 -c "import socket; s=socket.create_connection(('10.99.0.10',18080),timeout=5); assert s.recv(16)==b'hello\\n'"
+            kill -INT $hd || true
+            wait $hp || true
+            cat sb-$mode.log
+            ! grep -E 'runtime error|ERROR: AddressSanitizer|sandbox: .*(failed|remain|not dropped)' sb-$mode.log
+            return $rc
+          }
+          echo "### default" >> "$GITHUB_STEP_SUMMARY"
+          run default
+          echo "### --sandbox-scripts" >> "$GITHUB_STEP_SUMMARY"
+          run sandbox --sandbox-scripts --sandbox-allow-write=/tmp/hdsb/rw
+
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -310,6 +364,23 @@ jobs:
           test "$(docker exec "$cid" stat -c '%a' /run/honeyd/honeyd.sock)" = 600
           docker exec "$cid" sh -c 'echo "list template" | honeydctl' | grep -q 192.0.2.10
           docker exec "$cid" grep -q '^Uid:.*65534' /proc/1/status
+          # #16: every ID 65534, no effective/permitted/ambient caps,
+          # no_new_privs (bounding set stays: no CAP_SETPCAP here)
+          docker exec "$cid" grep -E '^(Uid|Gid|Groups|Cap|NoNewPrivs|Seccomp)' /proc/1/status
+          docker exec "$cid" grep -Eq '^Uid:\s+65534\s+65534\s+65534\s+65534$' /proc/1/status
+          docker exec "$cid" grep -Eq '^Gid:\s+65534\s+65534\s+65534\s+65534$' /proc/1/status
+          for c in CapInh CapPrm CapEff CapAmb; do
+            docker exec "$cid" grep -Eq "^$c:\s+0+$" /proc/1/status
+          done
+          docker exec "$cid" grep -Eq '^NoNewPrivs:\s+1$' /proc/1/status
+          docker rm -f "$cid"
+          # --sandbox-scripts starts in the image too (Landlock/seccomp
+          # under Docker's default seccomp profile)
+          cid=$(docker run -d $caps $ro honeyd:ci --sandbox-scripts)
+          sleep 5
+          docker exec "$cid" sh -c 'tr "\0" " " < /proc/1/cmdline' | grep -q -- '--sandbox-scripts'
+          docker exec "$cid" grep -Eq '^NoNewPrivs:\s+1$' /proc/1/status
+          docker logs "$cid"
           docker rm -f "$cid"
           # HONEYD_JSON_LOG=stdout passes --json-log=- to honeyd (#24)
           cid=$(docker run -d $caps $ro -e HONEYD_JSON_LOG=stdout honeyd:ci)

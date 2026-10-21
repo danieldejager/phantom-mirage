@@ -113,6 +113,7 @@ struct event_base *libevent_base;
 #include "pydatahoneyd.h"
 #endif
 
+#include "sandbox.h"
 /* Prototypes */
 void honeyd_tcp_timeout(int, short, void *);
 void honeyd_udp_timeout(int, short, void *);
@@ -223,6 +224,8 @@ static struct option honeyd_long_opts[] = {
 	{"fix-webserver-permissions", 0, &honeyd_webserver_fix_permissions, 1},
 	{"mac-address",0,0,1},
 	{"json-log", required_argument, NULL, 'J'},
+	{"sandbox-scripts", 0, &honeyd_sandbox_scripts, 1},
+	{"sandbox-allow-write", required_argument, NULL, 'S'},
 	{0, 0, 0, 0}
 };
 
@@ -238,6 +241,10 @@ usage(void)
 	    "  -s logfile             Logs service status output to logfile.\n"
 	    "  --json-log=FILE        Also write JSON Lines events to FILE\n"
 	    "                         (\"-\" for stdout); see docs/json-log.md.\n"
+	    "  --sandbox-scripts      Run scripts and subsystems under Landlock +\n"
+	    "                         seccomp (Linux); see docs/sandboxing.md.\n"
+	    "  --sandbox-allow-write=DIR\n"
+	    "                         Let sandboxed scripts write below DIR.\n"
         "  -t ipFile              Dumps currently used DHCP IP addresses to ipFile\n"
 	    "  -i interface           Listen on interface.\n"
 	    "  -p file                Read nmap-style fingerprints from file.\n"
@@ -3775,6 +3782,13 @@ main(int argc, char *argv[])
 		case 'l':
 			determine_path(origin_path, &optarg);
 			logfile = optarg;
+			break;
+		case 'S':
+			if (sandbox_add_write_path(optarg) == -1) {
+				fprintf(stderr, "--sandbox-allow-write: need an "
+				    "absolute path (max 16)\n");
+				exit(EXIT_FAILURE);
+			}
 			break;
 		case 'J':
 			if (strcmp(optarg, "-") != 0)
