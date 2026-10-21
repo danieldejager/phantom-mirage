@@ -230,6 +230,11 @@ honeyd_osfp_input(struct tuple *conhdr, u_char *pkt, u_int plen, void *arg)
 	/* Only intercept syn packets */
 	if ((tcp->th_flags & (TH_SYN|TH_ACK)) != TH_SYN)
 		return;
+
+	/* The fingerprinter walks all TCP options: they must be captured */
+	if ((tcp->th_off << 2) < sizeof(struct tcp_hdr) ||
+	    iphlen + (tcp->th_off << 2) > plen)
+		return;
 	
 	list = pf_osfp_fingerprint_hdr(ip, tcp);
 	if (list == NULL)
