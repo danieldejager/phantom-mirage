@@ -2086,6 +2086,9 @@ tcp_do_options(struct tcp_con *con, struct tcp_hdr *tcp, int isonsyn)
 		} else if (tmp->opt_type == TCP_OPT_EOL)
 			break;
 
+		/* Need the length byte before we can trust it */
+		if (p + 2 > end)
+			break;
 		if (p + tmp->opt_len > end)
 			break;
 
@@ -2214,11 +2217,15 @@ tcp_recv_cb(struct template *tmpl, const struct interface* iface, u_char *pkt, u
 	uint8_t tiflags, flags;
 
 	ip = (struct ip_hdr *)pkt;
-	tcp = (struct tcp_hdr *)(pkt + (ip->ip_hl << 2));
-	data = (u_char *)(pkt + (ip->ip_hl*4) + (tcp->th_off*4));
-	
 	if (pktlen < (ip->ip_hl << 2) + TCP_HDR_LEN)
 		return;
+
+	tcp = (struct tcp_hdr *)(pkt + (ip->ip_hl << 2));
+	/* The data offset must cover the header and stay inside the packet */
+	if (tcp->th_off < (TCP_HDR_LEN >> 2) ||
+	    pktlen < (ip->ip_hl << 2) + (tcp->th_off << 2))
+		return;
+	data = (u_char *)(pkt + (ip->ip_hl*4) + (tcp->th_off*4));
 
 	/* 
 	 * Check if we have a real connection header for this connection, so
