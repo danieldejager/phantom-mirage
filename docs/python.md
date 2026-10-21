@@ -61,16 +61,27 @@ line inside honeyd and returns its stdout and stderr, for example
 can already run commands as honeyd, so treat this as root-equivalent too
 (see docs/architecture/07).
 
+## Status page (built-in webserver)
+
+`webserver/server.py` is a small Python 3 module that renders one
+read-only status page at `/` (interfaces, traffic statistics, active
+TCP/UDP connections, bound addresses, static configuration) with the
+standard library (`http.server`, `html`). The old Python 2 UI, its
+`htmltmpl` template library, the `.tmpl` files and the delete-template /
+kill-connection links are gone: the page cannot change honeyd state and
+does not execute anything from the web root. Static files are served only
+from `styles/`, `images/` and `graphs/` under `--webserver-root`; GET and
+HEAD only.
+
+It listens on `127.0.0.1` (`--webserver-address`) port 80
+(`--webserver-port`) by default. Only change the address if the page
+should be reachable from elsewhere. If `server` does not import, honeyd
+logs `internal webserver disabled` and keeps running; `--disable-webserver`
+turns it off. `ci/test_webserver.py` unit-tests the module and the
+sanitizer job fetches the page from a running honeyd.
+
 ## Not ported yet
 
-- **The built-in web UI** (`webserver/`: `server.py`, `support.py` and the
-  bundled `htmltmpl.py`, about 1.9k lines of Python 2 that rely on
-  `SimpleHTTPServer`, `execfile`, `StringIO` and template pickling). The C
-  side (`pyextend_webserver_*`) uses the Python 3 API: requests go in as
-  bytes, and the response may be bytes or str. The scripts themselves are
-  still Python 2. When the `server` module does not import, honeyd logs
-  `internal webserver disabled` and keeps running. It used to exit. Use
-  `--disable-webserver` to skip the attempt.
 - `pydataprocessing.c` and `pydatahoneyd.c` (the honeydstats filter
   helpers) compile against Python 3 and pass `honeyd -T`, but nothing else
   uses them yet. Map filters must return `[[bytes key, bytes value], ...]`.

@@ -174,26 +174,15 @@ proxy_CFLAGS = -O2 -Wall
 
 man_MANS = honeyd.8 honeydctl.1
 
-WEBDIR_FILES = webserver/htmltmpl.py \
+WEBDIR_FILES = \
 	webserver/htdocs/images/logo.gif webserver/htdocs/images/edit.gif \
 	webserver/htdocs/images/delete.gif webserver/htdocs/images/add.gif \
 	webserver/htdocs/images/arrow_down.gif \
 	webserver/htdocs/images/arrow_right.gif \
 	webserver/htdocs/images/google_logo.gif \
-	webserver/htdocs/templates/inc/header.tmpl \
-	webserver/htdocs/templates/inc/footer.tmpl \
-	webserver/htdocs/templates/inc/main.tmpl \
-	webserver/htdocs/templates/inc/nav.tmpl \
-	webserver/htdocs/templates/config_ip.tmpl \
-	webserver/htdocs/templates/index.tmpl \
-	webserver/htdocs/templates/status_connections.tmpl \
-	webserver/htdocs/templates/status_stats.tmpl \
 	webserver/htdocs/graphs/traffic_daily.gif \
 	webserver/htdocs/graphs/traffic_hourly.gif \
-	webserver/htdocs/index.py \
 	webserver/htdocs/styles/layout.css \
-	webserver/htdocs/config.py \
-	webserver/support.py \
 	webserver/server.py
 
 # Automake sucks - but that's ok

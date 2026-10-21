@@ -2,7 +2,7 @@
 
 The repository builds a multi-arch image (`linux/amd64`, `linux/arm64`, e.g. Raspberry Pi 4/5) from the top-level `Dockerfile`:
 
-- **Build stage** (`debian:13-slim`): autotools build. A plain `make install DESTDIR=/out` (no Python needed since #36), minus headers and man pages: the binaries (`honeyd`, `honeydctl`, `honeydstats`, `hsniff`), the `libhoneyd.so` preload shim, the data files (`nmap-os-db`, `xprobe2.conf`, `nmap.assoc`, `pf.os`, `nmap-mac-prefixes`, ...), `scripts/` and the (currently unused) `webserver/` files. honeyd is built without embedded Python, so the web UI and in-process Python services stay off until the rest of #36.
+- **Build stage** (`debian:13-slim`): autotools build. A plain `make install DESTDIR=/out` (no Python needed since #36), minus headers and man pages: the binaries (`honeyd`, `honeydctl`, `honeydstats`, `hsniff`), the `libhoneyd.so` preload shim, the data files (`nmap-os-db`, `xprobe2.conf`, `nmap.assoc`, `pf.os`, `nmap-mac-prefixes`, ...), `scripts/` and the `webserver/` files. The image builds honeyd without embedded Python, so the status page and in-process Python services are off there; build `--with-python` to get them.
 - **Runtime stage** (`debian:13-slim`): just the shared libraries honeyd needs (libpcap, libevent, libdumbnet, zlib, libedit).
 
 ## Build
