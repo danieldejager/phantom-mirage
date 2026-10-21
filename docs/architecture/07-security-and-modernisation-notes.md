@@ -10,7 +10,7 @@ This page separates **Facts** (verified in the code or in the build run on 2026-
 
 ### Privileges
 - Needs raw packet access: libpcap capture (`pcap_open_live`, interface.c:369) and libdnet raw IP / Ethernet send (`ip_open` honeyd.c, `eth_open`). On Linux that means root or `CAP_NET_RAW` + `CAP_NET_ADMIN` (promiscuous mode).
-- Writes `/var/run/honeyd.pid` and creates `/var/run/honeyd.sock` (ui.h:47) before dropping privileges.
+- Writes `/var/run/honeyd.pid` and creates `/var/run/honeyd/honeyd.sock` (ui.h:54) before dropping privileges.
 - Drops to `nobody` (default uid/gid 32767, looked up via `getpwnam("nobody")`, honeyd.c:167, 479) with `cmd_droppriv()` (command.c ~291–330, which also verifies it cannot regain root) unless `honeyd_needsroot` is set. Opened pcap/dnet handles stay usable after the drop.
 - Per-template `uid`/`gid` and `maxfds` (`setrlimit RLIMIT_NOFILE`, command.c:364) are applied to forked scripts.
 - No chroot, seccomp, or namespace isolation in the code. Scripts run as ordinary processes on the host with full filesystem view.
@@ -18,7 +18,7 @@ This page separates **Facts** (verified in the code or in the build run on 2026-
 ### Attack surface
 - **Every packet parser is attacker-reachable C**: Ethernet/ARP (arp.c), IP/fragment reassembly (ipfrag.c), GRE decapsulation (gre.c), TCP/UDP/ICMP handlers (honeyd.c), DHCP replies (dhcpclient.c), passive fingerprinting (pf_osfp.c). `honeyd_recv_cb` (honeyd.c:3373) does basic length checks on IP headers; deeper parsers were not audited for this document.
 - **Service scripts** (scripts/, Perl/sh) receive attacker data on stdin. Their quality varies; they are the most likely place for command injection (not audited).
-- **Control socket** `/var/run/honeyd.sock`: `ui.c` binds it without setting a mode or umask (ui.c:367–396), so access depends on the process umask. Any client can issue config commands, including `add <t> tcp port N "<command>"`, which makes Honeyd execute that command when a connection arrives (as the template's uid). Treat socket access as code execution.
+- **Control socket** `/var/run/honeyd/honeyd.sock` (privileged): any client can issue config commands, including `add <t> tcp port N "<command>"`, which makes Honeyd execute that command when a connection arrives (as the template's uid). Treat socket access as root-equivalent. Since #14, `ui_init()` creates the socket in a root-owned `/var/run/honeyd` directory (0700) with mode 0600. It refuses a directory that is a symlink or not owned by root, only ever replaces an existing *socket*, and checks `SO_PEERCRED` on every connection: only root (or honeyd's own uid) is accepted. To let a group use `honeydctl`, start honeyd with `HONEYD_UI_GROUP=<group>`. The directory then becomes 0750 and the socket 0660 with that group, and peers whose primary gid matches are accepted. Supplementary groups pass the file permissions but fail the peer check, so run `honeydctl` with that group as the primary gid (e.g. `sg <group> honeydctl`).
 - **Proxy actions** let a honeypot open outbound connections to real hosts (`proxy_connect`, honeyd.c:1349).
 - **Stats** are sent over UDP with an HMAC-SHA1 keyed by the configured password (stats.c:101–135); the password is given on the command line.
 - **Embedded web server** (webserver/server.py, Python 2) is started by `pyextend_webserver_init` when built with Python.

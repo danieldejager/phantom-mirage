@@ -11,7 +11,7 @@ Plain-English definitions for terms used in this folder. Where a term maps to co
 | **Bind** | Attach a real IP address to a template, which creates a fake host. Config keyword `bind`. Code: `template_clone()`. |
 | **Broadcast script** | A DataSoft/Nova addition that makes a fake host periodically send broadcast UDP so it looks alive. Config keyword `broadcast`. |
 | **C4 diagram** | A common way to draw software architecture at levels: context (the system and its users), containers (programs and data stores), components (modules inside). Used in [01](01-system-context.md) and [02](02-components.md). |
-| **Control socket** | `/var/run/honeyd.sock`, the local channel `honeydctl` uses to send commands to the running daemon. Access to it amounts to code execution. |
+| **Control socket** | `/var/run/honeyd/honeyd.sock`, the local channel `honeydctl` uses to send commands to the running daemon. Access to it amounts to code execution. |
 | **Daemon** | A program that runs in the background as a service. `honeyd` is the daemon. |
 | **DataSoft / Nova** | The group whose fork of Honeyd this code is based on. They added the newer nmap fingerprint parser, broadcast scripts, DHCP-assigned hosts and some environment variables. |
 | **DHCP** | How devices get an IP address automatically. Honeyd can make a fake host request its address via DHCP (`dhcp` keyword, dhcpclient.c). |

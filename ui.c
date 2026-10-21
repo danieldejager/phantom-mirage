@@ -51,6 +51,7 @@
 #include <unistd.h>
 #include <syslog.h>
 #include <string.h>
+#include <grp.h>
 
 #include "config.h"
 
@@ -65,6 +66,11 @@
 #endif
 
 char *ui_file = UI_FIFO;
+
+/* Peers allowed on the control socket besides root (see ui_init) */
+static uid_t ui_owner_uid;
+static gid_t ui_allowed_gid;
+static int ui_have_group;
 
 #define PROMPT		"honeydctl> "
 #define WHITESPACE	" \t"
@@ -314,9 +320,34 @@ ui_new(int fd, short what, void *arg)
 	struct uiclient *client;
 
 	if ((newfd = accept(fd, NULL, NULL)) == -1) {
-		warn("%s: accept");
+		warn("%s: accept", __func__);
 		return;
 	}
+
+#ifdef SO_PEERCRED
+	{
+		struct ucred cred;
+		socklen_t len = sizeof(cred);
+
+		/* Only root, our own uid or the configured group may talk
+		 * to the control socket. */
+		if (getsockopt(newfd, SOL_SOCKET, SO_PEERCRED, &cred,
+			&len) == -1 || len != sizeof(cred)) {
+			syslog(LOG_WARNING, "%s: SO_PEERCRED: %m; "
+			    "rejecting ui connection", __func__);
+			close(newfd);
+			return;
+		}
+		if (cred.uid != 0 && cred.uid != ui_owner_uid &&
+		    !(ui_have_group && cred.gid == ui_allowed_gid)) {
+			syslog(LOG_WARNING, "%s: rejected ui connection from "
+			    "pid %ld uid %ld gid %ld", __func__, (long)cred.pid,
+			    (long)cred.uid, (long)cred.gid);
+			close(newfd);
+			return;
+		}
+	}
+#endif
 
 	if ((client = calloc(1, sizeof(struct uiclient))) == NULL) {
 		warn("%s: calloc", __func__);
@@ -347,24 +378,84 @@ ui_new(int fd, short what, void *arg)
 	ui_write_prompt(client);
 }
 
+/*
+ * Create (or validate) the socket directory: a real directory, not a
+ * symlink, owned by us, mode 0700 (0750 with the ui group).
+ */
+static void
+ui_init_dir(const char *dir, mode_t mode, gid_t gid)
+{
+	struct stat st;
+	int fd;
+
+	if (mkdir(dir, 0700) == -1 && errno != EEXIST) {
+		syslog(LOG_ERR, "%s: mkdir %s: %m", __func__, dir);
+		exit(EXIT_FAILURE);
+	}
+	fd = open(dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+	if (fd == -1 || fstat(fd, &st) == -1) {
+		syslog(LOG_ERR, "%s: open %s: %m", __func__, dir);
+		exit(EXIT_FAILURE);
+	}
+	if (st.st_uid != geteuid()) {
+		syslog(LOG_ERR, "%s: %s is owned by uid %ld, not us; refusing",
+		    __func__, dir, (long)st.st_uid);
+		exit(EXIT_FAILURE);
+	}
+	if (st.st_gid != gid && fchown(fd, -1, gid) == -1) {
+		syslog(LOG_ERR, "%s: chown %s: %m", __func__, dir);
+		exit(EXIT_FAILURE);
+	}
+	if ((st.st_mode & 07777) != mode && fchmod(fd, mode) == -1) {
+		syslog(LOG_ERR, "%s: chmod %s: %m", __func__, dir);
+		exit(EXIT_FAILURE);
+	}
+	close(fd);
+}
+
 void
 ui_init(void)
 {
-        struct stat st;
-        struct sockaddr_un ifsun;
+	struct stat st;
+	struct sockaddr_un ifsun;
 	int ui_socket;
+	mode_t dir_mode = 0700, sock_mode = 0600, omask;
+	gid_t gid = getegid();
+	const char *group = getenv(UI_GROUP_ENV);
 
-        /* Don't overwrite a file */
-        if (lstat(ui_file, &st) == 0) {
-                if ((st.st_mode & S_IFMT) == S_IFREG) {
-                        errno = EEXIST;
-                        syslog(LOG_ERR, "%s: could not create FIFO: %s", __func__, ui_file);
-                        		exit(EXIT_FAILURE);
-                }
+	ui_owner_uid = geteuid();
+	if (group != NULL && *group != '\0') {
+		struct group *gr = getgrnam(group);
+		if (gr == NULL) {
+			syslog(LOG_ERR, "%s: unknown group %s=%s", __func__,
+			    UI_GROUP_ENV, group);
+			exit(EXIT_FAILURE);
+		}
+		gid = gr->gr_gid;
+		ui_allowed_gid = gid;
+		ui_have_group = 1;
+		dir_mode = 0750;
+		sock_mode = 0660;
 	}
 
-        /* No need to know about errors.  */
-        unlink(ui_file);
+	if (strcmp(ui_file, UI_FIFO) == 0)
+		ui_init_dir(UI_DIR, dir_mode, gid);
+
+	/* Only ever replace a stale socket; lstat does not follow links */
+	if (lstat(ui_file, &st) == 0) {
+		if (!S_ISSOCK(st.st_mode)) {
+			syslog(LOG_ERR, "%s: %s exists and is not a socket; "
+			    "refusing to replace it", __func__, ui_file);
+			exit(EXIT_FAILURE);
+		}
+		if (unlink(ui_file) == -1) {
+			syslog(LOG_ERR, "%s: unlink %s: %m", __func__, ui_file);
+			exit(EXIT_FAILURE);
+		}
+	} else if (errno != ENOENT) {
+		syslog(LOG_ERR, "%s: lstat %s: %m", __func__, ui_file);
+		exit(EXIT_FAILURE);
+	}
 
         ui_socket = socket(AF_UNIX, SOCK_STREAM, 0);
         if (ui_socket == -1)
@@ -385,11 +476,18 @@ ui_init(void)
 #ifdef HAVE_SUN_LEN
         ifsun.sun_len = strlen(ifsun.sun_path);
 #endif /* HAVE_SUN_LEN */
+	/* No window where the socket is more open than sock_mode */
+	omask = umask(~sock_mode & 0777);
         if (bind(ui_socket, (struct sockaddr *)&ifsun, sizeof (ifsun)) == -1)
         {
         	syslog(LOG_ERR, "%s: bind error: %s", __func__, strerror(errno));
         	exit(EXIT_FAILURE);
         }
+	umask(omask);
+	if (chown(ui_file, -1, gid) == -1 || chmod(ui_file, sock_mode) == -1) {
+		syslog(LOG_ERR, "%s: chown/chmod %s: %m", __func__, ui_file);
+		exit(EXIT_FAILURE);
+	}
 
         if (listen(ui_socket, 5) == -1)
         {

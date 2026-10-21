@@ -150,6 +150,38 @@ jobs:
             if grep -E 'runtime error|ERROR: AddressSanitizer' $b.out; then exit 1; fi
           done
 
+      - name: Control socket lockdown (sanitized, #14)
+        # Runs the daemon on lo for a few seconds: the socket dir must be
+        # root 0700, the socket 0600, root's honeydctl must work and a
+        # non-root peer must be refused (SO_PEERCRED, checked with the
+        # permissions opened up so the kernel does not refuse it first).
+        run: |
+          D=$PWD
+          mkdir -p /var/run
+          timeout 30 ./honeyd -d -f $D/ci/smoke.conf -i lo --disable-webserver \
+            -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
+            -0 $D/pf.os -m $D/nmap-mac-prefixes > honeyd-ui.log 2>&1 &
+          for i in $(seq 1 20); do
+            test -S /var/run/honeyd/honeyd.sock && break; sleep 0.5
+          done
+          stat -c '%a %U:%G %F %n' /var/run/honeyd /var/run/honeyd/honeyd.sock
+          test "$(stat -c '%a %u' /var/run/honeyd)" = "700 0"
+          test "$(stat -c '%a %u %F' /var/run/honeyd/honeyd.sock)" = "600 0 socket"
+          echo "list template" | timeout 5 ./honeydctl | tee ctl-root.out
+          grep -q '10.99.0.10' ctl-root.out
+          chmod 755 /var/run/honeyd; chmod 666 /var/run/honeyd/honeyd.sock
+          echo "list template" | timeout 5 setpriv --reuid=65534 --regid=65534 \
+            --clear-groups ./honeydctl > ctl-nobody.out 2>&1 || true
+          sleep 1
+          kill -INT %1 || true
+          wait %1 || true
+          cat honeyd-ui.log
+          if grep -q '10.99.0.10' ctl-nobody.out; then
+            echo "non-root peer was served" >&2; exit 1
+          fi
+          grep -q 'rejected ui connection from .* uid 65534' honeyd-ui.log
+          if grep -E 'runtime error|ERROR: AddressSanitizer' honeyd-ui.log; then exit 1; fi
+
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4

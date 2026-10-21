@@ -44,6 +44,14 @@ struct uiclient {
 
 void ui_init(void);
 
-#define UI_FIFO		"/var/run/honeyd.sock"
+/*
+ * The control socket accepts config-language commands, which can make
+ * honeyd run arbitrary programs: access to it is root-equivalent. It
+ * lives in a root-owned directory (0700, or 0750 when HONEYD_UI_GROUP
+ * names a group allowed to use honeydctl).
+ */
+#define UI_DIR		"/var/run/honeyd"
+#define UI_FIFO		UI_DIR "/honeyd.sock"
+#define UI_GROUP_ENV	"HONEYD_UI_GROUP"
 
 #endif /* !_UI_H_ */

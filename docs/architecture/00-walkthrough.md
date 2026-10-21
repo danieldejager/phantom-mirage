@@ -41,7 +41,7 @@ In order (details in `NOTES-for-writers.md`, "Startup order"):
 2. **Load the reference data.** Read the operating-system and network-card fingerprint files.
 3. **Open the network.** Start capturing packets on each `-i` interface (*libpcap*) and open a raw socket for sending forged packets (*libdnet*).
 4. **Read the config.** Parse the config file and build the fake network in memory (section 5).
-5. **Open the control socket** `/var/run/honeyd.sock` for `honeydctl`.
+5. **Open the control socket** `/var/run/honeyd/honeyd.sock` for `honeydctl`.
 6. **Give up root.** Switch to the `nobody` user. The already-open capture and send handles keep working.
 7. **Wait for packets** forever in the event loop.
 
@@ -116,7 +116,7 @@ Honeyd uses fingerprints in both directions, and the two are easy to confuse:
 
 ## 9. Changing things while it runs
 
-`honeydctl` connects to `/var/run/honeyd.sock` and accepts the same statements as the config file. You can add hosts, change ports and list templates live.
+`honeydctl` connects to `/var/run/honeyd/honeyd.sock` and accepts the same statements as the config file. You can add hosts, change ports and list templates live.
 
 **This is also the biggest operational risk.** Anyone who can connect to that socket can tell Honeyd to run any command when a connection arrives, so access to the socket amounts to code execution on the box. Lock it down. See section 11.
 
