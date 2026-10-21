@@ -75,8 +75,8 @@ docker exec -it <container> phantom-mirage-ctl
   requests it only builds, for both architectures, and never logs in or
   pushes. Nothing is pushed from a developer machine.
 * **Auth:** only the workflow's own `GITHUB_TOKEN`, with
-  `packages: write`; no personal access token. `id-token: write` is
-  granted only for the optional keyless mode below.
+  `packages: write`; no personal access token, and no `id-token`
+  permission (it is only needed for keyless signing, which isn't used).
 * **Tags:**
   * `sha-<short>`: always.
   * `edge`: on `master`.
@@ -134,7 +134,7 @@ docker buildx imagetools inspect ghcr.io/danieldejager/phantom-mirage:edge --for
 ### Option: keyless signing
 
 `cosign sign` without `--key` uses the workflow's OIDC identity
-(`id-token: write`) and Fulcio. It needs no key secret, but **it records
+and Fulcio, which needs `id-token: write` added to the job. It needs no key secret, but **it records
 the signing certificate in Sigstore's public Rekor log**. That certificate
 contains the repository name, workflow path and ref. Because this repo and
 its packages are private, keyless is not the default. To switch, drop

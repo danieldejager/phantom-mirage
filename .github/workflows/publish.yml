@@ -45,7 +45,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write   # only for the optional keyless mode (docs/docker.md)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
