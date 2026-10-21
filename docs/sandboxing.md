@@ -104,8 +104,9 @@ depends on the Raspberry Pi kernel's `lsm=` list
   --sandbox-allow-write=…`.
   * `ci/check_sandbox.py` checks `/proc/<pid>/status` for the daemon and
     for a live script child: all four Uid/Gid fields 65534, all
-    capability sets 0, `NoNewPrivs: 1`, and `Seccomp: 2` in sandbox
-    mode.
+    capability sets 0, `NoNewPrivs: 1`, and in sandbox mode exactly
+    one seccomp filter more than the daemon (CI containers already run
+    under Docker's default seccomp profile).
   * It also checks what the probe script (`ci/sandbox_probe.sh`) could
     do: write, read, list, `/proc` and `unshare`.
   * SIGHUP and SIGUSR1 must leave the daemon running, and the subsystem

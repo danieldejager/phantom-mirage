@@ -29,7 +29,8 @@ def hardened(name, st, bnd=True):
         check("%s %s=0" % (name, k), int(st[k][0], 16) == 0)
     check(name + " NoNewPrivs=1", st["NoNewPrivs"] == ["1"])
 
-hardened("honeyd", status(hpid))
+hst = status(hpid)
+hardened("honeyd", hst)
 
 s = socket.create_connection(("10.99.0.10", 2325), timeout=10)
 buf, t0 = b"", time.time()
@@ -46,11 +47,17 @@ st = status(pid)
 hardened("script", st)
 
 landlock = len(sys.argv) < 4 or sys.argv[3] != "no-landlock"
+# Compare filter counts with honeyd's own: CI containers already run
+# under Docker's default seccomp profile, so "Seccomp: 2" alone proves
+# nothing.
+nf = lambda d: int(d.get("Seccomp_filters", ["0"])[0])
+print("seccomp filters: honeyd=%d script=%d" % (nf(hst), nf(st)))
 if mode == "default":
-    check("script not seccomp-filtered", st["Seccomp"] == ["0"])
+    check("script has no extra seccomp filter", nf(st) == nf(hst))
     check("script may write /tmp", report.get("write_tmp") == "ok")
 else:
     check("script Seccomp=2 (filter)", st["Seccomp"] == ["2"])
+    check("script has honeyd's extra seccomp filter", nf(st) == nf(hst) + 1)
     check("unshare denied (seccomp)", report.get("unshare") == "denied")
     if landlock:
         check("write /tmp denied (landlock)", report.get("write_tmp") == "denied")
