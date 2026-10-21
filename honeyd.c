@@ -185,6 +185,7 @@ char				*honeyd_rrdtool_path = PATH_RRDTOOL;
 void (*honeyd_delay_callback)(int, short, void *) = honeyd_delay_cb;
 
 static char		*logfile = NULL;	/* Log file names */
+static char		*jsonlogfile = NULL;	/* JSON Lines log, "-" = stdout */
 static char		*servicelog = NULL;
 
 /*
@@ -221,6 +222,7 @@ static struct option honeyd_long_opts[] = {
 	{"ignore-parse-errors", 0, &honeyd_ignore_parse_errors, 1},
 	{"fix-webserver-permissions", 0, &honeyd_webserver_fix_permissions, 1},
 	{"mac-address",0,0,1},
+	{"json-log", required_argument, NULL, 'J'},
 	{0, 0, 0, 0}
 };
 
@@ -234,6 +236,8 @@ usage(void)
 	    "  -P                     Enable polling mode.\n"
 	    "  -l logfile             Log packets and connections to logfile.\n"
 	    "  -s logfile             Logs service status output to logfile.\n"
+	    "  --json-log=FILE        Also write JSON Lines events to FILE\n"
+	    "                         (\"-\" for stdout); see docs/json-log.md.\n"
         "  -t ipFile              Dumps currently used DHCP IP addresses to ipFile\n"
 	    "  -i interface           Listen on interface.\n"
 	    "  -p file                Read nmap-style fingerprints from file.\n"
@@ -651,6 +655,7 @@ honeyd_exit(int status)
 {
 	honeyd_logend(honeyd_logfp);
 	honeyd_logend(honeyd_servicefp);
+	honeyd_json_close();
 
 	template_free_all(TEMPLATE_FREE_DEALLOCATE);
 
@@ -3572,6 +3577,7 @@ honeyd_sigusr(int fd, short what, void *arg)
 
 	honeyd_logend(honeyd_logfp);
 	honeyd_logend(honeyd_servicefp);
+	honeyd_json_reopen();
 
 	if (logfile != NULL)
 		honeyd_logfp = honeyd_logstart(logfile);
@@ -3758,6 +3764,11 @@ main(int argc, char *argv[])
 		case 'l':
 			determine_path(origin_path, &optarg);
 			logfile = optarg;
+			break;
+		case 'J':
+			if (strcmp(optarg, "-") != 0)
+				determine_path(origin_path, &optarg);
+			jsonlogfile = optarg;
 			break;
 		case 's':
 			determine_path(origin_path, &optarg);
@@ -4095,6 +4106,10 @@ main(int argc, char *argv[])
 		honeyd_logfp = honeyd_logstart(logfile);
 	if (servicelog != NULL)
 		honeyd_servicefp = honeyd_logstart(servicelog);
+	if (jsonlogfile != NULL && honeyd_json_open(jsonlogfile) == -1) {
+		syslog(LOG_ERR, "cannot open JSON log %s", jsonlogfile);
+		exit(EXIT_FAILURE);
+	}
 
 	event_base_dispatch(libevent_base);
 

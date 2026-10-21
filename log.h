@@ -42,4 +42,8 @@ void honeyd_log_flowend(FILE *, int, const struct tuple *);
 void honeyd_log_service(FILE *, int, const struct tuple *, const char *);
 char *honeyd_logdate(void);
 
+int honeyd_json_open(const char *);
+void honeyd_json_close(void);
+void honeyd_json_reopen(void);
+
 #endif /* _LOG_ */

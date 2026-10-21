@@ -53,6 +53,7 @@ struct template {
 	SPLAY_ENTRY(template) node;
 
 	char *name;
+	char *origin;	/* template this was cloned from (bind), or NULL */
 
 	/* Subnet mask, for example 24 for a /24 network */
 	uint32_t addrbits;
