@@ -3877,8 +3877,11 @@ main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 	/* We need reproduceable random numbers for regression testing */
-	if (setrand)
+	if (setrand) {
 		rand_set(honeyd_rand, &setrand, sizeof(setrand));
+		/* rand_normal() and a few subsystems use libc rand() */
+		srand(setrand);
+	}
 
 
 	/* disables event methods that don't work for bpf */

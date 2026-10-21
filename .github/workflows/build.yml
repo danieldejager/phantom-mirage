@@ -333,28 +333,31 @@ jobs:
           echo "### --sandbox-scripts" >> "$GITHUB_STEP_SUMMARY"
           run sandbox --sandbox-scripts --sandbox-allow-write=/tmp/hdsb/rw
 
-      - name: "regress/ suite under Python 3 (harness gate; results KNOWN FAILING, #36)"
-        # The golden files predate this port and the output is not
-        # deterministic on Linux lo (see regress/IMPORTANT_NOTES.txt), so
-        # test mismatches (exit 3) are reported, not gated. The step fails
-        # only if the Python 3 harness itself breaks.
+      - name: "regress/ suite (gating, veth pair, #36 #74)"
+        # Deterministic since #74: veth pair instead of lo, -R seeds all
+        # of honeyd's randomness, the harness masks only wall-clock and
+        # kernel-chosen fields (regress/IMPORTANT_NOTES.txt). Runs the
+        # suite 3 times; any mismatch or harness error fails the job.
         shell: bash
         run: |
           apt-get install -y --no-install-recommends python3-dpkt diffutils >/dev/null
           cd regress
-          echo "### regress/ (Python 3) — known failing, informational" >> "$GITHUB_STEP_SUMMARY"
+          echo "### regress/ (gating)" >> "$GITHUB_STEP_SUMMARY"
           bad=0
-          for t in general.py detect.py routing.py; do
-            set +e; timeout -k 10 300 python3 "$t" > "../regress-${t%.py}.log" 2>&1; rc=$?; set -e
-            cat "../regress-${t%.py}.log"
-            case $rc in
-              0) r="all match" ;;
-              3) r="mismatch (known failing)" ;;
-              *) r="HARNESS ERROR rc=$rc"; bad=1 ;;
-            esac
-            echo "- \`$t\`: $r — $(grep -E '^  (OK|FAILED)' "../regress-${t%.py}.log" | tr -d ' ')" >> "$GITHUB_STEP_SUMMARY"
+          for run in 1 2 3; do
+            for t in general.py detect.py routing.py; do
+              log="../regress-${t%.py}-$run.log"
+              set +e; timeout -k 10 300 python3 "$t" > "$log" 2>&1; rc=$?; set -e
+              cat "$log"
+              case $rc in
+                0) r="all match" ;;
+                3) r="MISMATCH"; bad=1 ;;
+                *) r="HARNESS ERROR rc=$rc"; bad=1 ;;
+              esac
+              echo "- run $run \`$t\`: $r — $(grep -E '^  (OK|FAILED)' "$log" | tr -d ' ')" >> "$GITHUB_STEP_SUMMARY"
+            done
           done
-          if grep -E 'ERROR: AddressSanitizer' ../regress-*.log; then bad=1; fi
+          if grep -E 'runtime error|ERROR: AddressSanitizer' ../regress-*.log; then bad=1; fi
           exit $bad
 
       - name: Upload build log

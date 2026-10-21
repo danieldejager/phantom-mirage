@@ -2,17 +2,17 @@ SRC=192.0.2.1
 DST=192.18.0.10
 ID=5624
 TTL=64
-DATA=TCP(seq=10000L, sum=1078, flags=6, dport=80, sport=555)
+DATA=TCP(sport=555, dport=80, seq=10000, ack=0, flags=0x06, win=65535, sum=1078, opts=, data=b'')
 
 SRC=192.0.2.1
 DST=192.18.0.10
 ID=5625
 TTL=64
-DATA=TCP(seq=10000L, sum=1080, flags=3, dport=80, sport=556)
+DATA=TCP(sport=556, dport=80, seq=10000, ack=0, flags=0x03, win=65535, sum=1080, opts=, data=b'')
 
 SRC=192.18.0.10
 DST=192.0.2.1
-ID=22168
-TTL=64
-DATA=TCP(seq=194595107L, off_x2=160, ack=10001L, win=31800, sum=32784, flags=18, dport=556, sport=80)
+ID=0
+TTL=63
+DATA=TCP(sport=80, dport=556, seq=194595107, ack=10001, flags=0x12, win=0, sum=ok, opts=, data=b'')
 
