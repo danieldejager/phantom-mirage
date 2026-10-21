@@ -1,0 +1,47 @@
+# Example: one honeyd container on a decoy VLAN via macvlan.
+# All values in <...> or marked PLACEHOLDER must be replaced per site.
+#
+#   docker compose -f docker/docker-compose.yml up -d
+#
+# macvlan (not bridge) is required: honeyd must see raw traffic and answer
+# ARP for the decoy addresses. Note the Docker host itself cannot talk to
+# macvlan containers on the same parent interface; test from another host.
+
+services:
+  honeyd:
+    image: honeyd:local            # PLACEHOLDER: your private registry image
+    build:
+      context: ..
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    cap_add:
+      - NET_RAW       # pcap capture and raw packet replies
+      - NET_ADMIN     # interface / promiscuous mode handling
+      - SETUID        # honeyd drops to nobody after start-up
+      - SETGID
+      # Add CHOWN/FOWNER only if you set HONEYD_UI_GROUP (#14).
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /run:mode=0755
+      - /tmp
+      - /root/.config
+    environment:
+      HONEYD_INTERFACES: eth0
+    volumes:
+      - ./honeyd.conf:/etc/honeyd/honeyd.conf:ro   # PLACEHOLDER: site config
+    networks:
+      decoy-vlan10:
+        ipv4_address: 192.0.2.5   # PLACEHOLDER: container's own address
+
+networks:
+  decoy-vlan10:
+    driver: macvlan
+    driver_opts:
+      parent: eth0.10              # PLACEHOLDER: <host-nic>.<vlan-id>
+    ipam:
+      config:
+        - subnet: 192.0.2.0/24     # PLACEHOLDER: decoy VLAN subnet
+          gateway: 192.0.2.1       # PLACEHOLDER
+          ip_range: 192.0.2.0/28   # keep Docker's own allocations small

@@ -239,3 +239,60 @@ jobs:
             build.log
             config.log
           if-no-files-found: ignore
+
+  docker:
+    name: Docker image (amd64 + arm64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build linux/amd64 + linux/arm64 (no push)
+        # Nothing is pushed anywhere; this only proves both architectures
+        # build. Signing and a private registry come later (#20).
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Load amd64 image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: honeyd:ci
+          cache-from: type=gha
+
+      - name: Smoke test amd64 image
+        run: |
+          set -x
+          caps="--cap-drop ALL --cap-add NET_RAW --cap-add NET_ADMIN --cap-add SETUID --cap-add SETGID"
+          ro="--read-only --tmpfs /run --tmpfs /tmp --tmpfs /root/.config --security-opt no-new-privileges"
+          docker run --rm $caps $ro honeyd:ci --version
+          docker run --rm $caps $ro honeyd:ci --verify-config
+          docker run --rm $caps $ro -v "$PWD/ci/smoke.conf:/etc/honeyd/honeyd.conf:ro" honeyd:ci --verify-config
+          # A broken config must stop the entrypoint before the daemon starts
+          printf 'create x\nset x personality "Nope"\n' > /tmp/bad.conf
+          if docker run --rm $caps $ro -v /tmp/bad.conf:/etc/honeyd/honeyd.conf:ro honeyd:ci; then
+            echo "bad config was accepted" >&2; exit 1
+          fi
+          # Daemon starts, drops privileges, control socket is locked down
+          cid=$(docker run -d $caps $ro honeyd:ci)
+          sleep 5
+          docker exec "$cid" stat -c '%a %U %n' /run/honeyd /run/honeyd/honeyd.sock
+          test "$(docker exec "$cid" stat -c '%a' /run/honeyd/honeyd.sock)" = 600
+          docker exec "$cid" sh -c 'echo "list template" | honeydctl' | grep -q 192.0.2.10
+          docker exec "$cid" grep -q '^Uid:.*65534' /proc/1/status
+          docker logs "$cid"
+          docker rm -f "$cid"
+          docker image ls honeyd:ci --format 'Image size: {{.Size}}' | tee -a "$GITHUB_STEP_SUMMARY"
