@@ -25,6 +25,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 
 import regress
 
@@ -39,7 +40,7 @@ PERSONALITIES = [
     "HP LaserJet 4250 printer",
 ]
 SRC = "192.0.2.1"
-NETNS = "hdnmap"
+NETNS = None        # pid of the process holding nmap's network namespace
 OUTPUT = "nmap.output.1"
 
 
@@ -58,8 +59,39 @@ def known(db):
         sys.exit(1)
 
 
+def in_ns(*cmd):
+    """cmd inside nmap's network namespace (setns only: no mounts, so
+    this works in a container where "ip netns add" is refused)."""
+    return ["nsenter", "--net=/proc/%d/ns/net" % NETNS.pid] + list(cmd)
+
+
+def make_ns():
+    global NETNS
+    NETNS = subprocess.Popen(["unshare", "--net", "sleep", "infinity"])
+    mine = os.readlink("/proc/self/ns/net")
+    for _ in range(50):
+        try:
+            if os.readlink("/proc/%d/ns/net" % NETNS.pid) != mine:
+                return
+        except OSError:
+            pass
+        if NETNS.poll() is not None:
+            break
+        time.sleep(0.1)
+    sys.stderr.write("cannot create a network namespace for nmap\n")
+    NETNS = None
+
+
+def drop_ns():
+    global NETNS
+    if NETNS is not None:
+        NETNS.kill()
+        NETNS.wait()
+        NETNS = None
+
+
 def cleanup(reg):
-    subprocess.call(["ip", "netns", "del", NETNS], stderr=subprocess.DEVNULL)
+    drop_ns()
     reg.RemoveAllRoutes()
 
 
@@ -88,8 +120,8 @@ def classify(name, text):
 
 
 def nmap(ip):
-    cmd = ["ip", "netns", "exec", NETNS, "nmap", "-n", "-Pn", "-O",
-           "--osscan-guess", "--max-os-tries", "1", "-p", "1,23", ip]
+    cmd = in_ns("nmap", "-n", "-Pn", "-O", "--osscan-guess",
+                "--max-os-tries", "1", "-p", "1,23", ip)
     p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                        timeout=180)
     return p.stdout.decode(errors="replace")
@@ -107,15 +139,18 @@ def main():
     # nmap runs in its own network namespace on hdt1 (192.0.2.1), so
     # nothing it uses is a local address for honeyd's side: honeyd's
     # replies go out hdt0 and nmap sees them like a remote scanner would.
-    ns = ["ip", "-n", NETNS]
-    steps = [("ip", "netns", "add", NETNS),
-             ("ip", "link", "set", regress.TEST_IF, "netns", NETNS),
-             ns + ["link", "set", "lo", "up"],
-             ns + ["addr", "add", "10.250.0.1/30", "dev", regress.TEST_IF],
-             ns + ["addr", "add", SRC + "/32", "dev", regress.TEST_IF],
-             ns + ["link", "set", regress.TEST_IF, "up"],
-             ns + ["route", "add", "192.18.0.0/15", "via", "10.250.0.2",
-                   "dev", regress.TEST_IF, "src", SRC]]
+    make_ns()
+    if NETNS is None:
+        cleanup(reg)
+        sys.exit(1)
+    steps = [("ip", "link", "set", regress.TEST_IF, "netns", str(NETNS.pid)),
+             in_ns("ip", "link", "set", "lo", "up"),
+             in_ns("ip", "addr", "add", "10.250.0.1/30", "dev",
+                   regress.TEST_IF),
+             in_ns("ip", "addr", "add", SRC + "/32", "dev", regress.TEST_IF),
+             in_ns("ip", "link", "set", regress.TEST_IF, "up"),
+             in_ns("ip", "route", "add", "192.18.0.0/15", "via",
+                   "10.250.0.2", "dev", regress.TEST_IF, "src", SRC)]
     for st in steps:
         if subprocess.call(st):
             sys.stderr.write("failed: %s\n" % " ".join(st))
@@ -136,7 +171,7 @@ def main():
             sys.stderr.flush()
     finally:
         reg.stop_honeyd()
-        subprocess.call(["ip", "netns", "del", NETNS])
+        drop_ns()
     sys.stderr.write("\n")
     fd, got = tempfile.mkstemp(prefix="nmap.output.")
     with os.fdopen(fd, "w") as f:
