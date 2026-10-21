@@ -1067,15 +1067,49 @@ void
 determine_path(char *abspath, char **input)
 {
 	char *buffer = NULL;
+	size_t len;
 	if (*input[0] != '/') {
-		buffer = malloc(strlen(abspath) + strlen(*input));
-		strcpy(buffer, abspath);
-		strcat(buffer, "/");
-		strcat(buffer, *input);
-		*input = (char *) malloc(strlen(buffer));
-		strcpy(*input, buffer);
-		free(buffer);
+		len = strlen(abspath) + strlen(*input) + 2;
+		if ((buffer = malloc(len)) == NULL) {
+			syslog(LOG_ERR, "%s: malloc", __func__);
+			exit(EXIT_FAILURE);
+		}
+		snprintf(buffer, len, "%s/%s", abspath, *input);
+		*input = buffer;
 	}
+}
+
+/*
+ * Returns a malloc'd "<dir>/<name>" path.
+ */
+static char *
+honeyd_data_path(const char *dir, const char *name)
+{
+	size_t len = strlen(dir) + strlen(name) + 2;
+	char *p = malloc(len);
+	if (p == NULL) {
+		syslog(LOG_ERR, "%s: malloc", __func__);
+		exit(EXIT_FAILURE);
+	}
+	snprintf(p, len, "%s/%s", dir, name);
+	return (p);
+}
+
+/*
+ * Make sure a required data file is readable; otherwise fail with an
+ * error that names the file and the option that overrides it.
+ */
+static void
+honeyd_check_data_file(const char *path, const char *what, const char *flag)
+{
+	if (access(path, R_OK) == 0)
+		return;
+	fprintf(stderr, "ERROR: cannot open %s file %s: %s\n"
+	    "       (use %s to specify its location)\n",
+	    what, path, strerror(errno), flag);
+	syslog(LOG_ERR, "cannot open %s file %s: %s (use %s)",
+	    what, path, strerror(errno), flag);
+	exit(EXIT_FAILURE);
 }
 
 struct tcp_con *
@@ -3546,6 +3580,7 @@ main(int argc, char *argv[])
 	int setrand = 0;
 	int i, c, orig_argc, ninterfaces = 0;
 	char origin_path[1024];
+	char *datadir;
 	FILE *fp;
 
 	if (getcwd(origin_path, sizeof(origin_path)) == NULL)
@@ -3554,13 +3589,22 @@ main(int argc, char *argv[])
 		exit(EXIT_FAILURE);	
 	}
 
-	if(chdir(PATH_HONEYDDATA) == -1)
-	{
-		printf("ERROR: Could not find path PATH_HONEYDDATA: %s\n", PATH_HONEYDDATA);
-		syslog(LOG_ERR,"ERROR: Could not find path PATH_HONEYDDATA: %s\n", PATH_HONEYDDATA);
-		perror("");
-		exit(EXIT_FAILURE);
-	}
+	/*
+	 * Data directory: HONEYD_DATADIR overrides the compiled-in
+	 * PATH_HONEYDDATA.  We only chdir() into it after option parsing,
+	 * and a missing directory is not fatal (issue #43).
+	 */
+	if ((datadir = getenv("HONEYD_DATADIR")) != NULL && *datadir != '\0') {
+		config.pers = honeyd_data_path(datadir, "nmap-os-db");
+		config.xprobe = honeyd_data_path(datadir, "xprobe2.conf");
+		config.assoc = honeyd_data_path(datadir, "nmap.assoc");
+		config.osfp = honeyd_data_path(datadir, "pf.os");
+		config.nmapMac = honeyd_data_path(datadir, "nmap-mac-prefixes");
+		honeyd_webserver_root = honeyd_data_path(datadir,
+		    "webserver/htdocs");
+	} else
+		datadir = PATH_HONEYDDATA;
+
 	fprintf(stderr, "Honeyd V%s Copyright (c) 2002-2007 Niels Provos\n",
 	    VERSION);
 
@@ -3689,6 +3733,7 @@ main(int argc, char *argv[])
 			config.assoc = optarg;
 			break;
 		case 'p':
+			determine_path(origin_path, &optarg);
 			config.pers = optarg;
 			break;
 		case '0':
@@ -3721,9 +3766,28 @@ main(int argc, char *argv[])
 		exit(EXIT_SUCCESS);
 	}
 	if (honeyd_show_data_dir) {
-		printf("%s\n", PATH_HONEYDDATA);
+		printf("%s\n", datadir);
 		exit(EXIT_SUCCESS);
 	}
+
+	/*
+	 * Installed behaviour: run from the data directory.  If it does
+	 * not exist (e.g. running from a build tree), stay in the current
+	 * directory; the checks below report any default file that is
+	 * actually missing.
+	 */
+	if (chdir(datadir) == -1) {
+		fprintf(stderr, "Warning: data directory %s not available (%s); "
+		    "staying in %s\n", datadir, strerror(errno), origin_path);
+		syslog(LOG_WARNING, "data directory %s not available: %s",
+		    datadir, strerror(errno));
+	}
+
+	honeyd_check_data_file(config.xprobe, "xprobe2 fingerprint", "-x");
+	honeyd_check_data_file(config.assoc, "nmap/xprobe association", "-a");
+	honeyd_check_data_file(config.pers, "nmap personality", "-p");
+	honeyd_check_data_file(config.osfp, "pf OS fingerprint", "-0");
+	honeyd_check_data_file(config.nmapMac, "nmap MAC prefix", "-m");
 
 	argc -= optind;
 	argv += optind;
