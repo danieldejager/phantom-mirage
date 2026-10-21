@@ -97,13 +97,21 @@ def main():
     reg = regress.regress("Nmap fingerprints", "../honeyd", "config.nmap",
                           debug="-d" in flags)
     reg.generate = "-g" in flags
-    # nmap goes through the kernel: route the honeypots via honeyd's end
-    # (frames to hdt0's MAC; the kernel blackholes what honeyd ignores).
-    if reg._cmd("ip", "route", "replace", "192.18.0.0/15", "via",
-                "10.250.0.2", "dev", regress.TEST_IF):
-        sys.stderr.write("cannot add route via %s\n" % regress.TEST_IF)
-        reg.RemoveAllRoutes()
-        sys.exit(1)
+    # nmap goes through the kernel: route the honeypots out hdt1 with
+    # static neighbour entries for hdt0's MAC (a "via 10.250.0.2" route is
+    # refused, the gateway is a local address). The kernel blackholes
+    # what reaches hdt0; honeyd sees it on the wire.
+    mac = ":".join("%02x" % b for b in reg.hd_mac)
+    steps = [("ip", "route", "replace", "192.18.0.0/15", "dev",
+              regress.TEST_IF)]
+    steps += [("ip", "neigh", "replace", target(i), "lladdr", mac,
+               "nud", "permanent", "dev", regress.TEST_IF)
+              for i in range(len(PERSONALITIES))]
+    for st in steps:
+        if subprocess.call(st):
+            sys.stderr.write("failed: %s\n" % " ".join(st))
+            reg.RemoveAllRoutes()
+            sys.exit(1)
     sys.stderr.write("\tRunning nmap -O against %d personalities: " %
                      len(PERSONALITIES))
     reg.start_honeyd()
@@ -126,6 +134,7 @@ def main():
     with open("nmap.log", "w") as f:
         f.writelines(logs)
     reg.runtests = 1
+    reg.dpktfile = got
     if reg.generate:
         os.replace(got, OUTPUT)
         sys.stderr.write("Generated output file '%s'\n" % OUTPUT)
@@ -139,7 +148,6 @@ def main():
         else:
             subprocess.call(["diff", "-u", OUTPUT, got], stdout=sys.stderr)
             sys.stderr.write("nmap output: regress/nmap.log\n")
-    reg.dpktfile = got
     reg.finish()
 
 
