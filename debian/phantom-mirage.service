@@ -26,7 +26,9 @@ ExecStart=/bin/sh -c 'exec /usr/bin/phantom-mirage -d -f /etc/phantom-mirage/pha
 # each service script in its own user/mount/PID/IPC/UTS/network
 # namespaces with a private /tmp. If either is missing, phantom-mirage
 # logs a warning at start. See docs/sandboxing.md.
-ExecReload=/bin/kill -HUP $MAINPID
+# "+": the daemon runs as phantom-mirage and the bounding set below has
+# no CAP_KILL, so a sandboxed root kill(1) would get EPERM
+ExecReload=+/bin/kill -HUP $MAINPID
 Restart=on-failure
 
 # Only what phantom-mirage needs before its own privilege drop (same set as the

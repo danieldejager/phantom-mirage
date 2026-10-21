@@ -261,12 +261,14 @@ installs the .deb and runs the unit with its defaults:
 * The daemon runs as `phantom-mirage` with `NoNewPrivs: 1` and
   `Seccomp: 2`, and the journal reports the allowlist, Landlock and the
   script namespaces.
-* A script port reports pid 1, its own hostname, a downed `lo` only and
-  a private `/tmp`.
+* A script port reports pid 1, a downed `lo` only and a private `/tmp`.
+  The hostname stays the host's, because the unit's `ProtectHostname=yes`
+  forbids `sethostname`; the script still has its own UTS namespace.
 * The pid file matches `MainPID` (root 0644) and is rewritten on restart.
   The socket is root 0600 in a root 0700 dir, and `/run/phantom-mirage`
   is gone after stop.
-* `systemctl reload` works, and nothing is denied.
+* `systemctl reload` delivers SIGHUP (`ExecReload=+…`: the bounding set
+  has no `CAP_KILL`), and nothing is denied.
 * A drop-in with `SANDBOX=` gives the warning.
 
 ## Known gaps (why this is opt-in)

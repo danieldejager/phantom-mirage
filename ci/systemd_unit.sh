@@ -64,7 +64,9 @@ check_running() {
   grep -Eq '^Seccomp:\s+2' /proc/$mp/status || fail "$what: no seccomp filter"
   echo 'list template' | timeout 5 phantom-mirage-ctl | grep -q 10.99.0.12 || fail "$what: phantom-mirage-ctl list failed"
   out=$(probe); echo "$what: $out"
-  grep -q 'pid=1 host=phantom-mirage-script links=1 loup=0 tmp=probe' <<<"$out" || fail "$what: script not namespaced: $out"
+  # (hostname stays the host's: the unit's ProtectHostname=yes forbids
+  # sethostname, though the script still has its own UTS namespace)
+  grep -Eq 'pid=1 host=[^ ]+ links=1 loup=0 tmp=probe' <<<"$out" || fail "$what: script not namespaced: $out"
   [ -e /tmp/ns_probe ] && fail "$what: script /tmp not private"
 }
 
@@ -75,7 +77,8 @@ systemctl start $U; wait_up; check_running start
 old=$(cat /run/$U/$U.pid)
 systemctl restart $U; wait_up; check_running restart
 [ "$(cat /run/$U/$U.pid)" != "$old" ] || fail "restart: pid file not updated"
-systemctl reload $U; sleep 2; check_running reload
+systemctl reload $U || fail "reload failed"; sleep 2; check_running reload
+jr | grep -q 'rereading configuration on signal 1' || fail "reload: SIGHUP not received"
 systemctl stop $U
 [ -e /run/$U ] && fail "stop: /run/$U left behind"
 
