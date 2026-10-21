@@ -401,6 +401,8 @@ jobs:
           HD_LANDLOCK: require
         run: |
           bash ci/sandbox_daemon.sh
+          # pid file: start/stop/restart, stale file, second instance
+          bash ci/pidfile.sh
           # Again as under debian/phantom-mirage.service: no_new_privs, the unit's
           # capability bounding set, writable state only below /run.
           # (ProtectSystem=strict needs mounts, which the CI container
@@ -408,6 +410,8 @@ jobs:
           mkdir -p unit-logs
           HD_WRAP="setpriv --no-new-privs --inh-caps=-all --bounding-set=-all,+net_raw,+net_admin,+setuid,+setgid" \
             HD_WORK=/run/hdsd HD_LOGDIR=$PWD/unit-logs bash ci/sandbox_daemon.sh
+          HD_WRAP="setpriv --no-new-privs --inh-caps=-all --bounding-set=-all,+net_raw,+net_admin,+setuid,+setgid" \
+            HD_LOGDIR=$PWD/unit-logs bash ci/pidfile.sh
           cd regress
           bad=0
           for t in general.py detect.py routing.py nmap.py; do
@@ -561,6 +565,7 @@ jobs:
           HD_LANDLOCK: require
         run: |
           bash ci/sandbox_daemon.sh
+          bash ci/pidfile.sh
           cd regress
           bad=0
           for t in general.py detect.py routing.py nmap.py; do
@@ -637,6 +642,9 @@ jobs:
           sleep 5
           docker exec "$cid" stat -c '%a %U %n' /run/phantom-mirage /run/phantom-mirage/phantom-mirage.sock
           test "$(docker exec "$cid" stat -c '%a' /run/phantom-mirage/phantom-mirage.sock)" = 600
+          # pid file next to the socket, root 0644, naming the daemon (pid 1)
+          test "$(docker exec "$cid" stat -c '%a %u' /run/phantom-mirage/phantom-mirage.pid)" = "644 0"
+          test "$(docker exec "$cid" cat /run/phantom-mirage/phantom-mirage.pid)" = 1
           docker exec "$cid" sh -c 'echo "list template" | phantom-mirage-ctl' | grep -q 192.0.2.10
           docker exec "$cid" grep -q '^Uid:.*65534' /proc/1/status
           # #16: every ID 65534, no effective/permitted/ambient caps,

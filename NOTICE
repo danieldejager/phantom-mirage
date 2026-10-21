@@ -40,7 +40,7 @@ Rename map
   /etc/honeypot/honeyd.conf   -> /etc/phantom-mirage/phantom-mirage.conf
   /var/log/honeypot           -> /var/log/phantom-mirage
   /var/run/honeyd/honeyd.sock -> /run/phantom-mirage/phantom-mirage.sock
-  /var/run/honeyd.pid         -> /run/phantom-mirage.pid
+  /var/run/honeyd.pid         -> /run/phantom-mirage/phantom-mirage.pid
   ~/.config/honeyd            -> ~/.config/phantom-mirage
   HONEYD_* environment        -> PHANTOM_MIRAGE_* (HONEYD_* still accepted,
                                  deprecated, and still exported to scripts)

@@ -40,7 +40,7 @@ flowchart TB
         py["embedded Python services &<br/>web UI (optional, pyextend.c, webserver/)"]
         plugins["plugins (dlopen,<br/>plugins.c, hooks.c)"]
         logs[("packet log -l / service log -s<br/>log.c")]
-        pid[("/run/phantom-mirage.pid")]
+        pid[("/run/phantom-mirage/phantom-mirage.pid")]
     end
     stats["phantom-mirage-stats<br/>honeydstats_main.c"]
     net(("network interface(s)<br/>libpcap in, libdnet out"))

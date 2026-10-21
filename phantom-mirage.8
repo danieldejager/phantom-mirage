@@ -641,8 +641,16 @@ value in the command line has to be
 .Ar 10.0.0.1 10.2.0.0/24 10.2.1.0/24 .
 .Sh FILES
 .Bl -tag -width {prefix}/share/phantom-mirage/xprobe2.conf
-.It Pa /run/phantom-mirage.pid
-The PID of the current daemon.
+.It Pa /run/phantom-mirage/phantom-mirage.pid
+The PID of the current daemon, created by root (mode 0644) in the
+root-only control socket directory.
+After dropping privileges the daemon cannot remove it, so on exit it
+empties it instead.
+An empty pid file, or one naming a process that is not a running
+.Nm ,
+is replaced at start-up; a live one makes
+.Nm
+refuse to start.
 .It Pa /run/phantom-mirage/phantom-mirage.sock
 The management console socket used by
 .Xr phantom-mirage-ctl 1 ;

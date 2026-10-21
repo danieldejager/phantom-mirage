@@ -171,7 +171,7 @@ bind and the status page start). Children inherit the ruleset.
 * **Caveats.** Rules are fixed at start-up: a SIGHUP reload that adds a
   script outside the allowed directories, or moves a log, gets
   `EACCES`, so restart instead. Scripts that write scratch files need
-  `--sandbox-allow-write`. The pid file can't be removed on exit.
+  `--sandbox-allow-write`. The pid file is emptied, not removed, on exit.
 
 ## Known gaps (why this is opt-in)
 

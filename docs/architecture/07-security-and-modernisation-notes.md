@@ -10,7 +10,7 @@ This page separates **Facts** (verified in the code or in the build run on 2026-
 
 ### Privileges
 - Needs raw packet access: libpcap capture (`pcap_open_live`, interface.c:369) and libdnet raw IP / Ethernet send (`ip_open` honeyd.c, `eth_open`). On Linux that means root or `CAP_NET_RAW` + `CAP_NET_ADMIN` (promiscuous mode).
-- Writes `/run/phantom-mirage.pid` and creates `/run/phantom-mirage/phantom-mirage.sock` (ui.h:54) before dropping privileges.
+- Creates `/run/phantom-mirage/phantom-mirage.sock` (ui.h:54) and the pid file `/run/phantom-mirage/phantom-mirage.pid` (honeyd.h) before dropping privileges. The pid file is emptied through a kept descriptor on exit, since the dropped user can't unlink it from the root-only directory.
 - Drops to `nobody` (default uid/gid 32767, looked up via `getpwnam("nobody")`, honeyd.c:167, 479) with `cmd_droppriv()` (command.c ~291–330, which also verifies it cannot regain root) unless `honeyd_needsroot` is set. Opened pcap/dnet handles stay usable after the drop.
 - Per-template `uid`/`gid` and `maxfds` (`setrlimit RLIMIT_NOFILE`, command.c:364) are applied to forked scripts.
 - No chroot, seccomp, or namespace isolation in the code. Scripts run as ordinary processes on the host with full filesystem view.

@@ -37,9 +37,11 @@ Run with `--cap-drop ALL` and add only:
 |---|---|
 | `NET_RAW` | pcap capture and raw packet replies |
 | `NET_ADMIN` | interface flags / promiscuous mode on the capture interface |
-| `SETUID`, `SETGID` | phantom-mirage starts as root in the container, creates `/run/phantom-mirage` (root 0700, control socket 0600) and then drops to `nobody` |
+| `SETUID`, `SETGID` | phantom-mirage starts as root in the container, creates `/run/phantom-mirage` (root 0700, control socket 0600, pid file `phantom-mirage.pid` 0644) and then drops to `nobody` |
 
 Also recommended: `--read-only`, `--security-opt no-new-privileges`, and tmpfs mounts for `/run`, `/tmp` and `/root/.config`. Mount the config read-only.
+
+The pid file is `/run/phantom-mirage/phantom-mirage.pid`. After dropping to `nobody` the daemon can't remove it from the root-only directory, so on exit it empties it instead. An empty or stale pid file (a dead pid, which is normal with a persistent `/run` and pid 1 in a container) is replaced at the next start; only a live phantom-mirage with that pid makes a second instance refuse to start. With a tmpfs `/run` it disappears with the container anyway.
 
 ```sh
 docker run --rm --network decoy-vlan10 \

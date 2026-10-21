@@ -699,6 +699,115 @@ honeyd_is_webserver_enabled(void)
 }
 #endif
 
+/*
+ * Pid file: PIDFILE lives in the root-owned 0700 control socket dir, so
+ * after the privilege drop the daemon can neither unlink it nor reopen it
+ * by name.  It is created as root (0644, root-owned) and the descriptor
+ * is kept: on exit we unlink it if we can (still root), otherwise
+ * truncate it through the descriptor, which needs no access to the dir
+ * and is allowed by Landlock (the fd predates the ruleset).  At start-up
+ * an empty pid file, or one naming a dead process or something that is
+ * not phantom-mirage, is stale and replaced; under systemd,
+ * RuntimeDirectory= removes the dir (and the file) when the unit stops.
+ */
+static int honeyd_pidfd = -1;
+static pid_t honeyd_pidfile_pid = -1;
+
+static int
+honeyd_pid_is_us(pid_t pid)
+{
+	char path[64], a[64] = "", b[64] = "";
+	FILE *fp;
+
+	if (pid <= 0 || pid == getpid())
+		return (0);
+	if (kill(pid, 0) == -1 && errno != EPERM)
+		return (0);
+	snprintf(path, sizeof(path), "/proc/%ld/comm", (long)pid);
+	if ((fp = fopen(path, "r")) == NULL)
+		return (1);	/* no /proc: assume it is a live daemon */
+	if (fgets(a, sizeof(a), fp) == NULL)
+		a[0] = '\0';
+	fclose(fp);
+	if ((fp = fopen("/proc/self/comm", "r")) != NULL) {
+		if (fgets(b, sizeof(b), fp) == NULL)
+			b[0] = '\0';
+		fclose(fp);
+	}
+	return (strcmp(a, b) == 0);
+}
+
+/* Before ui_init(), so a second instance can't replace the socket */
+static void
+honeyd_pidfile_check(void)
+{
+	char buf[32];
+	ssize_t n;
+	long pid;
+	int fd;
+
+	if ((fd = open(PIDFILE, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)) != -1) {
+		n = read(fd, buf, sizeof(buf) - 1);
+		close(fd);
+		buf[n > 0 ? n : 0] = '\0';
+		pid = strtol(buf, NULL, 10);
+		if (honeyd_pid_is_us((pid_t)pid)) {
+			syslog(LOG_ERR, "%s: already running as pid %ld",
+			    PIDFILE, pid);
+			exit(EXIT_FAILURE);
+		}
+		if (n > 0)
+			syslog(LOG_NOTICE, "%s: replacing stale pid file "
+			    "(pid %ld is not running)", PIDFILE, pid);
+	}
+}
+
+static void
+honeyd_pidfile_open(void)
+{
+	int fd;
+
+	if (mkdir(PIDDIR, 0700) == -1 && errno != EEXIST) {
+		syslog(LOG_ERR, "mkdir %s: %m", PIDDIR);
+		exit(EXIT_FAILURE);
+	}
+	/* Never write through a planted file or link: always a new file */
+	unlink(PIDFILE);
+	fd = open(PIDFILE, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW |
+	    O_CLOEXEC, 0644);
+	if (fd == -1) {
+		syslog(LOG_ERR, "open %s: %m", PIDFILE);
+		exit(EXIT_FAILURE);
+	}
+	fchmod(fd, 0644);
+	honeyd_pidfd = fd;
+}
+
+static void
+honeyd_pidfile_write(void)
+{
+	char buf[32];
+	int len;
+
+	honeyd_pidfile_pid = getpid();
+	len = snprintf(buf, sizeof(buf), "%ld\n", (long)honeyd_pidfile_pid);
+	if (write(honeyd_pidfd, buf, len) != len)
+		syslog(LOG_WARNING, "write %s: %m", PIDFILE);
+}
+
+static void
+honeyd_pidfile_remove(void)
+{
+	/* only the daemon itself, never a forked child */
+	if (honeyd_pidfd == -1 || getpid() != honeyd_pidfile_pid)
+		return;
+	if (unlink(PIDFILE) == -1 && ftruncate(honeyd_pidfd, 0) == -1)
+		syslog(LOG_WARNING, "cannot remove or truncate %s: %m",
+		    PIDFILE);
+	close(honeyd_pidfd);
+	honeyd_pidfd = -1;
+}
+
 void
 honeyd_exit(int status)
 {
@@ -712,8 +821,8 @@ honeyd_exit(int status)
 
 	rand_close(honeyd_rand);
 	ip_close(honeyd_ip);
+	honeyd_pidfile_remove();
 	closelog();
-	unlink(PIDFILE);
 
 #ifdef HAVE_PYTHON
 	if (honeyd_is_webserver_enabled())
@@ -4195,6 +4304,9 @@ main(int argc, char *argv[])
 	//Start sending DHCP discoveries that have been queue'd up
 	dhcp_send_discover();
 
+	/* Refuse to run twice; a stale pid file is fine */
+	honeyd_pidfile_check();
+
 	/* Attach the UI interface */
 	ui_init();
 	
@@ -4213,13 +4325,8 @@ main(int argc, char *argv[])
 		    honeyd_uid, honeyd_gid);
 #endif
 
-	/* Create PID file, we might not be able to remove it */
-	unlink(PIDFILE);
-	if ((fp = fopen(PIDFILE, "w")) == NULL)
-		{
-		syslog(LOG_ERR, "fopen");
-		exit(EXIT_FAILURE);
-		}
+	/* Create the pid file as root; see honeyd_pidfile_open() */
+	honeyd_pidfile_open();
 
 	/* Start Honeyd in the background if necessary */
 	if (!honeyd_debug) {
@@ -4232,10 +4339,7 @@ main(int argc, char *argv[])
 		}
 	}
 	
-	fprintf(fp, "%d\n", getpid());
-	fclose(fp);
-	
-	chmod(PIDFILE, 0644);
+	honeyd_pidfile_write();
 
 	/* Drop privileges if we do not need them */
 	if (honeyd_needsroot <= 0) {
