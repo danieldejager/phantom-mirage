@@ -18,7 +18,11 @@ $tmp/list | sort -u > $tmp/allowed
 sed -E 's/^[0-9]+ +//' "$@" | grep -oE '^(<\.\.\. )?[a-z_0-9]+[ (]' |
   sed -E 's/^<\.\.\. //; s/[ (]$//' | sort -u > $tmp/seen
 echo "arch $(uname -m): $(wc -l < $tmp/allowed) syscalls on the allowlist, $(wc -l < $tmp/seen) seen"
-missing=$(comm -23 $tmp/seen $tmp/allowed)
+# The --sandbox-scripts launcher (sandbox_ns.c) is forked before the
+# daemon's filter and is deliberately outside it; these calls are its
+# alone (a daemon using them would still die with SIGSYS when enforcing).
+printf '%s\n' mount sethostname unshare > $tmp/launcher
+missing=$(comm -23 $tmp/seen $tmp/allowed | comm -23 - $tmp/launcher)
 # calls strace reports that are not real syscalls / only happen before
 # the filter is installed in the parent (exec of phantom-mirage itself is fine)
 if [ -n "$missing" ]; then

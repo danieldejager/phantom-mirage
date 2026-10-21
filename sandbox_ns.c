@@ -138,6 +138,9 @@ ns_run(struct ns_req *req, char *strs, int fd_io, int fd_err, int have_ns)
 	if (setrlimit(RLIMIT_NOFILE, &rl) == -1)
 		_exit(EXIT_FAILURE);
 
+	/* after a setuid() the process is not dumpable, which makes
+	 * /proc/self/{uid,gid}_map root-owned and unwritable for us */
+	prctl(PR_SET_DUMPABLE, 1);
 	uid = geteuid();
 	gid = getegid();
 	flags = CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWIPC |
@@ -209,6 +212,7 @@ ns_probe(void)
 	if ((pid = fork()) == -1)
 		return (errno);
 	if (pid == 0) {
+		prctl(PR_SET_DUMPABLE, 1);
 		if (unshare(CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID |
 			CLONE_NEWIPC | CLONE_NEWUTS | CLONE_NEWNET) == -1)
 			_exit(errno & 0x7f);
