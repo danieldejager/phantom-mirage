@@ -395,8 +395,10 @@ router_end(void)
 
 	if (reverse != NULL)
 		network_cleanup(reverse, 0);
+	reverse = NULL;
 	if (entry_routers != NULL)
 		network_cleanup(entry_routers, 0);
+	entry_routers = NULL;
 
 	router_used = 0;
 }
