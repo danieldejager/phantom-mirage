@@ -31,5 +31,16 @@ over 5 consecutive runs. All tests in general.py, detect.py and
 routing.py gate CI (sanitizer job). Regenerate with `make generate` and
 review the diff when honeyd's behaviour changes on purpose.
 
-nmap.py is not ported: it needs an nmap.prints file that is no longer in
-the tree and BSD's lo0, and is no longer part of `make test`.
+nmap.py (Python 3, #36) binds a fixed list of personalities from
+../nmap-os-db and runs real nmap -O against each. nmap runs in its own
+network namespace (unshare --net + nsenter) on hdt1 as 192.0.2.1, so nothing it uses is a
+local address on honeyd's side and honeyd's replies leave through hdt0
+as they would to a remote scanner. nmap.output.1 records MATCH (the
+personality is in nmap's OS details or OS guesses), OTHER or NONE per
+personality. Exact-vs-guess is not compared: nmap's timing-based tests
+(ISN rate etc.) move a few personalities between "OS details" and a top
+"Aggressive OS guess" from run to run. Full output (EXACT/GUESS per
+target) is left in regress/nmap.log. Needs nmap and util-linux
+(CAP_SYS_ADMIN in a container, for unshare/setns). REGRESS_HONEYD_ARGS adds honeyd options,
+e.g. "-u 0 -g 0" to run the suite in an unprivileged
+`unshare -rnm` namespace.

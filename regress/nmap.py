@@ -1,122 +1,201 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Copyright (c) 2004 Niels Provos <provos@citi.umich.edu>
 # All rights reserved.
 #
+# Nmap OS fingerprint regression test (Python 3, #36).
+#
+# Binds a fixed set of personalities from ../nmap-os-db to 192.18.0.x,
+# runs real nmap OS detection against each over the regress veth pair
+# (regress.py) and writes, per personality, how nmap classified it:
+#   MATCH    nmap's OS details or OS guesses name the personality
+#   OTHER    nmap named something else
+#   NONE     nmap had no OS match
+# (Whether nmap reports an exact "OS details" line or only a top guess
+# depends on timing-based tests such as TCP ISN rate, so the two are not
+# told apart; nmap.log has the full output, EXACT/GUESS per target.)
+# The result is compared with nmap.output.1. honeyd runs with -R 1, so
+# its answers are the same every run. Needs root, nmap, python3-dpkt.
+#
+#   python3 nmap.py        compare      -g  regenerate      -d  debug
+#
+import getopt
 import os
-import sys
-import regress
-import time
 import re
+import subprocess
+import sys
+import tempfile
+import time
 
-def get_ipaddr(count):
-    octet1 = count % 254
-    octet2 = count / 254
+import regress
 
-    return "10.0.%d.%d" % (octet2 + 1, octet1 + 1)
+PERSONALITIES = [
+    "Linux 2.6.11 - 2.6.20",
+    "Microsoft Windows XP SP2 or SP3",
+    "FreeBSD 6.2-RELEASE",
+    "OpenBSD 4.0",
+    "Sun Solaris 10",
+    "Cisco 2948G switch (CatOS 6.3)",
+    "Apple Mac OS X 10.5.6 (Leopard) (Darwin 9.6.0)",
+    "HP LaserJet 4250 printer",
+]
+SRC = "192.0.2.1"
+NETNS = None        # pid of the process holding nmap's network namespace
+OUTPUT = "nmap.output.1"
 
-def nmap(count):
-    ipaddr = get_ipaddr(count)
 
-    log = open("/tmp/nmap.log", "a")
-    file = os.popen('nmap -S 127.0.0.1 -e lo0 -sS -O -p1,23 %s 2>/dev/null' % ipaddr)
+def target(i):
+    return "192.18.0.%d" % (10 + i)
 
-    oses = ""
 
-    output = ""
-    for line in file:
-#        if re.match("^(SInfo|TSeq|T[0-9]|PU)", line):
-        output += line
-        res = re.match("OS (guesses|details): (.*)", line)
-        if res:
-            oses = res.group(2)
-        elif re.match("^No exact OS", line):
-            oses = None
+def known(db):
+    with open(db, encoding="latin-1") as f:
+        names = set(m.group(1).rstrip() for m in
+                    (re.match(r"^Fingerprint ([^#]*)$", l.rstrip("\n"))
+                     for l in f) if m)
+    missing = [p for p in PERSONALITIES if p not in names]
+    if missing:
+        sys.stderr.write("not in %s: %s\n" % (db, missing))
+        sys.exit(1)
 
-    res = 0
-    if oses:
-        if oses == prints[count]:
-            print "+",
-            res = 1
-        elif oses.find(prints[count]) != -1:
-            print "-",
-            res = 2
+
+def in_ns(*cmd):
+    """cmd inside nmap's network namespace (setns only: no mounts, so
+    this works in a container where "ip netns add" is refused)."""
+    return ["nsenter", "--net=/proc/%d/ns/net" % NETNS.pid] + list(cmd)
+
+
+def make_ns():
+    global NETNS
+    NETNS = subprocess.Popen(["unshare", "--net", "sleep", "infinity"])
+    mine = os.readlink("/proc/self/ns/net")
+    for _ in range(50):
+        try:
+            if os.readlink("/proc/%d/ns/net" % NETNS.pid) != mine:
+                return
+        except OSError:
+            pass
+        if NETNS.poll() is not None:
+            break
+        time.sleep(0.1)
+    sys.stderr.write("cannot create a network namespace for nmap\n")
+    NETNS = None
+
+
+def drop_ns():
+    global NETNS
+    if NETNS is not None:
+        NETNS.kill()
+        NETNS.wait()
+        NETNS = None
+
+
+def cleanup(reg):
+    drop_ns()
+    reg.RemoveAllRoutes()
+
+
+def make_configuration(filename):
+    with open(filename, "w") as out:
+        out.write("create template\n"
+                  "set template default tcp action closed\n"
+                  "set template default udp action closed\n"
+                  "add template tcp port 23 open\n")
+        for i, name in enumerate(PERSONALITIES):
+            out.write('bind %s template\n' % target(i))
+            out.write('set %s personality "%s"\n' % (target(i), name))
+
+
+def classify(name, text):
+    details = re.search(r"^OS details: (.*)$", text, re.M)
+    guesses = re.search(r"^Aggressive OS guesses: (.*)$", text, re.M)
+    if details and details.group(1).strip() == name:
+        return "EXACT"
+    for m in (details, guesses):
+        if m and name in m.group(1):
+            return "GUESS"
+    if details or guesses or re.search(r"^Running", text, re.M):
+        return "OTHER"
+    return "NONE"
+
+
+def nmap(ip):
+    cmd = in_ns("nmap", "-n", "-Pn", "-O", "--osscan-guess",
+                "--max-os-tries", "1", "-p", "1,23", ip)
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       timeout=180)
+    return p.stdout.decode(errors="replace")
+
+
+def main():
+    opts, _ = getopt.getopt(sys.argv[1:], "dg")
+    flags = dict(opts)
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    known("../nmap-os-db")
+    make_configuration("config.nmap")
+    reg = regress.regress("Nmap fingerprints", "../honeyd", "config.nmap",
+                          debug="-d" in flags)
+    reg.generate = "-g" in flags
+    # nmap runs in its own network namespace on hdt1 (192.0.2.1), so
+    # nothing it uses is a local address for honeyd's side: honeyd's
+    # replies go out hdt0 and nmap sees them like a remote scanner would.
+    make_ns()
+    if NETNS is None:
+        cleanup(reg)
+        sys.exit(1)
+    steps = [("ip", "link", "set", regress.TEST_IF, "netns", str(NETNS.pid)),
+             in_ns("ip", "link", "set", "lo", "up"),
+             in_ns("ip", "addr", "add", "10.250.0.1/30", "dev",
+                   regress.TEST_IF),
+             in_ns("ip", "addr", "add", SRC + "/32", "dev", regress.TEST_IF),
+             in_ns("ip", "link", "set", regress.TEST_IF, "up"),
+             in_ns("ip", "route", "add", "192.18.0.0/15", "via",
+                   "10.250.0.2", "dev", regress.TEST_IF, "src", SRC)]
+    for st in steps:
+        if subprocess.call(st):
+            sys.stderr.write("failed: %s\n" % " ".join(st))
+            cleanup(reg)
+            sys.exit(1)
+    sys.stderr.write("\tRunning nmap -O against %d personalities: " %
+                     len(PERSONALITIES))
+    reg.start_honeyd()
+    lines, logs = [], []
+    try:
+        for i, name in enumerate(PERSONALITIES):
+            text = nmap(target(i))
+            res = classify(name, text)
+            lines.append("%s %s\n" % (
+                "MATCH" if res in ("EXACT", "GUESS") else res, name))
+            logs.append("== %s (%s) -> %s\n%s" % (target(i), name, res, text))
+            sys.stderr.write(res[0])
+            sys.stderr.flush()
+    finally:
+        reg.stop_honeyd()
+        drop_ns()
+    sys.stderr.write("\n")
+    fd, got = tempfile.mkstemp(prefix="nmap.output.")
+    with os.fdopen(fd, "w") as f:
+        f.writelines(lines)
+    os.chmod(got, 0o644)
+    with open("nmap.log", "w") as f:
+        f.writelines(logs)
+    reg.runtests = 1
+    reg.dpktfile = got
+    if reg.generate:
+        os.replace(got, OUTPUT)
+        sys.stderr.write("Generated output file '%s'\n" % OUTPUT)
+        sys.stdout.write("".join(lines))
+    else:
+        reg.outputfile = OUTPUT
+        sys.stdout.write("".join(lines))
+        if reg.compare():
+            reg.oktests = 1
+            os.remove(got)
         else:
-            print "?",
-            print >>log, "Wanted: '%s' but got '%s':\n%s" % \
-                  (prints[count], oses, output)
-            failures.append("%d:" % count + prints[count] + oses + ":\n" + output)
-    else:
-        print >>log, "Wanted: '%s' but got nothing:\n%s" % \
-              (prints[count], output)
-        failures.append("%d:" % count + prints[count] + "No match:\n" + output)
-        print "_",
+            subprocess.call(["diff", "-u", OUTPUT, got], stdout=sys.stderr)
+            sys.stderr.write("nmap output: regress/nmap.log\n")
+    reg.finish()
 
-    sys.stdout.flush()
-    file.close()
-    log.close()
-    return res
-    
-def make_configuration(filename, fingerprints):
-    output = open(filename, "w")
-    input = open(fingerprints, "r")
 
-    print >>output, """create template
-set template default tcp action closed
-add template tcp port 23 open
-"""
-    count = 0
-    r = re.compile('\s*$')
-    m = re.compile("^Fingerprint ([^#]*)$")
-    for line in input:
-        line = r.sub("", line)
-        res = m.match(line)
-        if not res:
-            continue
-
-        fname = res.group(1)
-
-        prints[count] = fname
-        ipaddr = get_ipaddr(count)
-
-        # Create template
-        print >>output, 'bind %s template' % ipaddr
-        print >>output, 'set %s personality "%s"' % (ipaddr, fname)
-
-        count += 1
-
-    output.close()
-    input.close()
-
-    return count
-
-# Main
-
-failures = []
-prints = {}
-
-number = make_configuration("config.nmap", "../nmap.prints")
-
-reg = regress.regress("Nmap fingerprints", "../honeyd", "config.nmap")
-reg.start_honeyd(reg.configuration)
-
-reg.fe.read()
-
-success = 0
-partial = 0
-nothing = 0
-for count in range(0, number):
-    res = nmap(count)
-    if res == 1:
-        success += 1
-    elif res == 2:
-        partial += 1
-    else:
-        nothing += 1
-    reg.fe.read()
-
-reg.stop_honeyd()
-
-print "\nSuccesses: %d, Partials: %d, Nothing: %d of %d" % (success, partial, nothing, number)
-for line in failures:
-    print line
+if __name__ == "__main__":
+    main()

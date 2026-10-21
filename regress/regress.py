@@ -154,6 +154,8 @@ class regress:
                      "-a", os.path.join(top, "nmap.assoc"),
                      "-0", os.path.join(top, "pf.os"),
                      "-m", os.path.join(top, "nmap-mac-prefixes")]
+        # e.g. "-u 0 -g 0" inside an unprivileged user+net namespace
+        self.args += os.environ.get("REGRESS_HONEYD_ARGS", "").split()
         if not os.path.exists(self.config):
             sys.stderr.write('Configuration file "%s" does not exist, '
                              'aborting.\n' % self.config)
