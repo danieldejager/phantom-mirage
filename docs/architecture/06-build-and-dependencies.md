@@ -36,12 +36,24 @@ Box: Debian GNU/Linux 13 (trixie), GCC 14.2, autoconf 2.72 era automake/libtool,
 | `honeyd --verify-config -f config.sample` with absolute DB paths | fingerprint DBs load; config parsing stops at line 35: template "windows" has an ethernet address but no interface reaches 192.168.3.137 | expected: sample is site-specific | n/a |
 | `honeyd` without installed data | "Could not find path PATH_HONEYDDATA: /usr/share/honeyd" | startup checks the compiled-in data dir | `make install` or create the dir |
 
-Working recipe used here:
+The table above records the build as it was on `master` before the fix. [PR #44](https://github.com/danieldejager/honeyd/pull/44) (issue #18) fixes the three causes: it adds the missing includes to the configure checks, gives each header global a single definition in a `.c` file, and gives the shared library and `honeyd` separate object files. It also renames `configure.in` to `configure.ac`.
+
+Recipe once PR #44 is merged (no workarounds, parallel build works, checked by CI on Debian 13 / GCC 14):
+
+```sh
+./autogen.sh
+./configure
+make -j
+```
+
+Recipe for `master` before PR #44:
 
 ```sh
 ./autogen.sh
 CC="gcc -fpermissive -fcommon" ./configure
 make            # not -j
 ```
+
+The 37 compiler warnings are still present; cleaning them up is separate work. To run `honeyd` from a build tree, `/usr/share/honeyd` must exist (issue #43).
 
 Python support was not tested: it needs Python 2 headers (`Py_InitModule`), which modern distributions no longer ship.
