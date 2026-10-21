@@ -55,6 +55,9 @@ A(clock_nanosleep)
 #ifdef __NR_clone
 A(clone)
 #endif
+#ifdef __NR_clone3
+A(clone3)
+#endif
 #ifdef __NR_close
 A(close)
 #endif

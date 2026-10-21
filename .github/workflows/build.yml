@@ -500,6 +500,86 @@ jobs:
             src/lintian.txt
           if-no-files-found: error
 
+  arm64:
+    name: Debian 13 / arm64 --sandbox-daemon
+    # Native arm64 runner: under QEMU user emulation (the Docker job)
+    # the guest's seccomp filter is not supported (qemu-user refuses
+    # PR_SET_SECCOMP), so --sandbox-daemon can only be checked natively.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+    container:
+      image: debian:13
+      # NET_ADMIN: routes/veth; SYS_ADMIN: regress/nmap.py namespace
+      options: --cap-add=NET_ADMIN --cap-add=SYS_ADMIN --cap-add=SYS_PTRACE
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential autoconf automake libtool bison flex pkg-config \
+            libpcap-dev libevent-dev libdumbnet-dev zlib1g-dev libedit-dev \
+            python3-dev python3-dpkt iproute2 procps util-linux strace nmap diffutils
+
+      - name: Build (--with-python)
+        run: |
+          ./autogen.sh
+          ./configure --prefix=/usr --with-python
+          grep -q '^#define HAVE_PYTHON 1' config.h
+          make -j$(nproc)
+          uname -m | tee -a "$GITHUB_STEP_SUMMARY"
+          install -D -m 755 libhoneyd.so /usr/lib/honeyd/libhoneyd.so
+          gcc -O1 -o /tmp/subsys_echo ci/subsys_echo.c
+
+      - name: strace audit of the allowlist (arm64)
+        # Run the services and the regress/ suite without the filter under
+        # strace -f and check every call they make is on the allowlist as
+        # compiled for arm64 (no legacy open/poll/select/stat/fork here).
+        shell: bash
+        run: |
+          mkdir -p st learn-logs
+          HD_LEARN=1 HD_WRAP="strace -f -qq -o $PWD/st/sd" HD_LOGDIR=$PWD/learn-logs \
+            bash ci/sandbox_daemon.sh || true
+          mv honeyd honeyd.real
+          printf '#!/bin/sh\nexec strace -f -qq -o %s/st/r.$$ %s/honeyd.real "$@"\n' "$PWD" "$PWD" > honeyd
+          chmod +x honeyd
+          (cd regress && for t in general.py detect.py routing.py nmap.py; do
+             timeout -k 10 300 python3 $t > ../learn-logs/regress-${t%.py}.log 2>&1 || true
+           done)
+          mv honeyd.real honeyd
+          ls st | wc -l
+          ci/syscall_audit.sh st/* | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: "--sandbox-daemon: services + regress/ under the allowlist (arm64)"
+        shell: bash
+        run: |
+          bash ci/sandbox_daemon.sh
+          cd regress
+          bad=0
+          for t in general.py detect.py routing.py nmap.py; do
+            log="../regress-sbd-${t%.py}.log"
+            set +e; REGRESS_HONEYD_ARGS=--sandbox-daemon timeout -k 10 300 \
+              python3 "$t" -d > "$log" 2>&1; rc=$?; set -e
+            tail -5 "$log"
+            [ $rc = 0 ] || { echo "$t: rc=$rc" >&2; bad=1; }
+            grep -q 'sandbox-daemon: seccomp allowlist active' "$log" || { echo "$t: filter not active" >&2; bad=1; }
+            if grep -E 'sandbox-daemon: denied syscall|killed by SIGSYS' "$log"; then bad=1; fi
+          done
+          exit $bad
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm64-sandbox-daemon
+          path: |
+            sandbox-daemon-*.log
+            learn-logs/*.log
+            regress-sbd-*.log
+            regress/nmap.log
+          if-no-files-found: ignore
+
   docker:
     name: Docker image (amd64 + arm64)
     runs-on: ubuntu-latest

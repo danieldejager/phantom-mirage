@@ -191,3 +191,14 @@ x86_64). If the filter can't be installed, honeyd exits.
 * The **Docker** job checks the same `/proc/1/status` fields in the
   image (the bounding set is exempt: no `CAP_SETPCAP`), and that
   `--sandbox-scripts` starts.
+
+## arm64
+
+The allowlist is validated on a native arm64 runner (`ubuntu-24.04-arm`,
+CI job "Debian 13 / arm64 --sandbox-daemon"). QEMU user-mode emulation
+cannot be used, because it does not implement a guest's `PR_SET_SECCOMP`.
+aarch64 has no legacy `open`, `poll`, `select`, `stat` or `fork`; the
+`#ifdef __NR_x` guards drop those, and glibc uses `openat`, `ppoll`,
+`pselect6`, `newfstatat` and `clone3` instead. `ci/syscall_audit.sh`
+compares the compiled per-arch list against strace output from the
+learn-mode and regress runs, and fails the job on any missing call.
