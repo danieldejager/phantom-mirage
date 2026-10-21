@@ -16,11 +16,19 @@ since=$(date '+%Y-%m-%d %H:%M:%S'); since0=$since
 jr() { journalctl -u $U --since "$since" --no-pager -o cat; }
 
 ip route replace 10.99.0.0/24 dev lo
+# a listener on the host's loopback: scripts must not reach it
+python3 -c 'import socket,time; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind(("127.0.0.1",2499)); s.listen(8); time.sleep(900)' &
+lsn=$!
 cat > /etc/phantom-mirage/ns_probe.sh <<'SH'
 #!/bin/sh
 echo "pid=$$ host=$(uname -n) links=$(ip -o link | wc -l) loup=$(ip -o link show lo | grep -c LOWER_UP)"
 echo probe > /tmp/ns_probe && echo "tmp=$(cat /tmp/ns_probe)"
 echo "shadow=$(cat /etc/shadow >/dev/null 2>&1 && echo y || echo n) etchostname=$(cat /etc/hostname >/dev/null 2>&1 && echo y || echo n) home=$(ls /home >/dev/null 2>&1 && echo y || echo n)"
+python3 -c 'import socket; s=socket.socket(); s.settimeout(3)
+try:
+    s.connect(("127.0.0.1", 2499)); print("connect=y")
+except OSError as e:
+    print("connect=n")'
 SH
 chmod 755 /etc/phantom-mirage/ns_probe.sh
 cat > /etc/phantom-mirage/phantom-mirage.conf <<'CONF'
@@ -90,6 +98,7 @@ check_running() {
   grep -Eq 'pid=1 host=[^ ]+ links=1 loup=0 tmp=probe' <<<"$out" || fail "$what: script not namespaced: $out"
   [ -e /tmp/ns_probe ] && fail "$what: script /tmp not private"
   grep -q 'shadow=n etchostname=n home=n' <<<"$out" || fail "$what: script sees host files: $out"
+  grep -q 'connect=n' <<<"$out" || fail "$what: script connected out: $out"
 }
 
 systemctl show -p ProtectSystem -p RestrictNamespaces -p NoNewPrivileges $U
@@ -142,5 +151,6 @@ if [ "${HD_APPARMOR:-}" = require ]; then
   fi
 fi
 
+kill $lsn 2>/dev/null
 [ $rc = 0 ] && echo "systemd-unit OK"
 exit $rc

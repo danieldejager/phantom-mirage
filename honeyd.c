@@ -267,9 +267,6 @@ usage(void)
 	    "                         x86_64/arm64); see docs/sandboxing.md.\n"
 	    "  --sandbox-allow-write=DIR\n"
 	    "                         Let sandboxed scripts write below DIR.\n"
-	    "  --sandbox-script-net=PATH\n"
-	    "                         With --sandbox-scripts, keep the host network\n"
-	    "                         for scripts whose command line has PATH.\n"
         "  -t ipFile              Dumps currently used DHCP IP addresses to ipFile\n"
 	    "  -i interface           Listen on interface.\n"
 	    "  -p file                Read nmap-style fingerprints from file.\n"
@@ -4070,12 +4067,10 @@ pm_daemon_main(int argc, char *argv[])
 			}
 			break;
 		case 'N':
-			if (sandbox_add_net_script(optarg) == -1) {
-				fprintf(stderr, "--sandbox-script-net: need an "
-				    "absolute path (max 32)\n");
-				exit(EXIT_FAILURE);
-			}
-			break;
+			fprintf(stderr, "--sandbox-script-net has been "
+			    "removed: scripts get no network at all (no outbound "
+			    "connections, no bind); see docs/sandboxing.md\n");
+			exit(EXIT_FAILURE);
 		case 'J':
 			if (strcmp(optarg, "-") != 0)
 				determine_path(origin_path, &optarg);
