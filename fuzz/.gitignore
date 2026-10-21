@@ -1,0 +1,6 @@
+out/
+*.o
+crash-*
+leak-*
+timeout-*
+oom-*

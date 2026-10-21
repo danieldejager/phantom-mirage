@@ -2086,6 +2086,9 @@ tcp_do_options(struct tcp_con *con, struct tcp_hdr *tcp, int isonsyn)
 		} else if (tmp->opt_type == TCP_OPT_EOL)
 			break;
 
+		/* Need the length byte before we can trust it */
+		if (p + 2 > end)
+			break;
 		if (p + tmp->opt_len > end)
 			break;
 
@@ -2214,11 +2217,15 @@ tcp_recv_cb(struct template *tmpl, const struct interface* iface, u_char *pkt, u
 	uint8_t tiflags, flags;
 
 	ip = (struct ip_hdr *)pkt;
-	tcp = (struct tcp_hdr *)(pkt + (ip->ip_hl << 2));
-	data = (u_char *)(pkt + (ip->ip_hl*4) + (tcp->th_off*4));
-	
 	if (pktlen < (ip->ip_hl << 2) + TCP_HDR_LEN)
 		return;
+
+	tcp = (struct tcp_hdr *)(pkt + (ip->ip_hl << 2));
+	/* The data offset must cover the header and stay inside the packet */
+	if (tcp->th_off < (TCP_HDR_LEN >> 2) ||
+	    pktlen < (ip->ip_hl << 2) + (tcp->th_off << 2))
+		return;
+	data = (u_char *)(pkt + (ip->ip_hl*4) + (tcp->th_off*4));
 
 	/* 
 	 * Check if we have a real connection header for this connection, so
@@ -2898,7 +2905,7 @@ icmp_recv_cb(struct template *tmpl, u_char *pkt, u_short pktlen)
 	if (cksum != icmp->icmp_cksum)
 		return;
 
-	dlen = pktlen - IP_HDR_LEN - ICMP_HDR_LEN;
+	dlen = pktlen - (ip->ip_hl << 2) - ICMP_HDR_LEN;
 	dlen -= 4;
 
 	if (dlen < 0)
@@ -3471,6 +3478,10 @@ honeyd_recv_cb(u_char *ag, const struct pcap_pkthdr *pkthdr, const u_char *pkt)
 		struct arp_req *req;
 		struct addr eth_sha;
 		
+		/* Too short to hold an Ethernet header */
+		if (pkthdr->caplen < ETH_HDR_LEN)
+			return;
+
 		/* Mark this packet as being delivered via ethernet */
 		is_etherpkt = 1;
 

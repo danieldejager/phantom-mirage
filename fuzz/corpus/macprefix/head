@@ -1,0 +1,40 @@
+# $Id: nmap-mac-prefixes 28250 2012-03-09 00:45:55Z fyodor $ generated with make-mac-prefixes.pl
+# Original data comes from http://standards.ieee.org/regauth/oui/oui.txt
+# These values are known as Organizationally Unique Identifiers (OUIs)
+# See http://standards.ieee.org/faqs/OUI.html
+# We have added a few unregistered OUIs at the end.
+000000 Xerox
+000001 Xerox
+000002 Xerox
+000003 Xerox
+000004 Xerox
+000005 Xerox
+000006 Xerox
+000007 Xerox
+000008 Xerox
+000009 Xerox
+00000A Omron Tateisi Electronics CO.
+00000B Matrix
+00000C Cisco Systems
+00000D Fibronics
+00000E Fujitsu Limited
+00000F NEXT
+000010 Sytek
+000011 Normerel Systemes
+000012 Information Technology Limited
+000013 Camex
+000014 Netronix
+000015 Datapoint
+000016 DU Pont Pixel Systems
+000017 Tekelec
+000018 Webster Computer
+000019 Applied Dynamics International
+00001A Advanced Micro Devices
+00001B Novell
+00001C Bell Technologies
+00001D Cabletron Systems
+00001E Telsist Industria Electronica
+00001F Telco Systems
+000020 Dataindustrier Diab AB
+000021 Sureman COMP. & Commun.
+000022 Visual Technology

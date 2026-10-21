@@ -560,7 +560,6 @@ get_next_isn(struct template *tmpl, const struct personality *person)
 	min -= (std_dev/8);
 	double temp = rand_normal(0, std_dev);
 
-	ISN_delta = mean;
 	if(person->TCP_ISN_gcd > 9)
 	{
 		temp *= person->TCP_ISN_gcd;
@@ -576,7 +575,11 @@ get_next_isn(struct template *tmpl, const struct personality *person)
 		}
 	}
 
-	ISN_delta += temp;
+	/*
+	 * mean + temp can be negative or exceed 2^32; converting such a
+	 * double to uint32_t is undefined.  Wrap modulo 2^32 explicitly.
+	 */
+	ISN_delta = (uint32_t)(int64_t)fmod(mean + temp, 4294967296.0);
 
 	//Only worry about making things line up for the GCD if it's a significant value
 	if(person->TCP_ISN_gcd > 9)
@@ -1372,8 +1375,15 @@ parse_seq(struct personality *pers, int off, char *line)
 				/* If conversion worked without fail */
 				if(endpt != p2)
 				{
-					pers->tstamphz = pow(2, exponent);
-					//TODO: Watch for integer overflow here
+					/*
+					 * TS is log2 of the timestamp rate in hex.
+					 * nmap-os-db has values up to 0x22 (2^34 Hz,
+					 * i.e. effectively random timestamps) that do
+					 * not fit in an int: clamp to 2^30 Hz.
+					 */
+					if (exponent > 30)
+						exponent = 30;
+					pers->tstamphz = 1 << exponent;
 				}
 				else
 				{
