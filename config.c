@@ -487,8 +487,9 @@ port_encapsulation_free(struct port_encapsulate *tmp)
 	struct port *port = tmp->port;
 
 	TAILQ_REMOVE(&port->pending, tmp, next);
-	event_del(tmp->ev);
-	
+	if (tmp->ev != NULL)
+		event_free(tmp->ev);	/* also deletes it */
+
 	/* Remove the reference to the pending connection */
 	if (tmp->hdr != NULL)
 		tmp->hdr->pending = NULL;

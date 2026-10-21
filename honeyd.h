@@ -204,8 +204,14 @@ struct command {
  * For subsystems, we need to be able to schedule a callback that hands
  * the subsytem a file descriptor to the new connection.  However, Honeyd
  * may not block on this as this might lead to dead lock with the
- * subsystem.  Intead, we encapsulate all the necessary information and
- * hope that the underlying data does not go away.  XXX: that's a bug.
+ * subsystem.  Instead, we encapsulate all the necessary information.
+ *
+ * Lifetime: a port_encapsulate is linked from both its port (pending
+ * list) and its connection (hdr->pending), and owns its event. It is
+ * freed exactly once, via port_encapsulation_free(), by whichever comes
+ * first: the callback firing (cmd_subsystem_connect_cb), the connection
+ * going away (tcp_free/udp_free) or the port going away (port_free).
+ * cmd is embedded in the connection, so it lives at least as long.
  */
 
 struct port_encapsulate {

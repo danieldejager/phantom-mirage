@@ -72,7 +72,10 @@ jobs:
   sanitizers:
     name: Debian 13 / ASan + UBSan
     runs-on: ubuntu-latest
-    container: debian:13
+    container:
+      image: debian:13
+      # NET_ADMIN: the subsystem step routes a honeypot subnet over lo.
+      options: --cap-add=NET_ADMIN
     env:
       # Findings fail the job. Leak detection is off because honeyd keeps
       # its config, personalities and assoc tables for the whole process
@@ -112,11 +115,13 @@ jobs:
         # (ASan must be first in the link order), so rebuild just the
         # shim's objects without sanitizer flags.
         run: |
-          rm -f libhoneyd.so honeyd_overload.lo atomicio.lo fdpass.lo \
-                .libs/honeyd_overload.o .libs/atomicio.o .libs/fdpass.o
+          rm -f libhoneyd.so libhoneyd-*.lo .libs/libhoneyd-*.o
           make CPPFLAGS= LDFLAGS= libhoneyd.so
-          if ldd libhoneyd.so | grep -E 'libasan|libubsan'; then
-            echo "libhoneyd.so still links a sanitizer runtime" >&2; exit 1
+          # ldd misses instrumented objects (undefined __asan_* symbols
+          # with no NEEDED entry), so check the symbol table too.
+          if ldd libhoneyd.so | grep -E 'libasan|libubsan' ||
+             nm -D libhoneyd.so | grep -E ' U __(asan|ubsan)_'; then
+            echo "libhoneyd.so is still sanitizer-instrumented" >&2; exit 1
           fi
 
       - name: Prepare test data
@@ -181,6 +186,52 @@ jobs:
           fi
           grep -q 'rejected ui connection from .* uid 65534' honeyd-ui.log
           if grep -E 'runtime error|ERROR: AddressSanitizer' honeyd-ui.log; then exit 1; fi
+
+      - name: Subsystem connection (sanitized, #22)
+        # A TCP connection to a subsystem port used to crash honeyd
+        # (event_add(NULL) in cmd_subsystem_schedule_connect). Run a tiny
+        # subsystem through the libhoneyd.so shim and connect to it three
+        # times over lo.
+        # After honeyd drops privileges the sanitizer runtime cannot read
+        # /proc/self/environ, so UBSAN_OPTIONS (halt_on_error, suppressions)
+        # do not apply to later reports; the log is grepped instead. The
+        # pool.c/pool.h misaligned-access reports are a separate,
+        # pre-existing finding (#54) and are the only lines excluded.
+        run: |
+          D=$PWD
+          apt-get install -y --no-install-recommends iproute2 python3 >/dev/null
+          install -D -m 755 libhoneyd.so /usr/lib/honeyd/libhoneyd.so
+          gcc -O1 -o /tmp/subsys_echo ci/subsys_echo.c
+          ip route add 10.99.0.0/24 dev lo
+          cat > /tmp/subsys.conf <<'CONF'
+          create default
+          set default default tcp action block
+          create linux
+          set linux personality "Linux 2.6.32"
+          set linux default tcp action reset
+          add linux subsystem "/tmp/subsys_echo"
+          bind 10.99.0.10 linux
+          CONF
+          mkdir -p /var/run
+          timeout 60 ./honeyd -d -f /tmp/subsys.conf -i lo --disable-webserver \
+            -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
+            -0 $D/pf.os -m $D/nmap-mac-prefixes > honeyd-sub.log 2>&1 &
+          for i in $(seq 1 30); do
+            grep -q 'Listen: .*:18080' honeyd-sub.log && break; sleep 0.5
+          done
+          ok=0
+          for i in 1 2 3; do
+            python3 -c "import socket; s=socket.create_connection(('10.99.0.10',18080),timeout=5); assert s.recv(16)==b'hello\\n'" && ok=$((ok+1))
+          done
+          kill -INT %1 || true
+          wait %1 || true
+          cat honeyd-sub.log
+          if grep -E 'runtime error|ERROR: AddressSanitizer' honeyd-sub.log |
+             grep -vE '^pool\.[ch]:[0-9]+:[0-9]+: runtime error: member access within misaligned address'; then
+            exit 1
+          fi
+          test "$ok" = 3
+          test "$(grep -c 'Connection established: .*subsystem' honeyd-sub.log)" = 3
 
       - name: Upload build log
         if: always()
