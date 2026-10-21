@@ -1,159 +1,94 @@
-import sys
-import binascii
-import socket
+#!/usr/bin/env python3
+#
+# NetBIOS name service responder: answers NB queries for this honeypot's
+# allocated name and NBSTAT queries with that name. Network I/O is bytes
+# on stdin/stdout; anything short or malformed gets no reply.
+#
+# argv[2] is a config file whose first line is "<key> <names db path>".
+
 import os
+import socket
+import struct
+import sys
 
 sys.path.append("/usr/share/honeyd/scripts/lib/")
-from names import AddNameAllocation
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "..", "lib"))
+from names import AddNameAllocation  # noqa: E402
 
 
-#Decodes a "First Level" encoded string
-def FirstLevelDecode(encoded_str):
-	decoded = ""
-	i = 0
-	while i + 1 < len(encoded_str):
-		char1 = (ord(encoded_str[i]) - 0x41) << 4
-		char2 = ord(encoded_str[i+1]) - 0x41
-		decoded += chr(char1 + char2)
-		i += 2
-	return decoded
+def FirstLevelDecode(encoded):
+    """Decodes a NetBIOS "first level" encoded name (bytes)."""
+    out = bytearray()
+    for i in range(0, len(encoded) - 1, 2):
+        out.append((((encoded[i] - 0x41) & 0xf) << 4) |
+                   ((encoded[i + 1] - 0x41) & 0xf))
+    return bytes(out)
 
 
-our_IP = ""
-honeyd_home = ""
-if("HONEYD_HOME" in os.environ):
-	honeyd_home = os.getenv("HONEYD_HOME")
-if("HONEYD_TEMPLATE_NAME" in os.environ):
-	our_IP = os.getenv("HONEYD_TEMPLATE_NAME")
-
-#the name of the "names" file is in the file at the second parameter
-fd = open(sys.argv[2])
-names_file = fd.readline().split(" ", 1)[1].rstrip("\n")
-names_path = honeyd_home + names_file
-
-our_name = AddNameAllocation(names_path, our_IP).upper()
-if(our_name == ""):
-	sys.exit(0)
-
-#Parse the NBNS header
-
-#Read Transaction ID -> 2 bytes
-trans_ID = sys.stdin.read(2)
-
-#Read Flags > 2 bytes
-flags = sys.stdin.read(2)
-
-#Number of questions > 2 bytes
-questions = sys.stdin.read(2)
-
-#Number of answers > 2 bytes
-answers = sys.stdin.read(2)
-
-#Number of Authority Resource Records -> 2 bytes
-authorities = sys.stdin.read(2)
-
-#Number of Additional Resource Records -> 2 bytes
-additionals = sys.stdin.read(2)
+def parse(data):
+    """Returns (trans_id, name_start, encoded_name, decoded, qtype) or None."""
+    if len(data) < 13:
+        return None
+    trans_id = data[0:2]
+    questions, answers = struct.unpack("!HH", data[4:8])
+    if questions == 0 or answers > 0:
+        return None
+    if data[12:13] != b"\x20":
+        return None
+    end = data.find(b"\x00", 13)
+    if end == -1 or len(data) < end + 1 + 4:
+        return None
+    encoded = data[13:end + 1]          # includes the terminating NUL
+    decoded = FirstLevelDecode(encoded[:-1]).strip(b"\x00").strip()
+    qtype = data[end + 1:end + 3]
+    return trans_id, data[12:13], encoded, decoded, qtype
 
 
-#We only respond to questions. Throw anything else out
-if (int(binascii.hexlify(questions)) <= 0) or (int(binascii.hexlify(answers)) > 0):
-	sys.exit(0)
+def respond(data, our_name, our_ip):
+    parsed = parse(data)
+    if parsed is None:
+        return b""
+    trans_id, name_start, encoded, name, qtype = parsed
+    if qtype == b"\x00\x20":            # forward (NB) query
+        if name != our_name:
+            return b""
+        return (trans_id + b"\x85\x80" + b"\x00\x00" + b"\x00\x01" +
+                b"\x00\x00" + b"\x00\x00" + name_start + encoded +
+                b"\x00\x20" + b"\x00\x01" +     # NB, IN
+                b"\x00\x03\xf4\x80" +           # TTL 3 days
+                b"\x00\x06" + b"\x00\x00" + socket.inet_aton(our_ip))
+    if qtype == b"\x00\x21":            # NBSTAT
+        nb = our_name[:15]
+        return (trans_id + b"\x84\x00" + b"\x00\x00" + b"\x00\x01" +
+                b"\x00\x00" + b"\x00\x00" + name_start + encoded +
+                b"\x00\x21" + b"\x00\x01" + b"\x00\x00\x00\x00" +
+                struct.pack("!H", 65) + b"\x01" +
+                nb + b"\x20" * (15 - len(nb)) + b"\x00" +
+                b"\x04\x00" + b"\x00" * 46)
+    return b""
 
 
-#Parse the Question
-
-#The first byte has to be x20
-name_start = sys.stdin.read(1)
-if name_start != '\x20':
-	sys.exit(0)
-
-#Netbios name
-#	First level encoded
-i = 'a'
-name = ""
-while i != '\x00':
-	i = sys.stdin.read(1)
-	name += i
-
-original_name = name
-name = FirstLevelDecode(name)
-name = name.strip("\0")
-name = name.strip()
-
-#Type
-query_type = sys.stdin.read(2)
-
-#class
-query_class = sys.stdin.read(2)
+def main():
+    honeyd_home = os.getenv("HONEYD_HOME", "")
+    our_ip = os.getenv("HONEYD_TEMPLATE_NAME", "")
+    with open(sys.argv[2]) as fd:
+        names_file = fd.readline().split(" ", 1)[1].rstrip("\n")
+    our_name = AddNameAllocation(honeyd_home + names_file, our_ip).upper()
+    if our_name == "":
+        return
+    try:
+        socket.inet_aton(our_ip)
+    except OSError:
+        return
+    # UDP: one datagram per write; stdin may stay open, so do not wait
+    # for EOF.
+    reply = respond(os.read(0, 65535),
+                    our_name.encode("ascii", "ignore"), our_ip)
+    if reply:
+        sys.stdout.buffer.write(reply)
+        sys.stdout.buffer.flush()
 
 
-#If this is a forward request
-if query_type == '\x00\x20':
-	#Only repond if it was our name they wanted
-	if(our_name != name):
-		sys.exit(0)
-		
-	#Begin forging a response
-	reponse_packet = trans_ID
-	#flags
-	reponse_packet += '\x85\x80'
-	#number of questions
-	reponse_packet += '\x00\x00'
-	#number of answers
-	reponse_packet += '\x00\x01'
-	#authority RRs
-	reponse_packet += '\x00\x00'
-	#additional RRs
-	reponse_packet += '\x00\x00'
-	#netbios name (parroted back)
-	reponse_packet += name_start + original_name
-	#type == NB
-	reponse_packet += '\x00\x20'
-	#class == IN
-	reponse_packet += '\x00\x01'
-	#TTL = 3 days
-	reponse_packet += '\x00\x03\xf4\x80'
-	#data length = 6
-	reponse_packet += '\x00\x06'
-	#flags
-	reponse_packet += '\x00\x00'
-	#Our address
-	reponse_packet += socket.inet_aton(our_IP)
-	sys.stdout.write(reponse_packet)
-
-#If this is a reverse request
-elif query_type == '\x00\x21':
-	#Begin forging a response
-	reponse_packet = trans_ID
-	#flags
-	reponse_packet += '\x84\x00'
-	#number of questions
-	reponse_packet += '\x00\x00'
-	#number of answers
-	reponse_packet += '\x00\x01'
-	#authority RRs
-	reponse_packet += '\x00\x00'
-	#additional RRs
-	reponse_packet += '\x00\x00'	
-	#netbios name (parroted back)
-	reponse_packet += name_start + original_name
-	#Type == NBSTAT
-	reponse_packet += '\x00\x21'
-	#class == IN
-	reponse_packet += '\x00\x01'
-	#TTL == 0
-	reponse_packet += '\x00\x00\x00\x00'
-	#Data Length
-	name_len = 65
-	reponse_packet += '\x00' + chr(name_len)
-	#Number of names == 1
-	reponse_packet += '\x01'
-	#Name (ascii) (16 bytes)
-	reponse_packet += our_name + ('\x20' * (15-len(our_name))) + '\x00'
-	#name flags
-	reponse_packet += '\x04\x00'
-	#Empty fields at end (46 bytes)
-	reponse_packet += '\x00' * 46
-	sys.stdout.write(reponse_packet)
-
+if __name__ == "__main__":
+    main()

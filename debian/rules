@@ -136,7 +136,6 @@ binary-arch: build install
 	dh_installman -a
 #	dh_undocumented -a
 	dh_installchangelogs -a
-	dh_pysupport -a $(CURDIR)/debian/tmp/usr/share/honeyd/webserver
 	dh_link -a
 	dh_strip -a
 	dh_compress -a

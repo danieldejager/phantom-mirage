@@ -1,70 +1,68 @@
+#!/usr/bin/env python3
+#
+# mDNS responder: answers A queries for <allocated name>.local with this
+# honeypot's address. Network I/O is bytes on stdin/stdout; malformed or
+# truncated queries get no reply.
+#
+# argv[2] is a config file whose first line is "<key> <names db path>".
+
 import os
-import sys
 import socket
-import struct
-import binascii
+import sys
 
-from pprint import pprint
-
+here = os.path.dirname(os.path.abspath(__file__))
 sys.path.append("/usr/share/honeyd/scripts/lib/")
-from names import AddNameAllocation
-
-import dns
-
-
-# TODO read in name from config file
-honeypotIp = os.getenv("HONEYD_TEMPLATE_NAME")
-
-honeyd_home = ""
-if("HONEYD_HOME" in os.environ):
-	honeyd_home = os.getenv("HONEYD_HOME")
-
-fd = open(sys.argv[2])
-names_file = fd.readline().split(" ", 1)[1].rstrip("\n")
-names_path = honeyd_home + names_file
-
-our_name = AddNameAllocation(names_path, honeypotIp).upper()
-if(our_name == ""):
-	sys.stderr.write("Unable to get mdns name")
-	sys.exit(0)
-hostname = our_name + ".LOCAL"
+sys.path.append(os.path.join(here, "..", "..", "lib"))
+sys.path.insert(0, here)
+from names import AddNameAllocation  # noqa: E402
+import dns  # noqa: E402
 
 
-def reply(requestPacket):
-	replyPacket = dns.DNSHeader()
-	replyPacket.transactionID = requestPacket.transactionID
-	replyPacket.flags = int("8400", 16)
-	
-	rr = dns.DNSResourceRecord()
-	rr.name = hostname
-	rr.type = 1
-	rr.dataclass = int("8001", 16)
-	rr.ttl = 120
-	rr.rdlength = 4
-	rr.rdata = socket.inet_aton(honeypotIp)
-
-	replyPacket.answers.append(rr)
-
-	replyPacket.writePacket(sys.stdout)
-
-
-packet = dns.DNSHeader()
-packet.readPacket(sys.stdin)
-
-# Only interested if this is a query
-if (packet.qr != dns.QR_QUERY):
-	sys.exit()
-
-# Only interested if there are questions
-if (packet.qdcount == 0):
-	sys.exit()
+def respond(data, hostname, ip):
+    packet = dns.DNSHeader()
+    try:
+        packet.readPacket(data)
+    except dns.Truncated:
+        return b""
+    if packet.qr != dns.QR_QUERY or packet.qdcount == 0:
+        return b""
+    for question in packet.questions:
+        if question.qname.upper() == hostname:
+            reply = dns.DNSHeader()
+            reply.transactionID = packet.transactionID
+            reply.flags = 0x8400
+            rr = dns.DNSResourceRecord()
+            rr.name = hostname
+            rr.type = 1
+            rr.dataclass = 0x8001
+            rr.ttl = 120
+            rr.rdata = socket.inet_aton(ip)
+            reply.answers.append(rr)
+            return reply.packedString()
+    return b""
 
 
-#pprint(vars(packet), sys.stderr)
-for question in packet.questions:
-	#pprint(vars(question), sys.stderr)
-	
-	if (question.qname.upper() == hostname):
-		
-		reply(packet)
+def main():
+    ip = os.getenv("HONEYD_TEMPLATE_NAME", "")
+    honeyd_home = os.getenv("HONEYD_HOME", "")
+    with open(sys.argv[2]) as fd:
+        names_file = fd.readline().split(" ", 1)[1].rstrip("\n")
+    our_name = AddNameAllocation(honeyd_home + names_file, ip).upper()
+    if our_name == "":
+        sys.stderr.write("Unable to get mdns name\n")
+        return
+    try:
+        socket.inet_aton(ip)
+    except OSError:
+        return
+    hostname = our_name.encode("ascii", "ignore") + b".LOCAL"
+    # UDP: one datagram per write; stdin may stay open, so do not wait
+    # for EOF.
+    reply = respond(os.read(0, 65535), hostname, ip)
+    if reply:
+        sys.stdout.buffer.write(reply)
+        sys.stdout.buffer.flush()
 
+
+if __name__ == "__main__":
+    main()

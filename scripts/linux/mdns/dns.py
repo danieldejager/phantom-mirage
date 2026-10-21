@@ -1,16 +1,15 @@
-import sys
+# Minimal DNS message parsing/writing for the mDNS honeypot (bytes).
 import struct
-import binascii
 
 # From RFC1035, meant to be & with m_flags
-BITMASK_QR = 1 << 7
-BITMASK_OPCODE = 0xF << 3
-BITMASK_AA = 1 << 2
-BITMASK_TC = 1 << 1
-BITMASK_RD = 1 << 0
+BITMASK_QR = 1 << 15
+BITMASK_OPCODE = 0xF << 11
+BITMASK_AA = 1 << 10
+BITMASK_TC = 1 << 9
+BITMASK_RD = 1 << 8
 
-BITMASK_RA = 1 << 15
-BITMASK_RCODE = 0x7 << 12
+BITMASK_RA = 1 << 7
+BITMASK_RCODE = 0xF
 
 QR_QUERY = 0
 QR_RESPONSE = 1
@@ -25,112 +24,108 @@ RCODE_SERVER_FAILURE = 2
 RCODE_NAME_ERROR = 3
 RCODE_REFUSED = 4
 
+
+class Truncated(Exception):
+    pass
+
+
 class DNSHeader(object):
-	def __init__(self):
-		self.qdcount = 0
-		self.ancount = 0
-		self.nscount = 0
-		self.arcount = 0
-		self.questions = []
-		self.answers = []
-	
-	@property
-	def flags(self):
-		return self._flags
+    def __init__(self):
+        self.transactionID = 0
+        self.flags = 0
+        self.qdcount = 0
+        self.ancount = 0
+        self.nscount = 0
+        self.arcount = 0
+        self.questions = []
+        self.answers = []
 
-	@flags.setter
-	def flags(self, value):
-		self._flags = value
-	
-	@property
-	def qr(self):
-		return int(self._flags & BITMASK_QR != 0)
+    @property
+    def qr(self):
+        return int(self.flags & BITMASK_QR != 0)
 
-	@property
-	def opcode(self):
-		return int(self._flags & BITMASK_OPCODE)
+    @property
+    def opcode(self):
+        return (self.flags & BITMASK_OPCODE) >> 11
 
-	@property
-	def aa(self):
-		return int(self._flags & BITMASK_AA != 0)
+    @property
+    def aa(self):
+        return int(self.flags & BITMASK_AA != 0)
 
-	@property
-	def tc(self):
-		return int(self._flags & BITMASK_TC != 0)
-	
-	@property
-	def rd(self):
-		return int(self._flags & BITMASK_RD != 0)
-	
-	@property
-	def ra(self):
-		return int(self._flags & BITMASK_RA != 0)
-	
-	@property
-	def rcode(self):
-		return int(self._flags & BITMASK_RCODE)
-	
+    @property
+    def tc(self):
+        return int(self.flags & BITMASK_TC != 0)
 
-	def readPacket(self, stream):
-		self.transactionID, self.flags, self.qdcount, self.ancount, self.nscount, self.arcount = struct.unpack('!HHHHHH', stream.read(12))
+    @property
+    def rd(self):
+        return int(self.flags & BITMASK_RD != 0)
 
-		# Extract the question section
-		for i in range(0,self.qdcount):
-			question = DNSQuestion()
-			
-			labelLength = 1
-		
-			local = 0
-			while (labelLength != 0):
-				labelLength = ord(stream.read(1))
-				if (labelLength > 0):
-					if (local > 0):
-						question.qname += "."
-					question.qname += stream.read(labelLength)
-				local += 1
-			
-			question.qtype = stream.read(2)
-			question.qclass = stream.read(2)
-			self.questions.append(question)
+    @property
+    def ra(self):
+        return int(self.flags & BITMASK_RA != 0)
 
-	def writePacket(self, stream):
-		self.qdcount = len(self.questions)
-		self.ancount = len(self.answers)
-		stream.write(struct.pack('!HHHHHH', self.transactionID, self.flags, self.qdcount, self.ancount, self.nscount, self.arcount))
-		for answer in self.answers:
-			stream.write(answer.packedString())
-		
+    @property
+    def rcode(self):
+        return self.flags & BITMASK_RCODE
+
+    def readPacket(self, data):
+        """Parses a DNS query from bytes; raises Truncated if short."""
+        if len(data) < 12:
+            raise Truncated()
+        (self.transactionID, self.flags, self.qdcount, self.ancount,
+         self.nscount, self.arcount) = struct.unpack("!HHHHHH", data[:12])
+        pos = 12
+        for _ in range(self.qdcount):
+            question = DNSQuestion()
+            labels = []
+            while True:
+                if pos >= len(data):
+                    raise Truncated()
+                n = data[pos]
+                pos += 1
+                if n == 0:
+                    break
+                if n & 0xc0 or pos + n > len(data):   # no compression here
+                    raise Truncated()
+                labels.append(data[pos:pos + n])
+                pos += n
+            if pos + 4 > len(data):
+                raise Truncated()
+            question.qname = b".".join(labels)
+            question.qtype = data[pos:pos + 2]
+            question.qclass = data[pos + 2:pos + 4]
+            pos += 4
+            self.questions.append(question)
+
+    def packedString(self):
+        self.qdcount = 0
+        self.ancount = len(self.answers)
+        return struct.pack("!HHHHHH", self.transactionID, self.flags,
+                           self.qdcount, self.ancount, self.nscount,
+                           self.arcount) + b"".join(
+                               a.packedString() for a in self.answers)
+
 
 class DNSQuestion:
-	def __init__(self):
-		self.qname = ""
-		self.qtype = ""
-		self.qclass = ""
+    def __init__(self):
+        self.qname = b""
+        self.qtype = b""
+        self.qclass = b""
+
 
 class DNSResourceRecord:
-	def __init(self):
-		self.name = ""
-		self.type = 0
-		self.dataclass = 0
-		self.ttl = 0
-		self.rdlength = 0
-		self.rdata = ""
+    def __init__(self):
+        self.name = b""
+        self.type = 0
+        self.dataclass = 0
+        self.ttl = 0
+        self.rdata = b""
 
-	def packedString(self):
-		returnString = ""
-
-		locals = self.name.split(".")
-		for local in locals:
-			returnString += struct.pack('!B', len(local))
-			returnString += struct.pack('!' + str(len(local)) + 's', local)
-		returnString += struct.pack('!B', 0)
-
-		returnString += struct.pack('!H', self.type)
-		returnString += struct.pack('!H', self.dataclass)
-		returnString += struct.pack('!I', self.ttl)
-		returnString += struct.pack('!H', self.rdlength)
-		returnString += struct.pack('!' + str(self.rdlength) + 's', self.rdata)
-
-		return returnString
-		
-
+    def packedString(self):
+        out = b""
+        for label in self.name.split(b"."):
+            out += struct.pack("!B", len(label)) + label
+        out += b"\x00"
+        out += struct.pack("!HHIH", self.type, self.dataclass, self.ttl,
+                           len(self.rdata))
+        return out + self.rdata

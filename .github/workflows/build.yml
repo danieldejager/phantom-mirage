@@ -298,6 +298,12 @@ jobs:
           python3 ci/test_webserver.py
           ci/python_service.sh
 
+      - name: Python 3 service scripts under scripts/ (#36)
+        # Canned SMB/TDS/MySQL/NBNS/mDNS requests over stdin/stdout get a
+        # sane reply; non-UTF-8 bytes, NULs, truncated and random packets
+        # must not crash, hang or traceback.
+        run: python3 ci/test_scripts.py
+
       - name: Privilege hardening + script sandbox (sanitized, #16)
         # Default: honeyd and every script child run with all IDs 65534,
         # no capabilities (incl. bounding/ambient), no_new_privs.
