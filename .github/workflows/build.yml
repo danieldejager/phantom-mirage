@@ -58,7 +58,7 @@ jobs:
             -0 $D/pf.os -m $D/nmap-mac-prefixes
           for b in honeydctl honeydstats hsniff; do test -x ./$b; done
 
-      - name: make install + run from the installed tree (#36)
+      - name: "make install + run from the installed tree (#36)"
         # make install needs no Python (#36) and must not touch $HOME.
         run: |
           set -x
@@ -333,6 +333,30 @@ jobs:
           echo "### --sandbox-scripts" >> "$GITHUB_STEP_SUMMARY"
           run sandbox --sandbox-scripts --sandbox-allow-write=/tmp/hdsb/rw
 
+      - name: "regress/ suite under Python 3 (harness gate; results KNOWN FAILING, #36)"
+        # The golden files predate this port and the output is not
+        # deterministic on Linux lo (see regress/IMPORTANT_NOTES.txt), so
+        # test mismatches (exit 3) are reported, not gated. The step fails
+        # only if the Python 3 harness itself breaks.
+        shell: bash
+        run: |
+          apt-get install -y --no-install-recommends python3-dpkt diffutils >/dev/null
+          cd regress
+          echo "### regress/ (Python 3) — known failing, informational" >> "$GITHUB_STEP_SUMMARY"
+          bad=0
+          for t in general.py detect.py routing.py; do
+            set +e; timeout -k 10 300 python3 "$t" > "../regress-${t%.py}.log" 2>&1; rc=$?; set -e
+            cat "../regress-${t%.py}.log"
+            case $rc in
+              0) r="all match" ;;
+              3) r="mismatch (known failing)" ;;
+              *) r="HARNESS ERROR rc=$rc"; bad=1 ;;
+            esac
+            echo "- \`$t\`: $r — $(grep -E '^  (OK|FAILED)' "../regress-${t%.py}.log" | tr -d ' ')" >> "$GITHUB_STEP_SUMMARY"
+          done
+          if grep -E 'ERROR: AddressSanitizer' ../regress-*.log; then bad=1; fi
+          exit $bad
+
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -343,6 +367,7 @@ jobs:
             config.log
             events.jsonl
             honeyd.log
+            regress-*.log
           if-no-files-found: ignore
 
   docker:

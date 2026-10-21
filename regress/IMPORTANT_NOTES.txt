@@ -1,1 +1,23 @@
 Note to future devs: these regression tests currently fail with mismatched output. Some of the failures have been caused by recent honeyd changes, but it's possible these are all old and have been failing for a long time before we started changing things. Basically, these need to be rewritten before they can be used again. - PherricOxide
+
+Python 3 port (#36)
+-------------------
+regress.py now runs on Python 3 with only the standard library plus
+python3-dpkt (raw IP socket to send, AF_PACKET on lo to capture,
+`ip route` for the test networks); dnet_compat.py stands in for the old
+libdnet bindings. Run with `sudo make -C regress test`.
+
+The suite is still KNOWN FAILING and is NOT a gate in CI:
+  * The *.output.* golden files are Python 2 dpkt repr() strings; the
+    port prints an explicit, dpkt-version-independent field list instead.
+  * Output is not deterministic run to run, so the goldens cannot simply
+    be regenerated: reply IP IDs and ISNs vary despite -R 1, and on Linux
+    honeyd's pcap on lo sees every probe twice (outgoing and incoming
+    copy), so it answers twice and the replies race.
+Making this reliable needs a capture/inject path that doesn't double
+packets (e.g. a veth pair or a tun device) and seeding all of honeyd's
+randomness from -R.  CI runs the suite and only fails if the harness
+itself breaks (exit status other than 0 or 3).
+
+nmap.py is not ported: it needs an nmap.prints file that is no longer in
+the tree and BSD's lo0, and is no longer part of `make test`.

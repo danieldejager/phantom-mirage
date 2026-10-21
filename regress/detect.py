@@ -8,7 +8,7 @@ import sys
 import getopt
 import regress
 import time
-import dnet
+import dnet_compat as dnet
 from dpkt.ip import IP
 from dpkt.icmp import ICMP
 from dpkt.tcp import TCP
@@ -123,7 +123,7 @@ class DetectSFSRClose(regress.Test):
 
 # Main
 def usage():
-    print "Usage: %s [-dg]" % sys.argv[0]
+    print("Usage: %s [-dg]" % sys.argv[0])
 
 try:
     opts, args = getopt.getopt(sys.argv[1:],"dg", ["debug", "generate"])
@@ -135,9 +135,9 @@ debug = 0
 generate = 0
 for o, a in opts:
     if o in ("-d", "--debug"):
-	    debug = 1
+            debug = 1
     if o in ("-g", "--generate"):
-	    generate = 1
+            generate = 1
     if o in ("-h", "--help"):
             usage()
             sys.exit(1)
