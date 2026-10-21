@@ -80,8 +80,8 @@ logs `internal webserver disabled` and keeps running; `--disable-webserver`
 turns it off. `ci/test_webserver.py` unit-tests the module and the
 sanitizer job fetches the page from a running honeyd.
 
-## Not ported yet
+## honeydstats filter helpers
 
-- `pydataprocessing.c` and `pydatahoneyd.c` (the honeydstats filter
-  helpers) compile against Python 3 and pass `honeyd -T`, but nothing else
-  uses them yet. Map filters must return `[[bytes key, bytes value], ...]`.
+`pydataprocessing.c` and `pydatahoneyd.c` were ported to Python 3 in #77.
+They compile with `--with-python` and pass `honeyd -T`. Map filters must
+return `[[bytes key, bytes value], ...]`.
