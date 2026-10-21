@@ -1,5 +1,0 @@
-route entry 10.0.0.1 network 10.0.0.0/16
-route 10.0.0.1 link 10.0.0.0/24
-route 10.0.0.1 add net 10.2.0.0/16 10.2.0.1 latency 55ms loss 0.1 bandwidth 56Mbps
-route 10.2.0.1 link 10.2.0.0/24
-route 10.0.0.1 add net 10.3.0.0/16 tunnel 1.2.3.4 5.6.7.8
