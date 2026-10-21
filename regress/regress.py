@@ -1,31 +1,70 @@
-#!/usr/bin/env python
+#
+# Honeyd regression test harness (Python 3, #36).
 #
 # Copyright (c) 2004 Niels Provos <provos@citi.umich.edu>
 # All rights reserved.
 #
-# Honeyd Regression Framework Class
+# Needs root (raw sockets, routes), python3-dpkt and iproute2.  Packets
+# are sent with a raw IP socket to two test networks routed over lo
+# (192.0.2.0/24 and 192.18.0.0/15); honeyd answers on lo; the replies
+# are captured with an AF_PACKET socket and written in a stable text
+# format that is compared with the *.output.* golden files.
 #
 import os
-import sys
-import getopt
-import popen2
-import time
-import fcntl
-import string
 import re
+import select
+import signal
+import socket
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+
 import dpkt
-import pcap
-import dnet
-import tempfile # Note, we use mkstemp which is only available in 2.3
-import filecmp
+
+ETH_P_ALL = 0x0003
+PACKET_OUTGOING = 4
+NETS = (("192.0.2.0", 24), ("192.18.0.0", 15))
+
+
+def _in_net(addr, net):
+    a = struct.unpack("!I", addr)[0]
+    n = struct.unpack("!I", socket.inet_aton(net[0]))[0]
+    mask = (0xffffffff << (32 - net[1])) & 0xffffffff
+    return (a & mask) == (n & mask)
+
+
+def describe(obj):
+    """Version-independent description of a dpkt layer (the Python 2
+    harness used repr(), which changed between dpkt releases)."""
+    if isinstance(obj, (bytes, bytearray)):
+        return repr(bytes(obj))
+    if isinstance(obj, dpkt.icmp.ICMP):
+        inner = obj.data
+        if isinstance(inner, dpkt.icmp.ICMP.Echo):
+            inner = "Echo(id=%d, seq=%d, data=%r)" % (inner.id, inner.seq,
+                                                      bytes(inner.data))
+        else:
+            inner = describe(inner)
+        return "ICMP(type=%d, code=%d, sum=%d, data=%s)" % (
+            obj.type, obj.code, obj.sum, inner)
+    if isinstance(obj, dpkt.tcp.TCP):
+        return ("TCP(sport=%d, dport=%d, seq=%d, ack=%d, flags=0x%02x, "
+                "win=%d, sum=%d, opts=%r, data=%r)" % (
+                    obj.sport, obj.dport, obj.seq, obj.ack, obj.flags,
+                    obj.win, obj.sum, bytes(obj.opts), bytes(obj.data)))
+    if isinstance(obj, dpkt.udp.UDP):
+        return "UDP(sport=%d, dport=%d, sum=%d, data=%r)" % (
+            obj.sport, obj.dport, obj.sum, bytes(obj.data))
+    return "%s(%r)" % (type(obj).__name__, bytes(obj))
+
 
 class Test:
     def __init__(self):
-        # Precheck
         self.name = "<Unknown>"
         self.expect = None
         self.packets = []
-
         self.Setup()
 
     def Expect(self):
@@ -35,425 +74,186 @@ class Test:
         return self.name
 
     def Send(self):
-        ip = dnet.ip()
-
+        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
         for pkt in self.packets:
-            data = str(pkt)
-            data = dnet.ip_checksum(data)
-            ip.send(data)
+            # dpkt fills in the IP and transport checksums when sum == 0
+            data = bytes(pkt)
+            s.sendto(data, (socket.inet_ntoa(pkt.dst), 0))
             time.sleep(0.10)
+        s.close()
+
 
 class regress:
     def __init__(self, name, cmd, config, debug=0):
         self.testname = name
         self.debug = debug
-        self.config = os.getcwd() + "/" + config
+        self.config = os.path.join(os.getcwd(), config)
         self.cmd = cmd
-	self.oktests  = 0
-	self.runtests = 0
+        self.oktests = 0
+        self.runtests = 0
         self.generate = 0
-        self.pidfile  = '/var/run/honeyd.pid'
-        self.interface = self.find_loopback()
-        try:
-            os.stat(self.cmd)
-	except OSError:
-            print >>sys.stderr, 'Cannot find honeyd program "%s" ' % self.cmd
-	    sys.exit(1)
-
-        # XXX - we might need to add other configuration file options in here,
-        # in order to avoid it using installed configuration files
-        # (in Debian under /etc/honeypot/)
-        self.command = ('%s --disable-webserver --disable-update -R 1 -d '
-                        '-i %s -f %s 192.18.0.0/15') % (
-            self.cmd, self.interface, '%s')
-	try:
-            os.stat(self.config)
-	except OSError:
-            print >>sys.stderr, (
-                'Configuration file "%s" does not exist, aborting.' %
-                self.config )
-	    sys.exit(1)
-        # Test the configuration file
-        if self.testconfig(self.cmd, self.config) != 0:
-            print >>sys.stderr, 'Cannot use file "%s", aborting,' % self.config
+        self.interface = "lo"
+        self.honeyd = None
+        if not os.path.exists(self.cmd):
+            sys.stderr.write('Cannot find honeyd program "%s"\n' % self.cmd)
             sys.exit(1)
-            
-        self.regexps = [ [re.compile(r'\['), r'\['],
-                         [re.compile(r'\('), r'\('],
-                         [re.compile(r'\.'), r'\.'],
-                         [re.compile(r'\]'), r'\]'],
-                         [re.compile(r'\)'), r'\)'],
-                         [re.compile(r'\*'), r'.*'],
-                         [re.compile(r'\?'), r'.'],
-                         [re.compile(r'\s+'), r'\s+']
-                         ]
+        top = os.path.abspath(os.path.join(os.path.dirname(self.cmd)))
+        # Use the source tree's data files, not installed ones
+        self.args = [self.cmd, "--disable-webserver", "-R", "1", "-d",
+                     "-i", self.interface,
+                     "-p", os.path.join(top, "nmap-os-db"),
+                     "-x", os.path.join(top, "xprobe2.conf"),
+                     "-a", os.path.join(top, "nmap.assoc"),
+                     "-0", os.path.join(top, "pf.os"),
+                     "-m", os.path.join(top, "nmap-mac-prefixes")]
+        if not os.path.exists(self.config):
+            sys.stderr.write('Configuration file "%s" does not exist, '
+                             'aborting.\n' % self.config)
+            sys.exit(1)
+        if self.testconfig() != 0:
+            sys.stderr.write('Cannot use file "%s", aborting.\n' % self.config)
+            sys.exit(1)
         if self.VerifyRoute() != 0:
-	    print >>sys.stderr, 'There was an error adding the route'
+            sys.stderr.write("There was an error adding the route\n")
+            sys.exit(1)
+        sys.stderr.write('Testing "%s" behavior:\n' % self.testname)
 
-        print >>sys.stderr, 'Testing "%s" behavior:' % self.testname
-
-    def find_cmd(self,cmd):
-    	""" Find the cmd binary of the running system """
-        dirs = [ '/', '/usr/', '/usr/local/', sys.prefix ]
-	for d in dirs:
-		for sd in ('bin', 'sbin'):
-			for name in ('dnet', 'dumbnet'):
-				location = os.path.join(d, sd, cmd)
-				if os.path.exists(location):
-					return location
-        return 0
-
-    def find_loopback(self):
-        """ Find which is the loopback interface in this system, use
-        dnet for that
-        """
-
-        ifs = dnet.intf()
-
-        interfaces = []
-        ifs.loop(lambda x,y: interfaces.append(x), None)
-
-        for intf in interfaces:
-            if intf['flags'] & dnet.INTF_FLAG_LOOPBACK:
-                if self.debug:
-                    print >>sys.stderr, 'Loopback interface: ', intf['name']
-                return intf['name']
-
-        if self.debug:
-            print >>sys.stderr, 'Failed to find loopback interface'
-
-        return None
-
-    def find_running_proc(self, name):
-        # XXX - is this portable enough?
-        file = os.popen("ps -o pid=,command= 2>/dev/null", 'r')
-        # XXX - we only read a line, but there might be more than
-        # one instances there
-        for line in file:
-            res = re.search('\s*(\d+) %s' % name, line)
-            if res:
-                return int(res.group(1))
-        return None
-
-    def AddRoute(self, network, gw):
-        """Verifies that the route points to localhost."""
-        network = dnet.addr(network)
-        gw = dnet.addr(gw)
-
-        router = dnet.route()
-
-        error = 0
-        try:
-            res = router.delete(network)
-        except OSError:
-            if self.debug:
-                print >>sys.stderr, "Cannot remove route: ", network
-
-        try:
-            res = router.add(network, gw)
-        except OSError:
-            if self.debug:
-                print >>sys.stderr, "Cannot add route: ", network
-            error = 1
-
-	if error:
-	    return 1
-	else:
-	    return 0
+    # --- routes over lo -------------------------------------------------
+    def _ip(self, *args):
+        return subprocess.call(["ip", "route"] + list(args),
+                               stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
 
     def VerifyRoute(self):
-        """ Adds the test routes, currently reserved by the RFC:
-            network equiment test network - 192.18.0.0/15 and
-            'test net' network            - 192.0.2.0/24
-        """
-        if self.AddRoute('192.0.2.0/24', '127.0.0.1'):
-            return 1
-        if self.AddRoute('192.18.0.0/15', '127.0.0.1'):
-            return 1
+        for net, bits in NETS:
+            if self._ip("replace", "%s/%d" % (net, bits), "dev", "lo"):
+                return 1
         return 0
-
-    # XXX - what's the method for destructing objects? we should
-    # call this there to cleanup
-    def RemoveRoute(self, network):
-        """Removes the route pointing to localhost."""
-
-        network = dnet.addr(network)
-        router = dnet.route()
-
-        error = 0
-        try:
-            res = router.delete(network)
-        except OSError:
-            if self.debug:
-                print >>sys.stderr, "Cannot remove route: ", network
-            error = 1
-
-	if error:
-	    return 1
-	else:
-	    return 0
 
     def RemoveAllRoutes(self):
-        """Removes all the routes."""
-        self.RemoveRoute('192.0.2.0/24')
-        self.RemoveRoute('192.18.0.0/15')
+        for net, bits in NETS:
+            self._ip("del", "%s/%d" % (net, bits), "dev", "lo")
 
-    def match(self, got, should):
-	if filecmp.cmp(got,should):
-		return 1
-	else:
-# If we are debugging go finegrain, read the files and compare them
-                if self.debug:
-                    gotr = open(got)
-                    shouldr = open(should)
-                    count = 0
-                    lineg = "start" 
-                    lines = "start"
-                    while len(lineg) and len(lines):
-                        lineg = gotr.readline() 
-                        lines = shouldr.readline()
-                        count +=1
-                        if lineg != lines:
-                            print "Differ on line %d" % count
-                            print "-%s", lines.splitlines()
-                            print "+%s", lineg.splitlines()
-        return 0
-	
-# XX we already use filecmp and compare line by line but this might be
-# useful if we want to have regular expressions in the output files
-#        tcpdump = self.tcpfr.read()
-#        self.tcpdump = []
-#        for line in string.split(tcpdump, '\n'):
-#            if not len(line):
-#                continue
-#            self.tcpdump.append(line)
-#        tcpdumperr = self.tcpfe.read()
-#        self.tcpfr.close()
-#        self.tcpfe.close()
-
-
-    def fail(self):
-        print >>sys.stderr, 'FAILED'
-# XXX - We might not want to fail here, we will count the tests when ok()
-        sys.exit(1)
-
-    def ok(self):
-        """ Print the final result of tests """
-        if self.runtests == self.oktests:
-            print >>sys.stderr, '  OK (%d)' % self.oktests
-            sys.exit(0)
-        else:
-            failed = self.runtests-self.oktests
-            print >>sys.stderr, '  FAILED (%u/%u)' % (failed, self.runtests)
-            sys.exit(1)
-
-    def finish(self):
-	""" Finishes the tests, prints the results and removes the routes """
-	self.RemoveAllRoutes()
-        if not self.generate:
-            self.ok()
-
-    def testconfig(self, cmd, config):
-        command = ('%s --disable-webserver --disable-update --verify-config '
-                   '-i %s -f %s 192.18.0.0/15 >/dev/null 2>&1') % (cmd, self.interface, config)
+    # --- honeyd ---------------------------------------------------------
+    def testconfig(self):
+        cmd = self.args + ["--verify-config", "-f", self.config,
+                           "192.18.0.0/15"]
         if self.debug:
-            print >>sys.stderr, 'Running "%s"' % command
-        errorcode = os.system(command)
+            sys.stderr.write("Running %s\n" % " ".join(cmd))
+        return subprocess.call(cmd, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
 
-        if self.debug and errorcode != 0:
-            print 'Error testing honeyd configuration file returned: ', errorcode
-        return errorcode
-
-
-    def run(self, test):
-        self.stop_honeyd()
-        self.start_pcap()
-        self.start_honeyd(self.config)
-        self.outputfile = test.Expect()
-        print >>sys.stderr, '\tRunning %s: ' % test.Name(),
-        self.runtests +=1
-        sys.stderr.flush()
-
-        # Send all the packets
-        test.Send()
-
-        time.sleep(1)
-        self.stop_honeyd()
-        self.stop_pcap()
-        if not self.generate:
-            if self.compare() == 0:
-                print >>sys.stderr, 'OK'
-                self.oktests += 1
-                # Clean up the temporary file unless debugging
-                if not self.debug:
-                    try:
-                        os.remove(self.dpktfile)
-                    except IOError:
-
-                        print >>sys.stderr, "Expected temporary file %s does not exist" % self.dpktfile
-        else:
-           # We want to use the results we generated instead of comparing them
-           if self.Rename(self.dpktfile, self.outputfile):
-               print >>sys.stderr, "Cannot move over the auto-generated file"
-               sys.exit(1)
-           print >>sys.stderr, "Generated output file '%s'" % self.outputfile
-
-    def Rename(self, src, dst):
-        try:
-            error = 0
-            os.rename(src, dst)
-        except OSError:
-            if self.debug:
-                print >>sys.stderr, "Rename %s -> %s failed" % (src, dst)
-            error = 1
-
-        if not error:
-            return 0
-
-        # Open and copy
-        error = 0
-        try:
-            data = open(src, 'r').read()
-            open(dst, 'w').write(data)
-        except OSError:
-            error = 1
-
-        if error:
-            return 1
-        else:
-            return 0
-
-    def compare(self):
-    	try:
-    		os.stat(self.outputfile)
-	except OSError:
-            print >>sys.stderr, 'Expected results file "%s" not found' % self.outputfile
-            self.fail()
-            return 1
-    	try:
-		os.stat(self.dpktfile)
-	except OSError:
-            print >>sys.stderr, 'We lost the file with the output "%s"!' % self.dpktfile
-            self.fail()
-            return 1
-
-	if os.stat(self.dpktfile).st_size != os.stat(self.outputfile).st_size:
-# Not a direct failure, but worth mentioning
-	    if self.debug:
-	            print >>sys.stderr, 'Results are of different length'
-
- 	if not self.match(self.dpktfile,self.outputfile):
-            if self.debug:
-	  	    print >>sys.stderr, 'Results differ'
-            self.fail()
-            return 1
-
-# If we get here comparison is OK
-        return 0
-
-    def set_nonblock(self, fd):
-        # set it to non-blocking mode
-        flags = fcntl.fcntl (fd, fcntl.F_GETFL, 0)
-        flags = flags | os.O_NONBLOCK
-        fcntl.fcntl (fd, fcntl.F_SETFL, flags)
-
-    def start_honeyd(self, filename):
-        (fw, fr, self.fe) = popen2.popen3(self.command % filename, 0)
-
-        fw.close()
-        fr.close()
-        self.set_nonblock(self.fe.fileno())
+    def start_honeyd(self):
+        cmd = self.args + ["-f", self.config, "192.18.0.0/15"]
+        self.honeyd_log = tempfile.TemporaryFile()
+        self.honeyd = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
+                                       stdout=self.honeyd_log,
+                                       stderr=subprocess.STDOUT)
         time.sleep(2)
 
-    def start_pcap(self):
-	(self.dpktfh, self.dpktfile) = tempfile.mkstemp()
-	if self.debug:
-            print "Starting pcap capture, saving in file", self.dpktfile
-	self.pid_pcap = os.fork()
-	if self.pid_pcap == 0:
-            # Child, reads pcap, outputs to a file in dpkt format
-            pc = 0
-            try:
-		pc = pcap.pcap(self.interface)
-            except:
-                print >>sys.stderr, "Cannot run packet filter, aborting"
-                sys.exit(1)
-            
-            # filter on our dedciated subnets
-            pc.setfilter('net 192.18.0.0/15 and net 192.0.2.0/24') 
-            for ts, pkt in pc:
-                eth = dpkt.ethernet.Ethernet(pkt)
-                ip = eth.data
-                
-                os.write(self.dpktfh, "SRC=" + dnet.ip_ntoa(ip.src) + "\n")
-                os.write(self.dpktfh, "DST=" + dnet.ip_ntoa(ip.dst) + "\n")
-                os.write(self.dpktfh, "ID=%d\n" % ip.id)
-                os.write(self.dpktfh, "TTL=%d\n" % ip.ttl)
-                os.write(self.dpktfh, "DATA=" + `ip.data` + "\n")
-                os.write(self.dpktfh, "\n")
-            exit
-            # Parent returns
-        return 0
-
-        
-    def kill_pid(self, pid):
-        if self.debug:
-            print  >>sys.stderr, "Killing honeyd pid:", pid
-        try:
-            os.kill(int(pid), 2)
-            return 0
-        except OSError:
-            return 1
-
-    def exists_pid(self, pid):
-        # XXX - is this portable enough?
-        file = os.popen("ps -o pid= -p %s" % pid, 'r')
-        pid = file.readline()
-        file.close()
-        if len(pid):
-            return True
-        else:
-            return False
-
     def stop_honeyd(self):
-        pid = 0
+        if self.honeyd is None:
+            return
+        self.honeyd.send_signal(signal.SIGINT)
         try:
-            pid = open(self.pidfile, 'r').read()
-        except IOError:
-	    if self.debug:
-                print  >>sys.stderr, "No honeyd pidfile"
+            self.honeyd.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            self.honeyd.kill()
+            self.honeyd.wait()
+        if self.debug:
+            self.honeyd_log.seek(0)
+            sys.stderr.write(self.honeyd_log.read().decode(errors="replace"))
+        self.honeyd_log.close()
+        self.honeyd = None
 
-        if pid != 0:
-            if self.exists_pid(pid):
-                show_error = self.kill_pid(pid)
-                # XXX that might not be us!
-                try:
-                    self.honeyd = self.fe.read()
-                    if show_error:
-                        print "Failed to kill honeyd: ", self.honeyd
-                        # Close all file descriptors
-                        self.fe.close()
-                except:
-                    if self.debug:
-                        print >>sys.stderr, "Killed an instance of honeyd we did not run"
-                # Clean up the file
-            try:
-                os.remove(self.pidfile)
-            except:
-                print >>sys.stderr, "Cannot remove pidfile"
-                sys.exit(1)
-        else:
-        # Hmmm, me don't have a pid, is there another honeyd running?
-            pid = self.find_running_proc('honeyd')
-            if pid:
-                self.kill_pid(pid)
+    # --- capture --------------------------------------------------------
+    def start_pcap(self):
+        (fd, self.dpktfile) = tempfile.mkstemp()
+        self.capfile = os.fdopen(fd, "w")
+        self.cap = socket.socket(socket.AF_PACKET, socket.SOCK_RAW,
+                                 socket.htons(ETH_P_ALL))
+        self.cap.bind((self.interface, 0))
+        self.cap.setblocking(False)
+
+    def drain_pcap(self, until):
+        while True:
+            left = until - time.time()
+            if left <= 0:
+                return
+            r, _, _ = select.select([self.cap], [], [], left)
+            if not r:
+                return
+            pkt, addr = self.cap.recvfrom(65535)
+            # lo delivers every frame twice (outgoing + host): keep one
+            if addr[2] == PACKET_OUTGOING:
+                continue
+            eth = dpkt.ethernet.Ethernet(pkt)
+            ip = eth.data
+            if not isinstance(ip, dpkt.ip.IP):
+                continue
+            # Same as the old BPF filter: one end in each test network
+            if not ((_in_net(ip.src, NETS[0]) and _in_net(ip.dst, NETS[1])) or
+                    (_in_net(ip.src, NETS[1]) and _in_net(ip.dst, NETS[0]))):
+                continue
+            self.capfile.write("SRC=%s\n" % socket.inet_ntoa(ip.src))
+            self.capfile.write("DST=%s\n" % socket.inet_ntoa(ip.dst))
+            self.capfile.write("ID=%d\n" % ip.id)
+            self.capfile.write("TTL=%d\n" % ip.ttl)
+            self.capfile.write("DATA=%s\n\n" % describe(ip.data))
 
     def stop_pcap(self):
-        time.sleep(1)
-	if self.debug:
-            print "Killing pcap capture, pid:", self.pid_pcap
-        os.kill(self.pid_pcap, 9)
-        time.sleep(1)
+        self.drain_pcap(time.time() + 1)
+        self.cap.close()
+        self.capfile.close()
+        os.chmod(self.dpktfile, 0o644)
 
-    def usage():
-         print "Usage: %s [-d]" % sys.argv[0]
+    # --- running --------------------------------------------------------
+    def run(self, test):
+        self.start_pcap()
+        self.start_honeyd()
+        self.drain_pcap(time.time() + 0.1)
+        self.outputfile = test.Expect()
+        sys.stderr.write("\tRunning %s: " % test.Name())
+        sys.stderr.flush()
+        self.runtests += 1
+
+        test.Send()
+        self.drain_pcap(time.time() + 1)
+        self.stop_honeyd()
+        self.stop_pcap()
+
+        if self.generate:
+            os.replace(self.dpktfile, self.outputfile)
+            sys.stderr.write("Generated output file '%s'\n" % self.outputfile)
+            return
+        if self.compare():
+            sys.stderr.write("OK\n")
+            self.oktests += 1
+            if not self.debug:
+                os.remove(self.dpktfile)
+        else:
+            sys.stderr.write("FAILED (got %s, expected %s)\n" %
+                             (self.dpktfile, self.outputfile))
+            subprocess.call(["diff", "-u", self.outputfile, self.dpktfile],
+                            stdout=sys.stderr)
+
+    def compare(self):
+        if not os.path.exists(self.outputfile):
+            sys.stderr.write('Expected results file "%s" not found\n' %
+                             self.outputfile)
+            return False
+        with open(self.outputfile) as a, open(self.dpktfile) as b:
+            return a.read() == b.read()
+
+    def finish(self):
+        self.RemoveAllRoutes()
+        if self.generate:
+            return
+        if self.runtests == self.oktests:
+            sys.stderr.write("  OK (%d)\n" % self.oktests)
+            sys.exit(0)
+        sys.stderr.write("  FAILED (%u/%u)\n" %
+                         (self.runtests - self.oktests, self.runtests))
+        # 3 = output mismatch (known failing, see IMPORTANT_NOTES.txt);
+        # a crashed harness exits 1 via the uncaught exception.
+        sys.exit(3)
