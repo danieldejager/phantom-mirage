@@ -140,7 +140,6 @@ ethernetcode_index(struct ethertree *etherroot, struct ethernetcode *code)
 
 void ethernetcode_init(FILE *in_file){
 	char currentLine[300];
-	char currentChar;
 	struct ethernetcode *currentCode;
 	struct ethernetcode *codes;
 	int counter = 0;
@@ -167,56 +166,52 @@ void ethernetcode_init(FILE *in_file){
 		exit(EXIT_FAILURE);
 	}
 	rewind(in_file);
-	do{
-		memset (currentLine,'\0',300);
-		if(fgets( currentLine, 300, in_file )==NULL)
-		{
-
-		}
-		counter++;
-	}while(currentLine[0] == '#');
 	SPLAY_INIT(&etherroot);
-		do{
-		char routerID[20];
+	while (fgets(currentLine, sizeof(currentLine), in_file) != NULL) {
 		char routerCompany[80];
-		int i;
-		for(i = 0; i < 20; i++)		{
-			currentChar = currentLine[i];
-			if(currentChar != ' '){
-					routerID[i] = currentChar;
-				}else{
-					routerID[i] = '\0';
-					break;
-				}
-		}
-		int j;
-		int companyNameStart = 0;
-		int firstSpaceFound = 0;
-		for(j = 0; j < 300; j++){
-			currentChar = currentLine[j];
-			if(currentChar >=65 && currentChar <= 90){
-				currentChar = currentChar + 32;
-		    }
-			if(companyNameStart > 0){
-			routerCompany[j-companyNameStart] = currentChar;
-			}
-			if(currentChar == ' ' && firstSpaceFound == 0){
-				firstSpaceFound = 1;
-				companyNameStart = j+1;
-			}
-			if(currentLine[j] == '\0' || currentLine[j] == '\n'){
-				routerCompany[j-companyNameStart] = '\0';
-				break;
-			}
+		char *p, *end;
+		size_t len;
+		int truncated_line;
 
+		/* An over-long line is truncated; discard the remainder so it
+		 * is not parsed as a separate entry. */
+		len = strlen(currentLine);
+		truncated_line = len > 0 && currentLine[len - 1] != '\n' &&
+		    !feof(in_file);
+		if (truncated_line) {
+			int c;
+			while ((c = fgetc(in_file)) != EOF && c != '\n')
+				;
 		}
-		prefix = 0;
-		sscanf(routerID, "%x", &prefix);
+		currentLine[strcspn(currentLine, "\r\n")] = '\0';
+
+		if (currentLine[0] == '#' || currentLine[0] == '\0')
+			continue;
+		if (counter >= numOfLine)
+			break;
+
+		/* "<hex prefix> <vendor name>" */
+		prefix = (uint32_t)strtoul(currentLine, &end, 16);
+		if (end == currentLine || *end != ' ')
+			continue;
+		p = end + 1;
+
+		/* Lower-case and bound the vendor name; longer names are
+		 * truncated to fit. */
+		for (len = 0; p[len] != '\0' && len < sizeof(routerCompany) - 1;
+		    len++)
+			routerCompany[len] = tolower((unsigned char)p[len]);
+		routerCompany[len] = '\0';
+
 		currentCode->prefix = prefix;
-		currentCode->vendor = routerCompany;
+		if ((currentCode->vendor = strdup(routerCompany)) == NULL) {
+			syslog(LOG_ERR, "%s: strdup", __func__);
+			exit(EXIT_FAILURE);
+		}
 		ethernetcode_index(&etherroot, currentCode);
 		++currentCode;
-	}while (fgets( currentLine, 300, in_file ) != NULL);
+		counter++;
+	}
 	fclose(in_file);
 }
 
