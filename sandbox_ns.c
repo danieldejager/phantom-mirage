@@ -96,6 +96,41 @@ ns_write(const char *path, const char *buf)
 	return (ok ? 0 : -1);
 }
 
+/*
+ * Under the shipped AppArmor profile (debian/apparmor) the launcher may
+ * create user namespaces; its scripts must not. Have the kernel stack the
+ * "phantom-mirage-script" profile on the next exec (allowed under
+ * no_new_privs, unlike a plain profile change). Inherited by the fork
+ * that execs the script. Fails closed: 0 if not confined by pm-script-ns,
+ * -1 if confined and the stack could not be requested.
+ */
+static int
+ns_apparmor_stack(void)
+{
+	static const char *cur[] = { "/proc/self/attr/apparmor/current",
+	    "/proc/self/attr/current", NULL };
+	static const char *exe[] = { "/proc/self/attr/apparmor/exec",
+	    "/proc/self/attr/exec", NULL };
+	char label[256];
+	int fd, i, n = -1;
+
+	for (i = 0; cur[i] != NULL && n < 0; i++)
+		if ((fd = open(cur[i], O_RDONLY | O_CLOEXEC)) != -1) {
+			n = read(fd, label, sizeof(label) - 1);
+			close(fd);
+		}
+	if (n <= 0)
+		return (0);	/* no AppArmor */
+	label[n] = '\0';
+	if (strncmp(label, "pm-script-ns", 12) != 0 ||
+	    (label[12] != ' ' && label[12] != '\n' && label[12] != '\0'))
+		return (0);	/* not under our profile */
+	for (i = 0; exe[i] != NULL; i++)
+		if (ns_write(exe[i], "stack phantom-mirage-script") == 0)
+			return (0);
+	return (-1);
+}
+
 static void
 ns_mirror_exit(int status)
 {
@@ -120,6 +155,11 @@ ns_run(struct ns_req *req, char *strs, int fd_io, int fd_err, int have_ns)
 	struct rlimit rl;
 
 	prctl(PR_SET_PDEATHSIG, SIGKILL);
+	if (ns_apparmor_stack() == -1) {
+		syslog(LOG_ERR, "sandbox: cannot stack the AppArmor profile "
+		    "phantom-mirage-script for %s: %m; not running it", strs);
+		_exit(EXIT_FAILURE);
+	}
 	argv = calloc(req->argc + 1, sizeof(char *));
 	envp = calloc(req->envc + 1, sizeof(char *));
 	if (argv == NULL || envp == NULL)

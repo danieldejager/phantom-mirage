@@ -9,9 +9,10 @@
 # Landlock (--sandbox-daemon) keep it away from namespaces.
 #
 # Scripts are exec'd with the "phantom-mirage-script" profile STACKED on
-# this one (px -> &...): stacking is what AppArmor allows under
-# no_new_privs, and the stack is the intersection, so scripts get neither
-# "userns" nor any capability. Local additions (e.g. scripts outside
+# this one: before the exec the launcher writes "stack phantom-mirage-script"
+# to /proc/self/attr/apparmor/exec (and refuses to run the script if that
+# fails). Stacking is what AppArmor allows under no_new_privs, and a stack
+# is the intersection, so scripts get neither "userns" nor any capability. Local additions (e.g. scripts outside
 # /etc/phantom-mirage and /usr/share/phantom-mirage):
 #   /etc/apparmor.d/local/usr.lib.phantom-mirage.pm-script-ns
 #   /etc/apparmor.d/local/phantom-mirage-script
@@ -22,7 +23,7 @@ abi <abi/4.0>,
 include <tunables/global>
 
 # /usr/lib/<multiarch>/phantom-mirage with Debian's libdir
-profile pm-script-ns /usr/lib{,/*}/phantom-mirage/pm-script-ns {
+profile pm-script-ns /usr/lib{,/*}/phantom-mirage/pm-script-ns flags=(attach_disconnected) {
   include <abstractions/base>
 
   # The reason for this profile.
@@ -31,6 +32,8 @@ profile pm-script-ns /usr/lib{,/*}/phantom-mirage/pm-script-ns {
   # Only effective inside the launcher's own user namespace (it has no
   # capabilities in the initial one): private mounts and the hostname.
   capability sys_admin,
+  deny capability dac_override,
+  deny capability dac_read_search,
 
   mount options=(rw, rprivate) -> /,
   mount fstype=tmpfs options=(rw, nosuid, nodev) tmpfs -> /tmp/,
@@ -40,6 +43,9 @@ profile pm-script-ns /usr/lib{,/*}/phantom-mirage/pm-script-ns {
   @{PROC}/@{pid}/uid_map w,
   @{PROC}/@{pid}/gid_map w,
   @{PROC}/@{pid}/setgroups w,
+  @{PROC}/@{pid}/attr/{,apparmor/}current r,
+  @{PROC}/@{pid}/attr/{,apparmor/}exec w,
+  change_profile -> &phantom-mirage-script,
 
   # Requests from the daemon, and the descriptors passed with them.
   unix (send, receive, getattr, getopt, setopt) type=seqpacket,
@@ -49,10 +55,10 @@ profile pm-script-ns /usr/lib{,/*}/phantom-mirage/pm-script-ns {
   signal (send) set=(kill) peer=pm-script-ns,
   signal (send) set=(kill) peer=pm-script-ns//&phantom-mirage-script,
 
-  # Scripts: only through the stacked script profile.
-  /{usr/,}bin/* px -> &phantom-mirage-script,
-  /etc/phantom-mirage/** px -> &phantom-mirage-script,
-  /usr/share/phantom-mirage/** px -> &phantom-mirage-script,
+  # Scripts: exec'd with phantom-mirage-script stacked (see above).
+  /{usr/,}bin/* ix,
+  /etc/phantom-mirage/** ix,
+  /usr/share/phantom-mirage/** ix,
 
   # What a script may do, again (the stack is the intersection).
   include <abstractions/phantom-mirage-script>
@@ -60,13 +66,15 @@ profile pm-script-ns /usr/lib{,/*}/phantom-mirage/pm-script-ns {
   include if exists <local/usr.lib.phantom-mirage.pm-script-ns>
 }
 
-profile phantom-mirage-script {
+profile phantom-mirage-script flags=(attach_disconnected) {
   include <abstractions/base>
   include <abstractions/phantom-mirage-script>
 
   /{usr/,}bin/* ix,
   /etc/phantom-mirage/** ix,
   /usr/share/phantom-mirage/** ix,
+  deny capability dac_override,
+  deny capability dac_read_search,
   signal (receive) peer=pm-script-ns,
   signal peer=pm-script-ns//&phantom-mirage-script,
 
