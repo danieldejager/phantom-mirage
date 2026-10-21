@@ -51,6 +51,8 @@ jobs:
         # scripts/lib/init.py, so it is left out until issue #36.
         run: |
           D=$PWD
+          # honeyd refuses to start without its compiled-in data dir.
+          mkdir -p /usr/share/honeyd
           ./honeyd --version
           ./honeyd --verify-config -f $D/ci/smoke.conf -i lo --disable-webserver \
             -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
