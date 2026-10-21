@@ -53,6 +53,7 @@
 #include <netdb.h>
 #ifdef HAVE_TIME_H
 #include <time.h>
+#include <unistd.h>
 #endif
 
 #undef timeout_pending
@@ -228,6 +229,29 @@ honeyd_logtcpflags(int flags)
 static FILE *json_fp;
 static char *json_path;
 static int json_failed;		/* a write error was already reported */
+uint64_t honeyd_json_connections;
+static char *json_sensor;	/* sensor_id, --sensor-id or hostname (#30) */
+
+void
+honeyd_json_set_sensor(const char *id)
+{
+	free(json_sensor);
+	json_sensor = id != NULL ? strdup(id) : NULL;
+}
+
+static const char *
+json_sensor_id(void)
+{
+	char host[256];
+
+	if (json_sensor == NULL || *json_sensor == '\0') {
+		if (gethostname(host, sizeof(host)) == -1)
+			strlcpy(host, "unknown", sizeof(host));
+		host[sizeof(host) - 1] = '\0';
+		honeyd_json_set_sensor(host);
+	}
+	return (json_sensor != NULL ? json_sensor : "unknown");
+}
 
 static void
 json_str(FILE *out, const char *s)
@@ -358,6 +382,7 @@ json_common(FILE *out, const char *event, int proto, const struct tuple *hdr)
 	json_time(out);
 	json_kv_int(out, "v", JSONLOG_SCHEMA);
 	json_kv_str(out, "event", event);
+	json_kv_str(out, "sensor_id", json_sensor_id());
 
 	switch (proto) {
 	case IP_PROTO_TCP:  strlcpy(protoname, "tcp", sizeof(protoname)); break;
@@ -598,6 +623,7 @@ honeyd_log_flownew(FILE *fp, int proto, const struct tuple *hdr)
 {
 	char *tuple, *logtime, *protoname;
 
+	honeyd_json_connections++;
 	json_log_flow("connection.start", proto, hdr);
 
 	if (fp == NULL)
@@ -626,4 +652,21 @@ honeyd_log_flowend(FILE *fp, int proto, const struct tuple *hdr)
 	protoname = honeyd_logproto(proto);
 	fprintf(fp, "%s %s E %s: %d %d\n", logtime, protoname, tuple,
 	    hdr->received, hdr->sent);
+}
+
+/* Periodic liveness event (--heartbeat, #30); no proto/endpoint fields */
+void
+honeyd_json_heartbeat(long uptime, uint64_t pkts_in, uint64_t pkts_out,
+    uint64_t conns)
+{
+	JSON_BEGIN(out, buf, len);
+	json_time(out);
+	json_kv_int(out, "v", JSONLOG_SCHEMA);
+	json_kv_str(out, "event", "heartbeat");
+	json_kv_str(out, "sensor_id", json_sensor_id());
+	json_kv_int(out, "uptime_s", uptime);
+	fprintf(out, ",\"packets_in\":%llu,\"packets_out\":%llu"
+	    ",\"connections\":%llu", (unsigned long long)pkts_in,
+	    (unsigned long long)pkts_out, (unsigned long long)conns);
+	JSON_END(out, buf, len);
 }

@@ -187,6 +187,9 @@ void (*honeyd_delay_callback)(int, short, void *) = honeyd_delay_cb;
 
 static char		*logfile = NULL;	/* Log file names */
 static char		*jsonlogfile = NULL;	/* JSON Lines log, "-" = stdout */
+static long		heartbeat_secs = 0;	/* --heartbeat, 0 = off (#30) */
+static struct timeval	honeyd_start_tv;
+static uint64_t		honeyd_pkts_in, honeyd_pkts_out;
 static char		*servicelog = NULL;
 
 /*
@@ -224,10 +227,22 @@ static struct option honeyd_long_opts[] = {
 	{"fix-webserver-permissions", 0, &honeyd_webserver_fix_permissions, 1},
 	{"mac-address",0,0,1},
 	{"json-log", required_argument, NULL, 'J'},
+	{"sensor-id", required_argument, NULL, 'I'},
+	{"heartbeat", required_argument, NULL, 'H'},
 	{"sandbox-scripts", 0, &honeyd_sandbox_scripts, 1},
 	{"sandbox-allow-write", required_argument, NULL, 'S'},
 	{0, 0, 0, 0}
 };
+
+static void
+honeyd_heartbeat_cb(evutil_socket_t fd, short which, void *arg)
+{
+	struct timeval now;
+
+	gettimeofday(&now, NULL);
+	honeyd_json_heartbeat(now.tv_sec - honeyd_start_tv.tv_sec,
+	    honeyd_pkts_in, honeyd_pkts_out, honeyd_json_connections);
+}
 
 void
 usage(void)
@@ -241,6 +256,8 @@ usage(void)
 	    "  -s logfile             Logs service status output to logfile.\n"
 	    "  --json-log=FILE        Also write JSON Lines events to FILE\n"
 	    "                         (\"-\" for stdout); see docs/json-log.md.\n"
+	    "  --sensor-id=STR        sensor_id in JSON events (default hostname).\n"
+	    "  --heartbeat=SECONDS    Write a JSON heartbeat event every SECONDS.\n"
 	    "  --sandbox-scripts      Run scripts and subsystems under Landlock +\n"
 	    "                         seccomp (Linux); see docs/sandboxing.md.\n"
 	    "  --sandbox-allow-write=DIR\n"
@@ -1023,6 +1040,7 @@ honeyd_ip_send(u_char *pkt, u_int iplen, struct spoof spoof)
 	struct addr addr, src;
 
 	print_spoof("honeyd_ip_send", spoof);
+	honeyd_pkts_out++;
 
 	if (iplen > HONEYD_MTU) {
 		u_short off = ntohs(ip->ip_off);
@@ -3364,6 +3382,7 @@ honeyd_input(const struct interface *inter, struct ip_hdr *ip, u_short iplen)
 	int delay = 0, flags = 0;
 	struct addr src, addr;
 
+	honeyd_pkts_in++;
 	if (inter->if_ent.intf_flags & INTF_FLAG_LOOPBACK)
 	{
 		/* Override checksum on IP packet to prevent drops */
@@ -3795,6 +3814,19 @@ main(int argc, char *argv[])
 				determine_path(origin_path, &optarg);
 			jsonlogfile = optarg;
 			break;
+		case 'I':
+			honeyd_json_set_sensor(optarg);
+			break;
+		case 'H': {
+			char *end;
+			heartbeat_secs = strtol(optarg, &end, 10);
+			if (*optarg == '\0' || *end != '\0' ||
+			    heartbeat_secs < 0 || heartbeat_secs > 86400) {
+				fprintf(stderr, "bad --heartbeat %s\n", optarg);
+				exit(EXIT_FAILURE);
+			}
+			break;
+		}
 		case 's':
 			determine_path(origin_path, &optarg);
 			servicelog = optarg;
@@ -4137,6 +4169,14 @@ main(int argc, char *argv[])
 	if (jsonlogfile != NULL && honeyd_json_open(jsonlogfile) == -1) {
 		syslog(LOG_ERR, "cannot open JSON log %s", jsonlogfile);
 		exit(EXIT_FAILURE);
+	}
+	gettimeofday(&honeyd_start_tv, NULL);
+	if (heartbeat_secs > 0) {
+		struct timeval tv = { heartbeat_secs, 0 };
+		struct event *hb = event_new(libevent_base, -1, EV_PERSIST,
+		    honeyd_heartbeat_cb, NULL);
+		if (hb == NULL || event_add(hb, &tv) == -1)
+			errx(1, "cannot schedule heartbeat");
 	}
 
 	event_base_dispatch(libevent_base);
