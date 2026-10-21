@@ -1,4 +1,4 @@
-honeyd for Debian
+phantom-mirage for Debian
 -----------------
 
 I've added some of the contributed scripts at 
@@ -8,26 +8,26 @@ However, some of the most complex ones (POP.emulator and issemul8) should
 probably be packaged separately [As a matter of fact issemul8 is packaged
 as 'iisemulator']
 
-Notice also that in order for honeyd to work you will probably need
+Notice also that in order for phantom-mirage to work you will probably need
 a user-space ARP daemon that answers requests for IP addresses
-which have been configured in honeyd. Such a daemon is provided in
-the 'farpd' package. You can also make honeyd work if it's setup
+which have been configured in phantom-mirage. Such a daemon is provided in
+the 'farpd' package. You can also make phantom-mirage work if it's setup
 as the default router on your environment for the networks you want 
 to simulate. The main point being that if you do not configure your
-environment or your honeyd host to have traffic directed to the networks
-you want to setup go through your honeyd host then your honeyd host
+environment or your phantom-mirage host to have traffic directed to the networks
+you want to setup go through your phantom-mirage host then your phantom-mirage host
 will not get hit with any incoming traffic to those networks.
 
-Personality templates are provided under /usr/share/honeyd, and a sample
-configuration file under /usr/share/doc/honeyd/examples.
+Personality templates are provided under /usr/share/phantom-mirage, and a sample
+configuration file under /usr/share/doc/phantom-mirage/examples.
 
-Honeyd is provided with an init.d script but it is not active when 
+Phantom Mirage is provided with an init.d script but it is not active when 
 installed. 
 
 Restrictions
 ------------
 
-Installing honeyd in a restricted environment is recommended.
+Installing phantom-mirage in a restricted environment is recommended.
 This should be done in order to prevent security issues specially when using
 the scripts provided. Notice that the scripts are low-interaction but
 they have _not_ been audited for security vulnerabilities.
@@ -36,21 +36,21 @@ Some steps would include:
 
 1- created a jail for it (using chroot, user mode linux or your preferred 
 software of choice)
-2- run honeyd as a non-root user. The default configuration for honeyd
-in Debian uses the 'honeyd' user.
+2- run phantom-mirage as a non-root user. The default configuration for phantom-mirage
+in Debian uses the 'phantom-mirage' user.
 3- run the scripts as a user with very low privileges. Notice that 
-you can only do this if honeyd runs as root or the user running it has the
+you can only do this if phantom-mirage runs as root or the user running it has the
 CAP_SETUID capability. If running as root this is done by modifying the
-default template provided with honeyd:
+default template provided with phantom-mirage:
 ----------------------------------------------------------------------
 set template uid 65534 gid 65534
 ----------------------------------------------------------------------
 
 If you do run it as a low user you will have to grant it access to the
-log files in order for honeyd to properly work. Otherwise, no logfile
-will get written and honeyd might abort when trying to do so. This is
+log files in order for phantom-mirage to properly work. Otherwise, no logfile
+will get written and phantom-mirage might abort when trying to do so. This is
 usually setup automatically but you might want to review the permissions
-of /var/log/honeypot
+of /var/log/phantom-mirage
 
 Notice that some scripts will write to a log file (in some cases it
 is hardcoded in the script, in other cases it needs to be defined in the
@@ -59,15 +59,15 @@ using it in a honeypot environment and that it will have enough
 privileges to work properly.
 
 Feedback, however, in order to improve this package is encouraged. 
-Please mail honeyd@packages.debian.org, or submit bugs using 'reportbug'
+Please mail ddejager@dandejager.com, or submit bugs using 'reportbug'
 
 Running in a chroot
 -------------------
 
-As described before, it is recommended that you run Honeyd in a
-restricted environment. If you plan to run Honeyd in a chroot environment
+As described before, it is recommended that you run Phantom Mirage in a
+restricted environment. If you plan to run Phantom Mirage in a chroot environment
 you can use the 'makejail' software or just setup a minimal Debian
-system with 'debootstrap' and install Honeyd in it.
+system with 'debootstrap' and install Phantom Mirage in it.
 
 For more information read the Debian Securing Manual, more specifically
 "General chroot and suid paranoia", available at 

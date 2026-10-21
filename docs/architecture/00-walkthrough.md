@@ -1,35 +1,35 @@
-# 00 – How Honeyd works in 10 minutes
+# 00 – How Phantom Mirage works in 10 minutes
 
 This page is the plain-English version of the rest of this folder. It doesn't assume you read C. Every claim here comes from Forge's code-based pages (01 to 07) and `NOTES-for-writers.md`. Follow the links for the evidence and the file and line references (all are to `master` @ `a0f3d64`). Words in *italics* are defined in the [glossary](08-glossary.md).
 
 ## 1. The one-sentence version
 
-Honeyd is one program that pretends to be a whole network of computers. It answers network traffic sent to IP addresses nobody really uses, and makes each fake address look like a real machine with its own operating system, open ports, services, network delay and position behind routers.
+Phantom Mirage is one program that pretends to be a whole network of computers. It answers network traffic sent to IP addresses nobody really uses, and makes each fake address look like a real machine with its own operating system, open ports, services, network delay and position behind routers.
 
-Anything that talks to those addresses is suspicious by definition, because no real user or system has a reason to. That makes Honeyd a *honeypot*: a decoy that gives you early warning of scanning, worms and attackers moving around inside a network.
+Anything that talks to those addresses is suspicious by definition, because no real user or system has a reason to. That makes Phantom Mirage a *honeypot*: a decoy that gives you early warning of scanning, worms and attackers moving around inside a network.
 
 ## 2. The cast
 
 | Part | What it is | In plain words |
 |---|---|---|
-| `honeyd` | The main program (the *daemon*) | Does all the pretending. One process, one *event loop*, no threads. |
+| `phantom-mirage` | The main program (the *daemon*) | Does all the pretending. One process, one *event loop*, no threads. |
 | Config file | Text file passed with `-f` | Describes the fake network: which hosts exist, what they look like, what they run. |
-| `honeydctl` | Small command-line tool | Lets an operator change the fake network while it runs, using the same language as the config file. |
-| Fingerprint files | `nmap-os-db`, `xprobe2.conf`, `nmap.assoc`, `pf.os`, `nmap-mac-prefixes` | Reference data describing how real operating systems and network cards behave, so Honeyd can imitate them. |
+| `phantom-mirage-ctl` | Small command-line tool | Lets an operator change the fake network while it runs, using the same language as the config file. |
+| Fingerprint files | `nmap-os-db`, `xprobe2.conf`, `nmap.assoc`, `pf.os`, `nmap-mac-prefixes` | Reference data describing how real operating systems and network cards behave, so Phantom Mirage can imitate them. |
 | Service scripts | `scripts/` folder | Small shell or Perl programs that act out a service (a web server, a login prompt) for each connection. |
-| *Subsystems* | Real server programs plus `libhoneyd.so` | Lets an actual program (for example an SMTP server) run "inside" a fake host. |
-| `honeydstats` | Separate program | Collects statistics that `honeyd` sends it. Optional. |
+| *Subsystems* | Real server programs plus `libphantom-mirage.so` | Lets an actual program (for example an SMTP server) run "inside" a fake host. |
+| `phantom-mirage-stats` | Separate program | Collects statistics that `phantom-mirage` sends it. Optional. |
 | Logs | `-l` packet log, `-s` service log, syslog | The record of who touched what. This is the security value. |
 
 Diagram: [01-system-context.md](01-system-context.md).
 
-## 3. Getting traffic to Honeyd
+## 3. Getting traffic to Phantom Mirage
 
-Honeyd can only fake what it can see. The network has to deliver packets for the unused addresses to the Honeyd machine. There are three ways:
+Phantom Mirage can only fake what it can see. The network has to deliver packets for the unused addresses to the Phantom Mirage machine. There are three ways:
 
-1. A router sends that address range to the Honeyd box.
+1. A router sends that address range to the Phantom Mirage box.
 2. A helper such as `arpd` claims the addresses on the local network.
-3. Honeyd answers *ARP* itself for fake hosts that have been given a network card address (`set <host> ethernet "dell"`).
+3. Phantom Mirage answers *ARP* itself for fake hosts that have been given a network card address (`set <host> ethernet "dell"`).
 
 This setup happens outside the code, and it's the first thing to get right in any deployment.
 
@@ -41,15 +41,15 @@ In order (details in `NOTES-for-writers.md`, "Startup order"):
 2. **Load the reference data.** Read the operating-system and network-card fingerprint files.
 3. **Open the network.** Start capturing packets on each `-i` interface (*libpcap*) and open a raw socket for sending forged packets (*libdnet*).
 4. **Read the config.** Parse the config file and build the fake network in memory (section 5).
-5. **Open the control socket** `/var/run/honeyd/honeyd.sock` for `honeydctl`.
+5. **Open the control socket** `/run/phantom-mirage/phantom-mirage.sock` for `phantom-mirage-ctl`.
 6. **Give up root.** Switch to the `nobody` user. The already-open capture and send handles keep working.
 7. **Wait for packets** forever in the event loop.
 
-Honeyd needs root (or the Linux raw-network capabilities) only long enough to open the network. That matters for how you run it safely. See [07](07-security-and-modernisation-notes.md).
+Phantom Mirage needs root (or the Linux raw-network capabilities) only long enough to open the network. That matters for how you run it safely. See [07](07-security-and-modernisation-notes.md).
 
 ## 5. The config file builds the fake network
 
-Honeyd's config language is simple. Parsing it *is* building it: each line directly creates or changes something in memory, with no intermediate step. Full mapping in [05-configuration.md](05-configuration.md).
+Phantom Mirage's config language is simple. Parsing it *is* building it: each line directly creates or changes something in memory, with no intermediate step. Full mapping in [05-configuration.md](05-configuration.md).
 
 The key idea is the *template*. A template is a recipe for a kind of host. You then *bind* real IP addresses to it.
 
@@ -79,46 +79,46 @@ What each port can do when traffic arrives:
 | `open` | The port accepts the connection but nothing answers |
 | `closed` / `reset` | The port refuses (TCP reset, or "port unreachable" for UDP) |
 | `filtered` / `block` | Nothing at all; the packet is silently dropped |
-| `proxy` | A real service on another machine, relayed through Honeyd |
+| `proxy` | A real service on another machine, relayed through Phantom Mirage |
 | `internal` | A service written in Python (only if built with Python, which needs Python 2) |
 
 ## 6. Life of a packet
 
-This is the heart of Honeyd. Sequence diagrams for each case are in [04-packet-flow.md](04-packet-flow.md).
+This is the heart of Phantom Mirage. Sequence diagrams for each case are in [04-packet-flow.md](04-packet-flow.md).
 
 **Arriving:**
-1. **Capture.** libpcap hands Honeyd a raw packet. ARP and DHCP replies go to their own handlers. Everything else goes on.
-2. **Which fake host?** Honeyd looks up the destination IP and finds the template bound to it. This happens for every packet. If that template is dynamic, Honeyd checks its conditions, such as the attacker's guessed OS or the time of day, and swaps in the matching template (`template_dynamic()` in config.c). The same address can therefore look different depending on what Honeyd has learned about the sender.
-3. **Simulate the network path.** If routers are configured, Honeyd walks the packet hop by hop through the fake topology. It adds up delay, applies packet loss and counts down the *TTL*. If the TTL runs out, it sends back a "time exceeded" message from the fake router's address, just as a real router would. That's how `traceroute` works against it.
-4. **Wait.** Honeyd sets a timer for the total delay rather than replying instantly, so timings look real.
+1. **Capture.** libpcap hands Phantom Mirage a raw packet. ARP and DHCP replies go to their own handlers. Everything else goes on.
+2. **Which fake host?** Phantom Mirage looks up the destination IP and finds the template bound to it. This happens for every packet. If that template is dynamic, Phantom Mirage checks its conditions, such as the attacker's guessed OS or the time of day, and swaps in the matching template (`template_dynamic()` in config.c). The same address can therefore look different depending on what Phantom Mirage has learned about the sender.
+3. **Simulate the network path.** If routers are configured, Phantom Mirage walks the packet hop by hop through the fake topology. It adds up delay, applies packet loss and counts down the *TTL*. If the TTL runs out, it sends back a "time exceeded" message from the fake router's address, just as a real router would. That's how `traceroute` works against it.
+4. **Wait.** Phantom Mirage sets a timer for the total delay rather than replying instantly, so timings look real.
 5. **Hand to the protocol.** TCP, UDP and ICMP (ping) each have a handler. Other protocols are only logged.
-6. **Look up the port** on the template and apply its action from the table above. For a script, Honeyd starts a new copy of the script for this connection. Attacker data goes to the script's input and the script's output becomes the reply. Connection details reach the script as `HONEYD_*` environment variables, including Honeyd's guess at the attacker's operating system.
+6. **Look up the port** on the template and apply its action from the table above. For a script, Phantom Mirage starts a new copy of the script for this connection. Attacker data goes to the script's input and the script's output becomes the reply. Connection details reach the script as `PHANTOM_MIRAGE_*` environment variables, including Phantom Mirage's guess at the attacker's operating system.
 
 **Replying:**
-1. **Dress it up.** Before a reply leaves, Honeyd adjusts low-level fields (window size, TCP options order, IP ID pattern, sequence numbers, whether "don't fragment" is set) to match the template's *personality*. This is what fools OS-detection tools such as `nmap -O`.
+1. **Dress it up.** Before a reply leaves, Phantom Mirage adjusts low-level fields (window size, TCP options order, IP ID pattern, sequence numbers, whether "don't fragment" is set) to match the template's *personality*. This is what fools OS-detection tools such as `nmap -O`.
 2. **Walk back through the fake routers**, adding delay again on the way out.
 3. **Send** the forged packet with libdnet, either as raw IP or as a full Ethernet frame with the fake network card address.
 
 ## 7. Two kinds of fingerprinting
 
-Honeyd uses fingerprints in both directions, and the two are easy to confuse:
+Phantom Mirage uses fingerprints in both directions, and the two are easy to confuse:
 
 - **Active, outgoing: lying about itself.** It shapes its replies to match an nmap or xprobe2 fingerprint, so scanners report the configured OS. This is the template's *personality*.
 - **Passive, incoming: reading the attacker.** It compares incoming packets against `pf.os` to guess the attacker's OS. Scripts receive this guess, and dynamic templates can change behaviour based on it (for example, "if the source OS is Windows, look like a Windows server").
 
-## 8. Extending Honeyd
+## 8. Extending Phantom Mirage
 
 - **Scripts:** the easy way to fake a service. One process per connection.
-- **Subsystems:** run a real program. `libhoneyd.so` intercepts its network calls (*LD_PRELOAD*) so it thinks it owns the fake host's address.
+- **Subsystems:** run a real program. `libphantom-mirage.so` intercepts its network calls (*LD_PRELOAD*) so it thinks it owns the fake host's address.
 - **Proxy:** pass the connection to a real machine.
 - **Plugins and hooks:** compiled add-ons loaded at startup that can see every packet.
 - **Python:** embedded services and a web UI. This needs Python 2, which modern systems no longer ship.
 
 ## 9. Changing things while it runs
 
-`honeydctl` connects to `/var/run/honeyd/honeyd.sock` and accepts the same statements as the config file. You can add hosts, change ports and list templates live.
+`phantom-mirage-ctl` connects to `/run/phantom-mirage/phantom-mirage.sock` and accepts the same statements as the config file. You can add hosts, change ports and list templates live.
 
-**This is also the biggest operational risk.** Anyone who can connect to that socket can tell Honeyd to run any command when a connection arrives, so access to the socket amounts to code execution on the box. Lock it down. See section 11.
+**This is also the biggest operational risk.** Anyone who can connect to that socket can tell Phantom Mirage to run any command when a connection arrives, so access to the socket amounts to code execution on the box. Lock it down. See section 11.
 
 ## 10. Building it today
 

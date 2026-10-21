@@ -1,6 +1,6 @@
 # 05 – Configuration language
 
-The config file (`-f`) and live `honeydctl` commands share one grammar: `parse.y` (yacc) with tokens from `lex.l` (flex). `config_read()` (config.c:127) feeds the file to `yyparse()`; each grammar action calls straight into config.c / router.c / personality.c to build the structs in [03-data-model.md](03-data-model.md). There is no intermediate AST: parsing *is* construction.
+The config file (`-f`) and live `phantom-mirage-ctl` commands share one grammar: `parse.y` (yacc) with tokens from `lex.l` (flex). `config_read()` (config.c:127) feeds the file to `yyparse()`; each grammar action calls straight into config.c / router.c / personality.c to build the structs in [03-data-model.md](03-data-model.md). There is no intermediate AST: parsing *is* construction.
 
 ## Statement → code → struct
 
@@ -14,7 +14,7 @@ The config file (`-f`) and live `honeydctl` commands share one grammar: `parse.y
 | `broadcast <t> srcport N dstport N time N <action>` (newbcast, :212) – *DataSoft/Nova addition* | `bcast_insert()` config.c:585; timer `bcast_trigger()` :539 | `struct port` in `tmpl->bcasts`, periodic script that emits broadcast UDP |
 | `set <t> default tcp\|udp\|icmp action <action>` (set, :402) | `honeyd_protocol()` | `tmpl->tcp/udp/icmp` |
 | `set <t> personality "<nmap name>"` / `random` (:420) | `personality_find()` personality.c:197, `personality_clone()` | `tmpl->person` |
-| `set <t> ethernet "<vendor or MAC>"` (:426) | `ethernetcode_make_address()` ethernet.c:294, `template_post_arp()` | `tmpl->ethernet_addr`, ARP entry; Honeyd now answers ARP for this host |
+| `set <t> ethernet "<vendor or MAC>"` (:426) | `ethernetcode_make_address()` ethernet.c:294, `template_post_arp()` | `tmpl->ethernet_addr`, ARP entry; Phantom Mirage now answers ARP for this host |
 | `set <t> uptime N`, `droprate in/syn R`, `maxfds N`, `uid N [gid N]` (:450–499) | direct assignment | `tmpl->tv`, `drop_inrate`, `drop_synrate`, `max_nofiles`, `uid/gid` |
 | `set <t> spoof from <ip> [to <ip>]` (:376–392) | direct assignment | `tmpl->spoof` |
 | `bind <ip> <t>` (binding, :275) | `template_clone()` config.c:731 | new template named by IP, `honeypot_instance` set |
@@ -29,7 +29,7 @@ The config file (`-f`) and live `honeydctl` commands share one grammar: `parse.y
 | `route <ip> add net <net> tunnel <src> <dst>` (:569) | `router_add_tunnel()` | `ROUTE_TUNNEL` (GRE) |
 | `route <ip> link <net>` / `unreach <net>` (:582, :595) | `router_add_link()` / `router_add_unreach()` | `ROUTE_LINK` / `ROUTE_UNREACH` |
 | `option <plugin> <key> <value>` (:875) | plugins_config.c | plugin settings |
-| `list template [glob]`, `list subsystem`, `debug …` (ui, :925) | `template_list_glob()` etc. | read-only (meant for honeydctl) |
+| `list template [glob]`, `list subsystem`, `debug …` (ui, :925) | `template_list_glob()` etc. | read-only (meant for phantom-mirage-ctl) |
 
 ### Actions (`action` rule, parse.y:676)
 

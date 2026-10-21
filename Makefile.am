@@ -36,21 +36,21 @@ libhoneyd-atomicio.lo: atomicio.c config.h
 libhoneyd-fdpass.lo: fdpass.c fdpass.h config.h
 	$(LTCOMPILE) -c -o $@ $(srcdir)/fdpass.c
 
-libhoneyd.so: $(LIBHONEYDFILES)
+libphantom-mirage.so: $(LIBHONEYDFILES)
 	$(LIBTOOL) --mode=link $(CC) $(CFLAGS) -o libtmp$@.la \
-		-rpath $(libdir)/honeyd $(LIBHONEYDFILES) $(LIBS) $(LDFLAGS) \
+		-rpath $(libdir)/phantom-mirage $(LIBHONEYDFILES) $(LIBS) $(LDFLAGS) \
 		-module -avoid-version -nostdlib @LIBDL@
 	rm -f libtmp$@.la tmp$@.so* $@
 	cp .libs/libtmp$@.so $@ || cp .libs/libtmp$@ $@
 	rm -f .libs/libtmp$@.*
 
-libhoneyddir = $(libdir)/honeyd
-libhoneyd_DATA = libhoneyd.so
+libhoneyddir = $(libdir)/phantom-mirage
+libhoneyd_DATA = libphantom-mirage.so
 
 
 # Configuration files for Honeyd
-honeyddatadir = $(datadir)/honeyd
-honeydlibdir = $(libdir)/honeyd
+honeyddatadir = $(datadir)/phantom-mirage
+honeydlibdir = $(libdir)/phantom-mirage
 honeydincludedir = $(includedir)/honeyd
 honeyddata_DATA = README nmap.assoc xprobe2.conf nmap-os-db config.sample \
 		config.ethernet pf.os nmap-mac-prefixes
@@ -66,7 +66,7 @@ honeydpluginsdeclare = @PLUGINSDECLARE@
 ##
 ########################################################################
 
-bin_PROGRAMS = honeyd honeydctl honeydstats hsniff
+bin_PROGRAMS = phantom-mirage phantom-mirage-ctl phantom-mirage-stats phantom-mirage-sniff
 honeyddata_PROGRAMS = $(SMTP_BIN) $(PROXY_BIN)
 EXTRA_PROGRAMS = smtp proxy
 
@@ -78,7 +78,7 @@ EXTRA_PROGRAMS = smtp proxy
 pkgincludedir = $(honeydincludedir)
 pkginclude_HEADERS = hooks.h plugins.h plugins_config.h debug.h
 
-honeyd_SOURCES	= honeyd.c command.c parse.y lex.l config.c personality.c sandbox.c sandbox.h \
+phantom_mirage_SOURCES	= honeyd.c command.c parse.y lex.l config.c personality.c sandbox.c sandbox.h \
 	sandbox_daemon.c sandbox_daemon_list.h \
 	util.c ipfrag.c router.c tcp.c udp.c xprobe_assoc.c log.c \
 	fdpass.c atomicio.c subsystem.c hooks.c plugins.c \
@@ -93,43 +93,43 @@ honeyd_SOURCES	= honeyd.c command.c parse.y lex.l config.c personality.c sandbox
 	dhcpclient.c dhcpclient.h rrdtool.c rrdtool.h \
 	histogram.c histogram.h untagging.c untagging.h
 
-honeyd_DEPENDENCIES = @PYEXTEND@ @LIBOBJS@
-honeyd_LDADD = @PYEXTEND@ @LIBOBJS@ @PYTHONLIB@ @EVENTLIB@ @PCAPLIB@ \
+phantom_mirage_DEPENDENCIES = @PYEXTEND@ @LIBOBJS@
+phantom_mirage_LDADD = @PYEXTEND@ @LIBOBJS@ @PYTHONLIB@ @EVENTLIB@ @PCAPLIB@ \
 	@DNETLIB@ @ZLIB@ @PLUGINLIB@ -lm
 
 # Allow plugins to use honeyd's functions:
-honeyd_LDFLAGS = -export-dynamic 
+phantom_mirage_LDFLAGS = -export-dynamic 
 
 # Honeyd stats collector
 #
-honeydstats_SOURCES = honeydstats.c honeydstats.h \
+phantom_mirage_stats_SOURCES = honeydstats.c honeydstats.h \
 	honeydstats_main.c tagging.c tagging.h \
 	stats.c stats.h util.c histogram.c histogram.h analyze.c analyze.h \
 	untagging.c untagging.h filter.c filter.h keycount.c keycount.h
-honeydstats_LDADD = @LIBOBJS@ @DNETLIB@ @EVENTLIB@ @ZLIB@
-honeydstats_CPPFLAGS = -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
+phantom_mirage_stats_LDADD = @LIBOBJS@ @DNETLIB@ @EVENTLIB@ @ZLIB@
+phantom_mirage_stats_CPPFLAGS = -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
 	@EVENTINC@ @DNETINC@ @ZINC@
-honeydstats_CFLAGS = -O0 -Wall
+phantom_mirage_stats_CFLAGS = -O0 -Wall
 
 #
 # Honeyd stats sniffer
 #
 
-hsniff_SOURCES = hsniff.c hsniff.h tagging.c tagging.h \
+phantom_mirage_sniff_SOURCES = hsniff.c hsniff.h tagging.c tagging.h \
 	stats.c stats.h util.c util.h hooks.c hooks.h interface.c interface.h \
 	pfctl_osfp.c pf_osfp.c pfvar.h osfp.c osfp.h network.c network.h
-hsniff_LDADD = @LIBOBJS@ @PCAPLIB@ @DNETLIB@ @EVENTLIB@ @ZLIB@
-hsniff_CPPFLAGS = -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
+phantom_mirage_sniff_LDADD = @LIBOBJS@ @PCAPLIB@ @DNETLIB@ @EVENTLIB@ @ZLIB@
+phantom_mirage_sniff_CPPFLAGS = -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
 	@EVENTINC@ @PCAPINC@ @DNETINC@ @ZINC@
-hsniff_CFLAGS = -O2 -Wall -DPATH_HONEYDDATA="\"$(honeyddatadir)\""
+phantom_mirage_sniff_CFLAGS = -O2 -Wall -DPATH_HONEYDDATA="\"$(honeyddatadir)\""
 
 #
 # Honeyd control application
 #
-honeydctl_SOURCES = honeydctl.c
-honeydctl_LDADD = @LIBOBJS@ @EDITLIB@ @LIBCURSES@
-honeydctl_CPPFLAGS = @EDITINC@
-honeydctl_CFLAGS = -O2 -Wall
+phantom_mirage_ctl_SOURCES = honeydctl.c
+phantom_mirage_ctl_LDADD = @LIBOBJS@ @EDITLIB@ @LIBCURSES@
+phantom_mirage_ctl_CPPFLAGS = @EDITINC@
+phantom_mirage_ctl_CFLAGS = -O2 -Wall
 
 CFLAGS	= -O2 -Wall -g \
 	-DPATH_HONEYDINCLUDE="\"$(honeydincludedir)\"" \
@@ -173,7 +173,7 @@ proxy_CFLAGS = -O2 -Wall
 ##
 ########################################################################
 
-man_MANS = honeyd.8 honeydctl.1
+man_MANS = phantom-mirage.8 phantom-mirage-ctl.1 phantom-mirage-stats.1 phantom-mirage-sniff.1
 
 WEBDIR_FILES = \
 	webserver/htdocs/images/logo.gif webserver/htdocs/images/edit.gif \
@@ -190,7 +190,7 @@ WEBDIR_FILES = \
 
 # TODO: Fix this, half the scripts are missing and this will probably break gzipping
 EXTRA_DIST = $(man_MANS) $(WEBDIR_FILES)		  \
-	acconfig.h $(honeyddata_DATA) LICENSE sha1.c			  \
+	acconfig.h $(honeyddata_DATA) LICENSE NOTICE sha1.c			  \
 	compat/sys/tree.h compat/sys/queue.h compat/err.h compat/sha1.h	  \
 	compat/libdnet/dnet.h compat/getopt.h				  \
 	honeyd_overload.c pyextend.c pyextend.h \

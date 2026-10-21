@@ -72,7 +72,7 @@ static uid_t ui_owner_uid;
 static gid_t ui_allowed_gid;
 static int ui_have_group;
 
-#define PROMPT		"honeydctl> "
+#define PROMPT		"phantom-mirage-ctl> "
 #define WHITESPACE	" \t"
 
 char *strnsep(char **, char *);
@@ -96,7 +96,7 @@ struct ui_command commands[] = {
 	},
 	{
 		"!",
-		"!\t\t runs a Python command in the Honeyd environment\n",
+		"!\t\t runs a Python command in the daemon environment\n",
 		"! <command >",
 		ui_command_python
 	},
@@ -170,7 +170,7 @@ ui_command_python(struct evbuffer *buf, char *line)
 {
 #ifndef HAVE_PYTHON
 	const char *error_python = 
-	    "Error: Honeyd has been compiled without Python support.\n";
+	    "Error: Phantom Mirage has been compiled without Python support.\n";
 	evbuffer_add(buf, error_python, strlen(error_python));
 #else
 	pyextend_run(buf, line);
@@ -306,7 +306,7 @@ ui_greeting(struct uiclient *client)
 	gettimeofday(&tv, NULL);
 	timersub(&tv, &honeyd_uptime, &tv);
 	evbuffer_add_printf(client->outbuf,
-	    "Honeyd %s Management Console\n"
+	    PRODUCT_NAME " %s Management Console (based on Honeyd)\n"
 	    "Copyright (c) 2004 Niels Provos.  All rights reserved.\n"
 	    "See LICENSE for licensing information.\n"
 	    "Up for %ld seconds.\n",
@@ -421,7 +421,7 @@ ui_init(void)
 	int ui_socket;
 	mode_t dir_mode = 0700, sock_mode = 0600, omask;
 	gid_t gid = getegid();
-	const char *group = getenv(UI_GROUP_ENV);
+	const char *group = pm_getenv("UI_GROUP");
 
 	ui_owner_uid = geteuid();
 	if (group != NULL && *group != '\0') {

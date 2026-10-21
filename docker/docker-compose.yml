@@ -1,15 +1,15 @@
-# Example: one honeyd container on a decoy VLAN via macvlan.
+# Example: one phantom-mirage container on a decoy VLAN via macvlan.
 # All values in <...> or marked PLACEHOLDER must be replaced per site.
 #
 #   docker compose -f docker/docker-compose.yml up -d
 #
-# macvlan (not bridge) is required: honeyd must see raw traffic and answer
+# macvlan (not bridge) is required: phantom-mirage must see raw traffic and answer
 # ARP for the decoy addresses. Note the Docker host itself cannot talk to
 # macvlan containers on the same parent interface; test from another host.
 
 services:
-  honeyd:
-    image: honeyd:local            # PLACEHOLDER: your private registry image
+  phantom-mirage:
+    image: phantom-mirage:local            # PLACEHOLDER: your private registry image
     build:
       context: ..
     restart: unless-stopped
@@ -18,9 +18,9 @@ services:
     cap_add:
       - NET_RAW       # pcap capture and raw packet replies
       - NET_ADMIN     # interface / promiscuous mode handling
-      - SETUID        # honeyd drops to nobody after start-up
+      - SETUID        # phantom-mirage drops to nobody after start-up
       - SETGID
-      # Add CHOWN/FOWNER only if you set HONEYD_UI_GROUP (#14).
+      # Add CHOWN/FOWNER only if you set PHANTOM_MIRAGE_UI_GROUP (#14).
     security_opt:
       - no-new-privileges:true
     tmpfs:
@@ -28,10 +28,10 @@ services:
       - /tmp
       - /root/.config
     environment:
-      HONEYD_INTERFACES: eth0
-      HONEYD_JSON_LOG: stdout     # JSON Lines events on stdout (#24)
+      PHANTOM_MIRAGE_INTERFACES: eth0
+      PHANTOM_MIRAGE_JSON_LOG: stdout     # JSON Lines events on stdout (#24)
     volumes:
-      - ./honeyd.conf:/etc/honeyd/honeyd.conf:ro   # PLACEHOLDER: site config
+      - ./phantom-mirage.conf:/etc/phantom-mirage/phantom-mirage.conf:ro   # PLACEHOLDER: site config
     networks:
       decoy-vlan10:
         ipv4_address: 192.0.2.5   # PLACEHOLDER: container's own address

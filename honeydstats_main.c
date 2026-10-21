@@ -95,7 +95,7 @@ struct event_base *libevent_base;
 static int fd_recv;
 static struct evbuffer *evbuf_recv;
 static char *checkpoint_filename = NULL;
-static char *config_filename = "honeydstats.config";
+static char *config_filename = "phantom-mirage-stats.config";
 
 static void
 read_cb(int fd, short what, void *unused)
@@ -156,7 +156,7 @@ void
 usage(void)
 {
 	fprintf(stderr,
-	    "Usage: honeydstats [OPTIONS]\n\n"
+	    "Usage: phantom-mirage-stats [OPTIONS]\n\n"
 	    "where options include:\n"
 	    "  --os_report <filename>      Report os versions to this file.\n"
 	    "  --port_report <filename>    Report port distribution to file.\n"
@@ -247,7 +247,7 @@ main(int argc, char *argv[])
 	orig_argv = argv;
 
 	fprintf(stderr,
-	    "HoneydStats Collector V%s Copyright (c) 2004 Niels Provos\n",
+	    "Phantom Mirage I Stats Collector %s (based on HoneydStats, Copyright (c) 2004 Niels Provos)\n",
 	    VERSION);
 
 	while ((c = getopt_long(argc, argv, "TVdc:r:l:p:f:h?",
@@ -425,7 +425,7 @@ syslog_init(int argc, char *argv[])
 #else
 	options = LOG_PID|LOG_CONS;
 #endif
-	openlog("honeydstats", options, LOG_DAEMON);	
+	openlog("phantom-mirage-stats", options, LOG_DAEMON);	
 
 	/* Create a string containing all the command line
 	 * arguments and pass it to syslog:

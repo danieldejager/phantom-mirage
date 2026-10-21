@@ -1,5 +1,5 @@
 # Process this file with autoconf to produce a configure script.
-AC_INIT([honeyd], [1.7.0])
+AC_INIT([phantom-mirage], [1.7.0])
 AC_CONFIG_SRCDIR(honeyd.c)
 
 AC_CANONICAL_SYSTEM

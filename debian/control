@@ -1,4 +1,4 @@
-Source: honeyd
+Source: phantom-mirage
 Section: net
 Priority: optional
 Maintainer: Daniel de Jager <ddejager@dandejager.com>
@@ -8,17 +8,23 @@ Rules-Requires-Root: no
 Standards-Version: 4.7.0
 Homepage: http://www.honeyd.org
 
-Package: honeyd
+Package: phantom-mirage
 Architecture: any
 Depends: adduser (>= 3.52), ${shlibs:Depends}, ${misc:Depends}
-Recommends: python3, farpd, honeyd-common, rrdtool
+Recommends: python3, farpd, phantom-mirage-common, rrdtool
+Conflicts: honeyd
+Replaces: honeyd
+Provides: honeyd
 Suggests: iisemulator
 Homepage: http://www.honeyd.org
-Description: Small daemon that creates virtual hosts simulating their services and behaviour
- Honeyd is a small daemon that creates virtual hosts on a network. The
+Description: Phantom Mirage I network deception daemon (based on Honeyd)
+ Phantom Mirage I, part of the Phantom deception product range, is based
+ on Honeyd by Niels Provos.
+ .
+ Phantom Mirage is a small daemon that creates virtual hosts on a network. The
  hosts can be configured to run arbitrary services, and their TCP
  personality can be adapted so that they appear to be running certain
- versions of operating systems. Honeyd enables a single host to claim
+ versions of operating systems. Phantom Mirage enables a single host to claim
  multiple addresses on a LAN for network simulation. It is possible to ping
  the virtual machines, or to traceroute them. Any type of service on the
  virtual machine can be simulated according to a simple configuration file.
@@ -36,16 +42,19 @@ Description: Small daemon that creates virtual hosts simulating their services a
      * Simulation of arbitrary routing topologies:
        o Configurable latency and packet loss.
 
-Package: honeyd-common
+Package: phantom-mirage-common
 Architecture: all
-Recommends: honeyd
+Recommends: phantom-mirage
 Depends: ${misc:Depends}
+Conflicts: honeyd-common
+Replaces: honeyd-common
+Provides: honeyd-common
 Homepage: http://www.honeyd.org
-Description: Honeyd's honeypot documentation and scripts
- Honeyd is a small daemon that creates virtual hosts on a network,
+Description: Phantom Mirage I documentation and service scripts (based on Honeyd)
+ Phantom Mirage is a small daemon that creates virtual hosts on a network,
  including OS fingerprinting personality and simulation of services
  that are simulated by scripts.
  .
- This package provides honeyd's documentation and a number of scripts
+ This package provides Phantom Mirage I's documentation and a number of scripts
  useful to simulate services of different UNIX and Windows operating
  systems: smtp, pop3, ftp, telnet, web server, ssh...

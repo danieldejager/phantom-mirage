@@ -1,3 +1,8 @@
+Phantom Mirage I (Debian packages phantom-mirage, phantom-mirage-common) is
+based on Honeyd; it was renamed in 2026 by Daniel de Jager
+<ddejager@dandejager.com>. The original copyright and licence information
+below is unchanged. See also NOTICE.
+
 This package was debianized by 
 Javier Fernandez-Sanguino Pen~a <jfs@computer.org> 
 on Tue, 17 Dec 2002 14:08:06 +0100.

@@ -1,19 +1,19 @@
-# Defaults for honeyd initscript
+# Defaults for phantom-mirage initscript
 
-# Master system-wide honeyd switch. The initscript
+# Master system-wide phantom-mirage switch. The initscript
 # will not run if it is not set to yes.
 RUN="no"
 
 
 # Default options.
-# Interface to listen on (if unset honeyd will select
+# Interface to listen on (if unset phantom-mirage will select
 # an interface himself) 
 # Note: Use only one! if you wish to use
 # more than one use multiple -i in OPTIONS
 INTERFACE=""
 
-# Network Honeyd will listen for. IF this is not set
-# Honeyd will claim _all_ IP addresses set on the configured
+# Network Phantom Mirage will listen for. IF this is not set
+# Phantom Mirage will claim _all_ IP addresses set on the configured
 # interface (which is probably _not_ what you want)
 # This "sane" default will prevent you from doing it.
 NETWORK=10.0.0.0/8
@@ -25,7 +25,7 @@ NETWORK=10.0.0.0/8
 # Other options are available.
 # This is the default since the webserver uses
 # no authentication and could potentially disclose internal
-# information (and provide a remote user to edit honeyd's
+# information (and provide a remote user to edit phantom-mirage's
 # configuration).
 OPTIONS="--disable-webserver"
 
@@ -33,10 +33,10 @@ OPTIONS="--disable-webserver"
 #OPTIONS="--disable-webserver --sandbox-daemon --sandbox-scripts"
  
 # Remove --disable-webserver if you want
-# to start up the web server. You will need to ask honeyd
+# to start up the web server. You will need to ask phantom-mirage
 # to fix the permissions of the document root.
-# NOTE: You will not be able to manipulate honeyd's configuration
-# unless you grant the honeyd user write permission on the 
-# configuration files at /etc/honeypot/
+# NOTE: You will not be able to manipulate phantom-mirage's configuration
+# unless you grant the phantom-mirage user write permission on the 
+# configuration files at /etc/phantom-mirage/
 #OPTIONS="--fix-webserver-permissions"
 

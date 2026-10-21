@@ -2,13 +2,13 @@
 .\" Copyright (c) 2002 Niels Provos <provos@citi.umich.edu>
 .\" Copyright (c) 2013 Datasoft Corp <nova@datasoft.com>
 .\"
-.Dd February 13, 2013
-.Dt HONEYD 8
+.Dd October 22, 2026
+.Dt PHANTOM-MIRAGE 8
 .Sh NAME
-.Nm honeyd
-.Nd Honeypot Daemon
+.Nm phantom-mirage
+.Nd Phantom Mirage I network deception daemon (based on Honeyd)
 .Sh SYNOPSIS
-.Nm honeyd
+.Nm phantom-mirage
 .Op Fl dP
 .Op Fl l Ar logfile
 .Op Fl s Ar servicelog
@@ -39,7 +39,7 @@
 .Op Fl -data-dir
 .Op Ar net ...
 .Sh DESCRIPTION
-.Nm Honeyd
+.Nm
 creates virtual hosts for IP addresses
 matching the specified
 .Ar net .
@@ -51,7 +51,7 @@ and
 will generate an ICMP unreachable port message if
 the configured personality permits that.
 .Pp
-.Nm Honeyd
+.Nm
 enables a single host to claim unused addresses on a LAN for network
 simulation.
 The
@@ -82,14 +82,14 @@ it is possible to integrate virtual honeypots into a production
 network without running
 .Xr arpd 8 .
 Futhermore,
-.Nm Honeyd
+.Nm
 supports acquiring IP addresses via DHCP.
 You can ask a template to be assigned to a DHCP IP address via
 .Bd -literal
   dhcp template on fxp0 [ethernet "<vendor|mac address>"]
 .Ed
 .Pp
-.Nm Honeyd
+.Nm
 exits on an interrupt or termination signal and
 rotates logfiles on SIGUSR1.
 .Pp
@@ -108,7 +108,7 @@ needs to run in polling mode.  This flag enables polling.
 Read 
 .Nm nmap-mac-prefixes. the prefix file located
 in a different location but must be of the same format.
-Example file located in /usr/share/honeyd/nmap-mac-prefixes
+Example file located in /usr/share/phantom-mirage/nmap-mac-prefixes
 .It Fl l Ar logfile
 Log packets and connections to the logfile specified by
 .Ar logfile .
@@ -160,15 +160,15 @@ style fingerprints.
 Read the database for passive fingerprinting.
 The names of the operating systems specified in
 this file are recognized by
-.Nm Honeyd's
+.Nm Ns 's
 parser and can be used for dynamic templates.
 .It Fl u Ar uid
 Set the UID that
-.Nm Honeyd
+.Nm
 is running as.
 .It Fl g Ar gid
 Set the GID that
-.Nm Honeyd
+.Nm
 is running as.
 .It Fl f Ar file
 Read the configuration in
@@ -243,13 +243,13 @@ and
 .Va $date
 is performed when executing the command string or when resolving
 the proxy address.  Additionally, the environment variables
-.Va HONEYD_IP_SRC ,
-.Va HONEYD_IP_DST ,
-.Va HONEYD_DST_PORT ,
-.Va HONEYD_SRC_PORT ,
-.Va HONEYD_PERSONALITY
+.Va PHANTOM_MIRAGE_IP_SRC ,
+.Va PHANTOM_MIRAGE_IP_DST ,
+.Va PHANTOM_MIRAGE_DST_PORT ,
+.Va PHANTOM_MIRAGE_SRC_PORT ,
+.Va PHANTOM_MIRAGE_PERSONALITY
 and
-.Va HONEYD_REMOTE_OS
+.Va PHANTOM_MIRAGE_REMOTE_OS
 are available, too.
 .Pp
 If the
@@ -302,14 +302,14 @@ directive may be used to include other configuration files, for
 example to keep all personality annotations separate from the
 main configuration file.
 .Pp
-All honeyd plugins can be configured via the configuration file.
+All phantom-mirage plugins can be configured via the configuration file.
 Each configuration option goes in one line, indicated by the
 .Va option
 keyword.
 It is followed by three items: the name of the plugin, the name of the
 configuration option, and a value.
 The value can be either an integer, a float, or a character string.
-The options are picked up when honeyd reads the configuration file and
+The options are picked up when phantom-mirage reads the configuration file and
 can then be queried by the plugins.
 .It Fl i Ar interface
 Listen on
@@ -317,7 +317,7 @@ Listen on
 It is possible to specify multiple interfaces.
 .It Fl c Ar hostname:port:username:password
 Using this flag,
-.Nm Honeyd
+.Nm
 functions as a traffic statistic collector.
 Collected statistics get propagated upstream to an aggregator
 running at the specified hostname and port.
@@ -338,7 +338,7 @@ Specifies the port on which the web server should listen.
 .It Fl -webserver-root Ar path
 The path to the document tree of the webserver.
 This is usually
-.Pa {prefix}/shared/honeyd/webserver/htdocs/ .
+.Pa {prefix}/share/phantom-mirage/webserver/htdocs/ .
 .It Fl -rrdtool-path Ar path
 Specifies the path for
 .Xr rrdtool 1 .
@@ -349,18 +349,18 @@ no traffic graphs can be generated.
 Disables the builtin webserver.
 .It Fl -disable-update
 Prevents
-.Nm Honeyd
+.Nm
 from checking if there are any security problems with the current
 version of the application.
 .It Fl -verify-config
 Verifies that
-.Nm Honeyd
+.Nm
 can parse the configuration correctly.
 This does not require any special permissions, although some configurations
 that require direct access to interfaces might fail to validate.
 .It Fl -fix-webserver-permissions
 Changes the ownership of the web server files to the user,
-.Nm Honeyd
+.Nm
 is going to run as.
 .It Fl V|--version
 Print version information and exit.
@@ -436,7 +436,7 @@ the link.
 .Pp
 Unless the link is configured to drop packets between a configurable
 delay threshold,
-.Nm Honeyd
+.Nm
 currently assumes infinite buffer space, so use this option 
 with care.
 .Pp
@@ -462,7 +462,7 @@ External machines can be configured with the following command:
 .Sh SUBSYSTEM VIRTUALIZATION
 Subsystem virtualization allows you to run regular network applications
 under a virtual IP address controlled by
-.Nm honeyd .
+.Nm phantom-mirage .
 The application's network calls are intercepted and virtualized
 to the honeypot that they are configured to.
 As a result, all network calls that subsytem applications make appear
@@ -479,7 +479,7 @@ and are started as a separate process for every bound template.
 Applications started as a 
 .Nm
 subsystem need to be dynamically linked in order to work under
-.Nm Honeyd .
+.Nm .
 .Pp
 It is possible to shared subsystems across different addresses
 if they are created with the
@@ -490,7 +490,7 @@ and may also be used to increase the performance of subsystems
 across addresses.
 .Sh DYNAMIC TEMPLATES
 Dynamic templates give
-.Nm Honeyd
+.Nm
 the ability to change networking behavior based on several
 different conditions:
 .Bl -tag -width operatingxsystemx
@@ -502,7 +502,7 @@ The operating system as determined by passive fingerprinting
 needs to be matched for the template to be activated.
 .It time
 The template is only being used between a certain time interval.
-This allows Honeyd to simulate machines being turned on and off.
+This allows Phantom Mirage to simulate machines being turned on and off.
 .El
 .Pp
 A dynamic template can be created with the following command:
@@ -532,14 +532,14 @@ If it is contacted from IP addresses in the
 network, it behaves like a juniper router.
 .Sh MANAGEMENT CONSOLE
 The
-.Xr honeydctl 1
+.Xr phantom-mirage-ctl 1
 command allows the dynamic configuration of
-.Nm Honeyd
+.Nm
 while it is running; see
-.Xr honeydctl 1
+.Xr phantom-mirage-ctl 1
 for more information.
 .Sh LOGGING
-.Nm Honeyd
+.Nm
 has two different logging modes.
 The syslog facility is used to log connection establishment and
 termination including other relevant packet events.  Most
@@ -569,21 +569,21 @@ data transfered.
 For logging any other information, it is suggested to run
 a separate intrusion detection system.
 .Sh SCRIPTING WITH PYTHON
-.Nm Honeyd
+.Nm
 supports internal service scripts that have been written in Python.
 To improve the performance of these services, 
-.Nm Honeyd 
+.Nm 
 provides an event-driven model.
 The services need to indiciate when they are ready to read and when
 they are ready to write data.
-.Nm Honeyd
+.Nm
 keeps track of state that is provided to the Python scripts on
 every invocation.
 .Pp
 The folowing example uses a Python script to implement a simple
 echo server:
 .Bd -literal
-  import honeyd
+  import phantom-mirage
   import sys
 
   def honeyd_init(data):
@@ -640,40 +640,56 @@ For this topology to work the
 value in the command line has to be
 .Ar 10.0.0.1 10.2.0.0/24 10.2.1.0/24 .
 .Sh FILES
-.Bl -tag -width {prefix}/share/honeyd/xprobe2.conf
-.It Pa /var/run/honeyd.pid
+.Bl -tag -width {prefix}/share/phantom-mirage/xprobe2.conf
+.It Pa /run/phantom-mirage.pid
 The PID of the current daemon.
-.It Pa /var/run/honeyd/honeyd.sock
+.It Pa /run/phantom-mirage/phantom-mirage.sock
 The management console socket used by
-.Xr honeydctl 1 ;
+.Xr phantom-mirage-ctl 1 ;
 root-only by default, see
-.Xr honeydctl 1
+.Xr phantom-mirage-ctl 1
 for
-.Ev HONEYD_UI_GROUP .
-.It Pa {prefix}/lib/honeyd/webserver/
+.Ev PHANTOM_MIRAGE_UI_GROUP .
+.It Pa {prefix}/lib/phantom-mirage/webserver/
 Python modules and web server documents used by the internal webserver.
-.It Pa {prefix}/lib/honeyd/libhoneyd.so
+.It Pa {prefix}/lib/phantom-mirage/libphantom-mirage.so
 A shared library that can be preloaded to virtualize applications within
-.Nm honeyd .
-.It Pa {prefix}/share/honeyd/nmap.assoc
+.Nm phantom-mirage .
+.It Pa {prefix}/share/phantom-mirage/nmap.assoc
 An association file to match
 .Nm xprobe2
 fingerprints against
 .Nm nmap .
-.It Pa {prefix}/share/honeyd/nmap-os-db
+.It Pa {prefix}/share/phantom-mirage/nmap-os-db
 .Nm Nmap
 fingerprints used by
 .Nm
 to impersonate operating system stacks.
-.It Pa {prefix}/share/honeyd/xprobe2.conf
+.It Pa {prefix}/share/phantom-mirage/xprobe2.conf
 .Nm Xprobe
 fingerprints used by
 .Nm
 to impersonsate the ICMP section of operating system stacks.
 .El
 .Sh SEE ALSO
-.Xr honeydctl 1
+.Xr phantom-mirage-ctl 1
 .Xr arpd 8
+.Sh HISTORY
+.Nm
+is part of Phantom Mirage I, a member of the Phantom deception product
+range.
+Phantom Mirage I is based on
+.Em Honeyd
+by Niels Provos (2002\(en2007) and later contributors, and is
+distributed under the GNU General Public License, version 2 or later.
+The program was called
+.Nm honeyd
+before the rename; the
+.Ev HONEYD_*
+environment variables are still accepted but deprecated.
 .Sh AUTHORS
 Niels Provos
 .Aq provos@citi.umich.edu
+.Pp
+Phantom Mirage I packaging and rename: Daniel de Jager
+.Aq ddejager@dandejager.com

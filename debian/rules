@@ -5,7 +5,7 @@
 
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
-D = $(CURDIR)/debian/honeyd
+D = $(CURDIR)/debian/phantom-mirage
 
 %:
 	dh $@
@@ -18,31 +18,31 @@ override_dh_auto_configure:
 
 override_dh_auto_install:
 	dh_auto_install --destdir=$(D)
-	# Relocate configuration files to /etc/honeypot, keep symlinks
-	mkdir -p $(D)/etc/honeypot
+	# Relocate configuration files to /etc/phantom-mirage, keep symlinks
+	mkdir -p $(D)/etc/phantom-mirage
 	for f in nmap.assoc nmap-mac-prefixes nmap-os-db xprobe2.conf pf.os; do \
-	  mv $(D)/usr/share/honeyd/$$f $(D)/etc/honeypot/$$f; \
-	  ln -s /etc/honeypot/$$f $(D)/usr/share/honeyd/$$f; \
+	  mv $(D)/usr/share/phantom-mirage/$$f $(D)/etc/phantom-mirage/$$f; \
+	  ln -s /etc/phantom-mirage/$$f $(D)/usr/share/phantom-mirage/$$f; \
 	done
-	mv $(D)/usr/share/honeyd/config.sample $(D)/etc/honeypot/honeyd.conf
-	rm -f $(D)/usr/share/honeyd/README
+	mv $(D)/usr/share/phantom-mirage/config.sample $(D)/etc/phantom-mirage/phantom-mirage.conf
+	rm -f $(D)/usr/share/phantom-mirage/README
 	find $(D) -name '*.la' -delete
 
 override_dh_installdocs:
-	dh_installdocs -phoneyd
-	dh_installdocs -phoneyd-common doc/*.html
+	dh_installdocs -pphantom-mirage
+	dh_installdocs -pphantom-mirage-common doc/*.html
 
 override_dh_installexamples:
-	dh_installexamples -phoneyd debian/config.localhost sample-config/*
+	dh_installexamples -pphantom-mirage debian/config.localhost sample-config/*
 
 override_dh_installinit:
-	dh_installinit -phoneyd --no-start --no-stop-on-upgrade
+	dh_installinit -pphantom-mirage --no-start --no-stop-on-upgrade
 
 override_dh_installlogrotate:
-	dh_installlogrotate -phoneyd
+	dh_installlogrotate -pphantom-mirage
 
 override_dh_auto_test:
 	# Upstream regress/ needs root + veth; covered by the CI jobs.
 
 override_dh_installsystemd:
-	dh_installsystemd -phoneyd --no-enable --no-start --no-stop-on-upgrade
+	dh_installsystemd -pphantom-mirage --no-enable --no-start --no-stop-on-upgrade

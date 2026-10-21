@@ -1,6 +1,6 @@
 # Privilege hardening and script sandboxing
 
-honeyd needs root only to open its raw sockets and pcap handles. After
+phantom-mirage needs root only to open its raw sockets and pcap handles. After
 that it drops to `nobody` (or `-u`/`-g`). Every script and subsystem it
 starts is forked, dropped to the template's uid/gid, and exec'd. This page
 describes what happens at those points on Linux (#16).
@@ -13,10 +13,10 @@ and in every script or subsystem child before `exec`.
 | Measure | Effect |
 |---|---|
 | `setgroups(1, {gid})` → `setresgid(g,g,g)` → `setresuid(u,u,u)` | Supplementary groups, then real, effective **and saved** gid, then uid. The order matters: the gid can't be changed once the uid is gone. |
-| `getresuid`/`getresgid` check, plus the existing `setuid(0)` test | honeyd exits unless all three IDs equal the target and root cannot be regained. |
-| Bounding set emptied (`PR_CAPBSET_DROP`), ambient set cleared | Nothing exec'd later can pick up capabilities from file caps. Skipped with a notice if honeyd lacks `CAP_SETPCAP`, e.g. under `docker --cap-drop ALL`. |
-| Inheritable, permitted and effective sets cleared (`capset`), then read back | honeyd exits if any capability remains. |
-| `PR_SET_NO_NEW_PRIVS` | setuid/setgid binaries and file capabilities can't raise privileges for honeyd or anything it execs. A script that relies on a setuid helper, such as an old `ping`, will no longer get root through it. |
+| `getresuid`/`getresgid` check, plus the existing `setuid(0)` test | phantom-mirage exits unless all three IDs equal the target and root cannot be regained. |
+| Bounding set emptied (`PR_CAPBSET_DROP`), ambient set cleared | Nothing exec'd later can pick up capabilities from file caps. Skipped with a notice if phantom-mirage lacks `CAP_SETPCAP`, e.g. under `docker --cap-drop ALL`. |
+| Inheritable, permitted and effective sets cleared (`capset`), then read back | phantom-mirage exits if any capability remains. |
+| `PR_SET_NO_NEW_PRIVS` | setuid/setgid binaries and file capabilities can't raise privileges for phantom-mirage or anything it execs. A script that relies on a setuid helper, such as an old `ping`, will no longer get root through it. |
 
 Expected `/proc/<pid>/status` for the daemon and any script:
 
@@ -29,14 +29,14 @@ CapBnd: 0000000000000000        (non-zero only without CAP_SETPCAP)
 NoNewPrivs: 1
 ```
 
-When honeyd itself has to keep root, it logs "Running with root
+When phantom-mirage itself has to keep root, it logs "Running with root
 privileges". This happens when templates use different uids or gids. Only
 the children are hardened in that case.
 
 ## Opt-in: `--sandbox-scripts`
 
 ```
-honeyd ... --sandbox-scripts [--sandbox-allow-write=/var/lib/honeyd/scripts ...]
+phantom-mirage ... --sandbox-scripts [--sandbox-allow-write=/var/lib/honeyd/scripts ...]
 ```
 
 Each script or subsystem child is restricted just before `exec`, after
@@ -44,7 +44,7 @@ the privilege drop above:
 
 * **Landlock** (kernel 5.13+, best ABI available) builds a filesystem
   allowlist.
-  * Read and execute only: `/usr /bin /sbin /lib* /etc /opt`, honeyd's
+  * Read and execute only: `/usr /bin /sbin /lib* /etc /opt`, phantom-mirage's
     data directory, its working directory, `/dev/{urandom,random,zero}`,
     and each absolute path on the command line (the program and the
     script file).
@@ -76,24 +76,24 @@ depends on the Raspberry Pi kernel's `lsm=` list
 ## Opt-in: `--sandbox-daemon`
 
 ```
-honeyd ... --sandbox-daemon [--sandbox-scripts ...]
+phantom-mirage ... --sandbox-daemon [--sandbox-scripts ...]
 ```
 
 Right after the daemon's privilege drop (or the "Running with root
-privileges" notice), honeyd installs a seccomp **allowlist** for itself
+privileges" notice), phantom-mirage installs a seccomp **allowlist** for itself
 (`sandbox_daemon.c`, list in `sandbox_daemon_list.h`, about 200 calls on
-x86_64). If the filter can't be installed, honeyd exits.
+x86_64). If the filter can't be installed, phantom-mirage exits.
 
 * **What is allowed.** The list covers what the daemon and its children
   used under `strace -f` across the CI suites on an ASan build: smoke,
-  subsystem echo (through the `libhoneyd.so` shim), a shell script port,
-  an `internal` Python 3 service, the status page, honeydctl (including
+  subsystem echo (through the `libphantom-mirage.so` shim), a shell script port,
+  an `internal` Python 3 service, the status page, phantom-mirage-ctl (including
   `!`), SIGHUP/SIGUSR1, `--sandbox-scripts` (Landlock and the stacked
   deny-list), and `regress/` including `nmap.py`. It also includes the
   usual sh, Perl and Python 3 runtime calls (sleep, poll/select, stat
   variants, rename/unlink, pipes, signals and so on).
 * **Children inherit the filter.** seccomp filters can't be removed, so
-  every script and subsystem honeyd forks and execs runs under the same
+  every script and subsystem phantom-mirage forks and execs runs under the same
   allowlist (and, with `--sandbox-scripts`, under the stricter deny-list
   and Landlock on top). That is why the list includes `execve`, `clone`,
   `vfork` and the ID-changing calls the child needs for its own
@@ -105,7 +105,7 @@ x86_64). If the filter can't be installed, honeyd exits.
   Foreign ABIs (i386, x32 on x86_64) kill the process.
 * **What a denial looks like.** The filter returns `SECCOMP_RET_TRAP`:
   * In the daemon (or a forked child that has not exec'd yet) a SIGSYS
-    handler writes `honeyd: sandbox-daemon: denied syscall <nr>` to
+    handler writes `phantom-mirage: sandbox-daemon: denied syscall <nr>` to
     stderr and syslog (`LOG_CRIT`), then the process dies with SIGSYS.
   * An exec'd script or subsystem dies with SIGSYS, and the daemon logs
     `child <pid> killed by SIGSYS (seccomp: denied syscall)`.
@@ -113,23 +113,23 @@ x86_64). If the filter can't be installed, honeyd exits.
     `grep -w <nr> /usr/include/asm/unistd_64.h`. If a legitimate
     service needs it, add it to `sandbox_daemon_list.h`.
 * **Architectures.** x86_64 and arm64 (aarch64). Elsewhere the option
-  makes honeyd exit with "cannot install seccomp filter".
+  makes phantom-mirage exit with "cannot install seccomp filter".
 * On start-up the daemon logs `sandbox-daemon: seccomp allowlist active
   (<n> syscalls)`.
-* **Under systemd** (`debian/honeyd.service`, not enabled by default):
-  add `--sandbox-daemon` to `OPTIONS` in `/etc/default/honeyd`. The unit
+* **Under systemd** (`debian/phantom-mirage.service`, not enabled by default):
+  add `--sandbox-daemon` to `OPTIONS` in `/etc/default/phantom-mirage`. The unit
   sets no `SystemCallFilter`, so this allowlist is the only syscall
   filter. It does not conflict with the unit's other settings:
   * `NoNewPrivileges=yes`: `--sandbox-daemon` sets no_new_privs anyway,
     which an unprivileged seccomp filter requires.
-  * `ProtectSystem=strict` with only `/var/log/honeypot` and `/run`
+  * `ProtectSystem=strict` with only `/var/log/phantom-mirage` and `/run`
     writable: the allowlist is about syscalls, not paths. A write
     elsewhere fails with `EROFS` as usual, with no SIGSYS.
   * `RestrictAddressFamilies=` and `LockPersonality=` are seccomp
     filters systemd installs itself. They stack with ours, and the
     stricter answer wins.
   * The capability bounding set (`CAP_NET_RAW CAP_NET_ADMIN CAP_SETUID
-    CAP_SETGID`) covers what honeyd does before the filter. The filter
+    CAP_SETGID`) covers what phantom-mirage does before the filter. The filter
     is installed after the drop.
 
   CI runs `ci/sandbox_daemon.sh` a second time under `setpriv
@@ -170,7 +170,7 @@ x86_64). If the filter can't be installed, honeyd exits.
 ## CI
 
 * The **ASan + UBSan** job (`Privilege hardening + script sandbox`)
-  runs honeyd twice: with defaults, and with `--sandbox-scripts
+  runs phantom-mirage twice: with defaults, and with `--sandbox-scripts
   --sandbox-allow-write=…`.
   * `ci/check_sandbox.py` checks `/proc/<pid>/status` for the daemon and
     for a live script child: all four Uid/Gid fields 65534, all
@@ -183,10 +183,10 @@ x86_64). If the filter can't be installed, honeyd exits.
     must keep answering before and after the reload.
 * The same job then runs `ci/sandbox_daemon.sh` and the whole
   `regress/` suite (including `nmap.py`) with `--sandbox-daemon`:
-  subsystem, shell script, Python 3 service, status page, honeydctl,
+  subsystem, shell script, Python 3 service, status page, phantom-mirage-ctl,
   SIGHUP/SIGUSR1, with and without `--sandbox-scripts`. Any
   `denied syscall` or `killed by SIGSYS` line fails the step, and a
-  negative check (a `mount` call through honeydctl `!`) must be logged
+  negative check (a `mount` call through phantom-mirage-ctl `!`) must be logged
   and must kill the daemon.
 * The **Docker** job checks the same `/proc/1/status` fields in the
   image (the bounding set is exempt: no `CAP_SETPCAP`), and that

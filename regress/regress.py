@@ -1,12 +1,12 @@
 #
-# Honeyd regression test harness (Python 3, #36).
+# Phantom Mirage regression test harness (Python 3, #36).
 #
 # Copyright (c) 2004 Niels Provos <provos@citi.umich.edu>
 # All rights reserved.
 #
 # Needs root (AF_PACKET, veth, routes), python3-dpkt and iproute2.
 # Probes from 192.0.2.0/24 to 192.18.0.0/15 are injected on a veth pair
-# (see HD_IF/TEST_IF below), honeyd's replies are captured on the same
+# (see HD_IF/TEST_IF below), phantom-mirage's replies are captured on the same
 # pair and written in a stable text format that is compared with the
 # *.output.* golden files (see IMPORTANT_NOTES.txt for what is masked).
 #
@@ -30,13 +30,13 @@ PACKET_OUTGOING = 4
 NETS = (("192.0.2.0", 24), ("192.18.0.0", 15))
 
 # The suite runs over a veth pair rather than lo, so every probe and
-# reply is seen exactly once (on Linux lo honeyd saw each probe twice).
-#   HD_IF     honeyd's end (10.250.0.2/30)
+# reply is seen exactly once (on Linux lo phantom-mirage saw each probe twice).
+#   HD_IF     phantom-mirage's end (10.250.0.2/30)
 #   TEST_IF   our end (10.250.0.1/30)
 # Probes are injected as Ethernet frames on TEST_IF straight to HD_IF's
-# MAC. Replies reach TEST_IF either directly from honeyd (router mode,
+# MAC. Replies reach TEST_IF either directly from phantom-mirage (router mode,
 # config.2) or via the kernel's route for 192.0.2.0/24 out HD_IF (plain
-# mode, honeyd sends through a raw IP socket). 192.0.2.0/24 is not
+# mode, phantom-mirage sends through a raw IP socket). 192.0.2.0/24 is not
 # configured anywhere: an ARP responder below answers who-has for it.
 # Anything the kernel would forward from either end hits a blackhole
 # (policy rule iif hdt0/hdt1 -> table 74), so probes and replies never
@@ -119,7 +119,7 @@ class Test:
 
     def Send(self, dst_mac, src_mac):
         """Inject the probes as Ethernet frames on TEST_IF, addressed to
-        honeyd's interface (no kernel ARP/routing on the send path)."""
+        phantom-mirage's interface (no kernel ARP/routing on the send path)."""
         s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
         s.bind((TEST_IF, 0))
         for pkt in self.packets:
@@ -143,7 +143,7 @@ class regress:
         self.interface = HD_IF
         self.honeyd = None
         if not os.path.exists(self.cmd):
-            sys.stderr.write('Cannot find honeyd program "%s"\n' % self.cmd)
+            sys.stderr.write('Cannot find phantom-mirage program "%s"\n' % self.cmd)
             sys.exit(1)
         top = os.path.abspath(os.path.join(os.path.dirname(self.cmd)))
         # Use the source tree's data files, not installed ones
@@ -155,15 +155,15 @@ class regress:
                      "-0", os.path.join(top, "pf.os"),
                      "-m", os.path.join(top, "nmap-mac-prefixes")]
         # e.g. "-u 0 -g 0" inside an unprivileged user+net namespace
-        self.args += os.environ.get("REGRESS_HONEYD_ARGS", "").split()
+        self.args += os.environ.get("REGRESS_PHANTOM_MIRAGE_ARGS", "").split()
         if not os.path.exists(self.config):
             sys.stderr.write('Configuration file "%s" does not exist, '
                              'aborting.\n' % self.config)
             sys.exit(1)
-        # Without a routing topology or template MACs honeyd sends replies
+        # Without a routing topology or template MACs phantom-mirage sends replies
         # through a raw IP socket. Linux then replaces an IP ID of 0 with a
         # random one unless DF is set, so those IDs are masked below. With
-        # routing/ethernet honeyd writes frames itself and IDs are exact.
+        # routing/ethernet phantom-mirage writes frames itself and IDs are exact.
         with open(self.config) as f:
             self.raw_ip_path = not re.search(r"^\s*route\s|\bethernet\b",
                                              f.read(), re.M)
@@ -251,7 +251,7 @@ class regress:
 
         threading.Thread(target=loop, daemon=True).start()
 
-    # --- honeyd ---------------------------------------------------------
+    # --- phantom-mirage ---------------------------------------------------------
     def testconfig(self):
         cmd = self.args + ["--verify-config", "-f", self.config,
                            "192.18.0.0/15"]

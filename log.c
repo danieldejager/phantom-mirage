@@ -529,7 +529,7 @@ honeyd_logstart(const char *filename)
 	setvbuf(logfp, NULL, _IOLBF, 0);
 
 	logtime = honeyd_logtime();
-	fprintf(logfp, "%s honeyd log started ------\n", logtime);
+	fprintf(logfp, "%s phantom-mirage log started ------\n", logtime);
 
 	return (logfp);
 }
@@ -562,7 +562,7 @@ honeyd_logend(FILE *logfp)
 		return;
 
 	logtime = honeyd_logtime();
-	fprintf(logfp, "%s honeyd log stopped ------\n", logtime);
+	fprintf(logfp, "%s phantom-mirage log stopped ------\n", logtime);
 
 	fclose(logfp);
 }

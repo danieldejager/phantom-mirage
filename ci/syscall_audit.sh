@@ -20,7 +20,7 @@ sed -E 's/^[0-9]+ +//' "$@" | grep -oE '^(<\.\.\. )?[a-z_0-9]+[ (]' |
 echo "arch $(uname -m): $(wc -l < $tmp/allowed) syscalls on the allowlist, $(wc -l < $tmp/seen) seen"
 missing=$(comm -23 $tmp/seen $tmp/allowed)
 # calls strace reports that are not real syscalls / only happen before
-# the filter is installed in the parent (exec of honeyd itself is fine)
+# the filter is installed in the parent (exec of phantom-mirage itself is fine)
 if [ -n "$missing" ]; then
   echo "seen but NOT allowlisted:"; echo "$missing" | sed 's/^/  /'
   rm -rf $tmp; exit 1

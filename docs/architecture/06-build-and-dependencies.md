@@ -2,8 +2,8 @@
 
 ## Build system (facts from the source)
 
-- **GNU Autotools.** `autogen.sh` runs aclocal/libtoolize/autoheader/automake/autoconf over `configure.in` (old name; modern autoconf expects `configure.ac`) and `Makefile.am`. Package version: `AC_INIT([honeyd], [1.7.0])` in `configure.ac` is the single source; `AM_INIT_AUTOMAKE` takes no arguments and `VERSION`/`PACKAGE_VERSION` come from it.
-- **Targets** (`Makefile.am`): `bin_PROGRAMS = honeyd honeydctl honeydstats hsniff`; optional `smtp`, `proxy` subsystems; `libhoneyd.so` built by a hand-written libtool rule ("libtool is so broken" comment) from honeyd_overload.c, atomicio.c, fdpass.c; data files installed to `$(datadir)/honeyd` (nmap-os-db, xprobe2.conf, nmap.assoc, pf.os, nmap-mac-prefixes, config.sample …). Plugin headers (hooks.h, plugins.h, plugins_config.h, debug.h) are installed so third-party plugins can be built; `honeyd_LDFLAGS = -export-dynamic` exposes daemon symbols to dlopen'd plugins.
+- **GNU Autotools.** `autogen.sh` runs aclocal/libtoolize/autoheader/automake/autoconf over `configure.in` (old name; modern autoconf expects `configure.ac`) and `Makefile.am`. Package version: `AC_INIT([phantom-mirage], [1.7.0])` in `configure.ac` is the single source; `AM_INIT_AUTOMAKE` takes no arguments and `VERSION`/`PACKAGE_VERSION` come from it.
+- **Targets** (`Makefile.am`): `bin_PROGRAMS = phantom-mirage phantom-mirage-ctl phantom-mirage-stats phantom-mirage-sniff`; optional `smtp`, `proxy` subsystems; `libphantom-mirage.so` built by a hand-written libtool rule ("libtool is so broken" comment) from honeyd_overload.c, atomicio.c, fdpass.c; data files installed to `$(datadir)/phantom-mirage` (nmap-os-db, xprobe2.conf, nmap.assoc, pf.os, nmap-mac-prefixes, config.sample …). Plugin headers (hooks.h, plugins.h, plugins_config.h, debug.h) are installed so third-party plugins can be built; `honeyd_LDFLAGS = -export-dynamic` exposes daemon symbols to dlopen'd plugins.
 - **Generated parser:** `parse.y` → `parse.c`/`parse.h` (bison/yacc) and `lex.l` → `lex.c` (flex) are generated at build time and are not committed (see #66/#69), so `bison` and `flex` are required build dependencies.
 - **Python packet libraries:** the bundled Python 2 `pypcap` and `dpkt` trees were removed (#36). `regress/` uses the system `python3-dpkt` and is run directly, not by `make`.
 - **Debian packaging:** `debian/` (control, rules, init script, logrotate) and `generateDebs`.
@@ -17,8 +17,8 @@
 | libevent | `--with-libevent`; requires `event_priority_init` (configure.in:218–262) | event loop, timers, evbuffers. Code uses the libevent 2 API (`event_base_new`, `evtimer_new`) | 2.1 |
 | zlib | standard check | per-packet compression of stats reports (`stats_compress`, stats.c:179; also honeydstats.c) | system |
 | libpcre | `pcre-config`, optional (configure.in:266+) | **No C file includes pcre** in master (grep), so effectively unused | not available on Debian 13 (PCRE1 removed) |
-| libedit / readline | optional | honeydctl line editing | libedit |
-| Python 3 | `--with-python[=python3]`, off by default; flags from `python3-config --includes` / `--ldflags --embed`, plus a link test (configure.ac) | embedded `internal` services, honeydctl `!` (pyextend.c, Python 3 C API since #36); the web UI scripts are still Python 2 | not built |
+| libedit / readline | optional | phantom-mirage-ctl line editing | libedit |
+| Python 3 | `--with-python[=python3]`, off by default; flags from `python3-config --includes` / `--ldflags --embed`, plus a link test (configure.ac) | embedded `internal` services, phantom-mirage-ctl `!` (pyextend.c, Python 3 C API since #36); the web UI scripts are still Python 2 | not built |
 | rrdtool | optional path | graphs via rrdtool.c | not built |
 
 ## Observed build on modern Linux (this run, 2026-10-17)
@@ -31,12 +31,12 @@ Box: Debian GNU/Linux 13 (trixie), GCC 14.2, autoconf 2.72 era automake/libtool,
 | `./autogen.sh` | OK with many warnings | `configure.in` name, obsolete macros (`AC_CANONICAL_SYSTEM`, `AM_PROG_LIBTOOL`, `AC_ERROR`, 3-arg `AM_INIT_AUTOMAKE`), `subdir-objects` warnings for subsystems/*.c | none needed |
 | `./configure` | **fails**: "you need to install a more recent version of libdnet" | The `addr_cmp` runtime test (configure.in:652) calls `memset` without `#include <string.h>`; GCC 14 makes implicit function declarations an error, so the test fails to compile and is misreported as an old libdnet | `CC="gcc -fpermissive"` |
 | `make` | **link fails**: `multiple definition of libevent_base, personalities, xp_fprints, record_tags, address_tags, …` | Globals *defined* in headers (e.g. `struct event_base *libevent_base;` honeyd.h, `SPLAY_HEAD(perstree…) personalities;` personality.h:303). GCC ≥ 10 defaults to `-fno-common` | `CC="gcc -fpermissive -fcommon"` |
-| `make -j8` | intermittent link error `cannot find fdpass.o` | the hand-written `libhoneyd.so` rule has no proper dependency on objects; parallel-make race | build with plain `make` |
-| `make` (serial, with workarounds) | **succeeds**; honeyd, honeydctl, honeydstats, hsniff, libhoneyd.so built; 37 compiler warnings (unused variables/values, deprecated declarations, `stringop-truncation`) | | |
-| `honeyd --verify-config -f config.sample` with absolute DB paths | fingerprint DBs load; config parsing stops at line 35: template "windows" has an ethernet address but no interface reaches 192.168.3.137 | expected: sample is site-specific | n/a |
-| `honeyd` without installed data | "Could not find path PATH_HONEYDDATA: /usr/share/honeyd" | startup checks the compiled-in data dir | `make install` or create the dir |
+| `make -j8` | intermittent link error `cannot find fdpass.o` | the hand-written `libphantom-mirage.so` rule has no proper dependency on objects; parallel-make race | build with plain `make` |
+| `make` (serial, with workarounds) | **succeeds**; phantom-mirage, phantom-mirage-ctl, phantom-mirage-stats, phantom-mirage-sniff, libphantom-mirage.so built; 37 compiler warnings (unused variables/values, deprecated declarations, `stringop-truncation`) | | |
+| `phantom-mirage --verify-config -f config.sample` with absolute DB paths | fingerprint DBs load; config parsing stops at line 35: template "windows" has an ethernet address but no interface reaches 192.168.3.137 | expected: sample is site-specific | n/a |
+| `phantom-mirage` without installed data | "Could not find path PATH_HONEYDDATA: /usr/share/phantom-mirage" | startup checks the compiled-in data dir | `make install` or create the dir |
 
-The table above records the build as it was on `master` before the fix. [PR #44](https://github.com/danieldejager/honeyd/pull/44) (issue #18) fixes the three causes: it adds the missing includes to the configure checks, gives each header global a single definition in a `.c` file, and gives the shared library and `honeyd` separate object files. It also renames `configure.in` to `configure.ac`.
+The table above records the build as it was on `master` before the fix. [PR #44](https://github.com/danieldejager/honeyd/pull/44) (issue #18) fixes the three causes: it adds the missing includes to the configure checks, gives each header global a single definition in a `.c` file, and gives the shared library and `phantom-mirage` separate object files. It also renames `configure.in` to `configure.ac`.
 
 Recipe once PR #44 is merged (no workarounds, parallel build works, checked by CI on Debian 13 / GCC 14):
 
@@ -54,6 +54,6 @@ CC="gcc -fpermissive -fcommon" ./configure
 make            # not -j
 ```
 
-The 37 compiler warnings are still present; cleaning them up is separate work. `honeyd` runs from a build tree without `/usr/share/honeyd`: if the data dir is missing it warns and stays in the current directory, relative `-f/-p/-x/-a/-0/-m` paths resolve against the invocation cwd, and `HONEYD_DATADIR` overrides the compiled-in data dir (fixed in #43).
+The 37 compiler warnings are still present; cleaning them up is separate work. `phantom-mirage` runs from a build tree without `/usr/share/phantom-mirage`: if the data dir is missing it warns and stays in the current directory, relative `-f/-p/-x/-a/-0/-m` paths resolve against the invocation cwd, and `PHANTOM_MIRAGE_DATADIR` overrides the compiled-in data dir (fixed in #43).
 
 Python support (`--with-python`) targets Python 3 (≥ 3.8). CI builds it in the ASan/UBSan job and runs an embedded service there. See [docs/python.md](../python.md).

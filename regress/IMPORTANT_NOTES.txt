@@ -41,6 +41,6 @@ personality. Exact-vs-guess is not compared: nmap's timing-based tests
 (ISN rate etc.) move a few personalities between "OS details" and a top
 "Aggressive OS guess" from run to run. Full output (EXACT/GUESS per
 target) is left in regress/nmap.log. Needs nmap and util-linux
-(CAP_SYS_ADMIN in a container, for unshare/setns). REGRESS_HONEYD_ARGS adds honeyd options,
+(CAP_SYS_ADMIN in a container, for unshare/setns). REGRESS_PHANTOM_MIRAGE_ARGS adds honeyd options,
 e.g. "-u 0 -g 0" to run the suite in an unprivileged
 `unshare -rnm` namespace.

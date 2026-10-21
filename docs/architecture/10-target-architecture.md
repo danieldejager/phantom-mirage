@@ -1,16 +1,16 @@
 # 10 – Target deployment architecture (proposal)
 
-This is the proposed product architecture for a Honeyd-based deception sensor, sold to customers. It isn't tied to any one organisation. It's a **recommendation, not the current state**. Dashed boxes are planned features that depend on open issues. Issue numbers are shown in brackets.
+This is the proposed product architecture for a Phantom Mirage-based deception sensor, sold to customers. It isn't tied to any one organisation. It's a **recommendation, not the current state**. Dashed boxes are planned features that depend on open issues. Issue numbers are shown in brackets.
 
 ![Target architecture](images/10-target-architecture.png)
 
 ## The design in short
 
 1. **Hardware sensor.** Each site gets a Raspberry Pi 4 or 5 (2 GB+ RAM, PoE HAT) on a switch trunk port. One Pi can sit on several decoy VLANs at once using 802.1Q tags.
-2. **Container on the Pi.** Honeyd runs in one Docker container (#20), attached to each decoy VLAN through macvlan so it sees raw traffic and answers ARP. The container gets only the network capabilities it needs, a read-only filesystem and a locked control socket (#14).
-3. **One container per Honeyd, not per fake host.** A single Honeyd process simulates every decoy on every attached VLAN.
-4. **High-interaction decoys as sidecars.** Honeyd proxies selected ports to purpose-built containers: Cowrie for SSH (#33) and Conpot for Modbus and S7 (#34). Honeyd fakes everything else.
-5. **Visibility.** Honeyd writes JSON events (#24). A log shipper sends them, together with a heartbeat (#30), to the customer's SIEM (Sentinel, Splunk, Elastic or similar) over an outbound-only management VLAN.
+2. **Container on the Pi.** Phantom Mirage runs in one Docker container (#20), attached to each decoy VLAN through macvlan so it sees raw traffic and answers ARP. The container gets only the network capabilities it needs, a read-only filesystem and a locked control socket (#14).
+3. **One container per Phantom Mirage, not per fake host.** A single Phantom Mirage process simulates every decoy on every attached VLAN.
+4. **High-interaction decoys as sidecars.** Phantom Mirage proxies selected ports to purpose-built containers: Cowrie for SSH (#33) and Conpot for Modbus and S7 (#34). Phantom Mirage fakes everything else.
+5. **Visibility.** Phantom Mirage writes JSON events (#24). A log shipper sends them, together with a heartbeat (#30), to the customer's SIEM (Sentinel, Splunk, Elastic or similar) over an outbound-only management VLAN.
 6. **Response.** Any decoy hit is a high-fidelity alert (#26), and a missing heartbeat means a sensor is down. Alerts go to the customer's SOC, and tickets are raised through the customer's own SIEM integration or a webhook.
 7. **Supply chain.** CI builds a signed multi-arch image (x86_64 + arm64) from `master` with sanitizers (#18, #38). Sensors pull the image and their site config, so updating the fleet doesn't need reflashing.
 
@@ -22,14 +22,14 @@ This is the proposed product architecture for a Honeyd-based deception sensor, s
 - The Pi's management interface reaches only the SIEM, the registry and the config repo, and never accepts inbound connections.
 - No secrets are stored on the device, because a Pi in a comms room can be stolen or opened.
 - Sensors refuse to run any image whose signature doesn't verify.
-- Cowrie and Conpot sit on an internal Docker network that only Honeyd can reach, and have no direct presence on the decoy VLANs.
+- Cowrie and Conpot sit on an internal Docker network that only Phantom Mirage can reach, and have no direct presence on the decoy VLANs.
 - The log shipper buffers events on disk while the SIEM is unreachable, and the Pi keeps time with NTP over the management VLAN so alert timestamps line up.
 
 ## Diagram source
 
 ## Commercial note: licence
 
-Honeyd is licensed under the GNU GPL version 2 (see `LICENSE` in the repository root). Selling it is allowed. However, anyone who receives a binary or a sensor image must also be offered the source code of Honeyd and of your changes to it, under the same GPL v2 terms. Get advice on how this affects the business model before shipping. For example, decide which parts stay as separate programs and which are modifications to Honeyd itself.
+Phantom Mirage is licensed under the GNU GPL version 2 (see `LICENSE` in the repository root). Selling it is allowed. However, anyone who receives a binary or a sensor image must also be offered the source code of Phantom Mirage and of your changes to it, under the same GPL v2 terms. Get advice on how this affects the business model before shipping. For example, decide which parts stay as separate programs and which are modifications to Phantom Mirage itself.
 
 ```mermaid
 flowchart TB
@@ -39,7 +39,7 @@ flowchart TB
         repo["danieldejager/honeyd<br/>private repo, master"]
         ci["GitHub Actions CI<br/>build x86_64 + arm64<br/>ASan/UBSan, fuzz (#38)<br/>no compiler workarounds (#18)"]
         reg[("Private container registry<br/>signed multi-arch image")]
-        cfgrepo[("Sensor config repo<br/>templates, scripts,<br/>per-site honeyd.conf")]
+        cfgrepo[("Sensor config repo<br/>templates, scripts,<br/>per-site phantom-mirage.conf")]
         repo --> ci --> reg
     end
 
@@ -60,8 +60,8 @@ flowchart TB
             os["Raspberry Pi OS 64-bit, hardened<br/>read-only root, encrypted storage<br/>no console, SSH off, no secrets on device<br/>NTP over management VLAN"]
             subgraph DOCKER["Docker engine"]
                 direction TB
-                hc["Honeyd container (#20)<br/>caps: NET_RAW, NET_ADMIN, SETUID, SETGID<br/>read-only rootfs, tmpfs /var/run<br/>control socket 0600 (#14)"]
-                subgraph HD["honeyd daemon"]
+                hc["Phantom Mirage container (#20)<br/>caps: NET_RAW, NET_ADMIN, SETUID, SETGID<br/>read-only rootfs, tmpfs /var/run<br/>control socket 0600 (#14)"]
+                subgraph HD["phantom-mirage daemon"]
                     direction TB
                     tpl["Templates: Windows, Linux,<br/>printers, PLCs, HMIs<br/>refreshed fingerprints (#31)"]
                     eng["Packet engine<br/>ARP, routing sim, personality"]

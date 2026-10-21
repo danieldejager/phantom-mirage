@@ -249,7 +249,7 @@ void
 usage(void)
 {
 	fprintf(stderr,
-	    "Usage: honeyd [OPTIONS] [net ...]\n\n"
+	    "Usage: phantom-mirage [OPTIONS] [net ...]\n\n"
 	    "where options include:\n"
 	    "  -d                     Do not daemonize, be verbose.\n"
 	    "  -P                     Enable polling mode.\n"
@@ -261,7 +261,7 @@ usage(void)
 	    "  --heartbeat=SECONDS    Write a JSON heartbeat event every SECONDS.\n"
 	    "  --sandbox-scripts      Run scripts and subsystems under Landlock +\n"
 	    "                         seccomp (Linux); see docs/sandboxing.md.\n"
-	    "  --sandbox-daemon       Confine honeyd itself to a seccomp syscall\n"
+	    "  --sandbox-daemon       Confine the daemon itself to a seccomp syscall\n"
 	    "                         allowlist after the privilege drop (Linux\n"
 	    "                         x86_64/arm64); see docs/sandboxing.md.\n"
 	    "  --sandbox-allow-write=DIR\n"
@@ -272,8 +272,8 @@ usage(void)
 	    "  -x file                Read xprobe-style fingerprints from file.\n"
 	    "  -a assocfile           Read nmap-xprobe associations from file.\n"
 	    "  -0 osfingerprints      Read pf-style OS fingerprints from file.\n"
-	    "  -u uid		  Set the uid Honeyd should run as.\n"
-	    "  -g gid		  Set the gid Honeyd should run as.\n"
+	    "  -u uid		  Set the uid the daemon should run as.\n"
+	    "  -g gid		  Set the gid the daemon should run as.\n"
 		"  -m file				  Read nmap-mac-prefixes from file. \n"
 	    "  -f configfile          Read configuration from file.\n"
 	    "  -c host:port:name:pass Reports starts to collector.\n"
@@ -398,7 +398,7 @@ syslog_init(int argc, char *argv[])
 #else
 	options = LOG_PID|LOG_CONS;
 #endif
-	openlog("honeyd", options, LOG_DAEMON);	
+	openlog("phantom-mirage", options, LOG_DAEMON);	
 
 	/* Create a string containing all the command line
 	 * arguments and pass it to syslog:
@@ -641,7 +641,7 @@ honeyd_init(void)
 	home_path = pass->pw_dir;
 
 	char config_suffix[] = "/.config";
-	char honeyd_suffix[] = "/honeyd/";
+	char honeyd_suffix[] = "/phantom-mirage/";
 	char *full_path = malloc(strlen(home_path) + strlen(config_suffix) + strlen(honeyd_suffix) + 1);
 	strcpy(full_path, home_path);
 	strcat(full_path, config_suffix);
@@ -651,18 +651,39 @@ honeyd_init(void)
 	honeyd_user_dir(full_path, uid, gid, 0);
 
 	strcat(full_path, honeyd_suffix);
-	/* ~/.config/honeyd: owned by the invoking user, 0700 when new,
+	/* ~/.config/phantom-mirage: owned by the invoking user, 0700 when new,
 	 * existing permissions only tightened. Drop the trailing '/' for
 	 * the check so a symlink is not followed. */
 	full_path[strlen(full_path) - 1] = '\0';
 	honeyd_user_dir(full_path, uid, gid, 1);
 	full_path[strlen(full_path)] = '/';
 
-	if(setenv("HONEYD_HOME", full_path, 1))
+	if(setenv("PHANTOM_MIRAGE_HOME", full_path, 1) ||
+	    setenv("HONEYD_HOME", full_path, 1))	/* legacy name */
 	{
-		perror("Error: Could not set enviromnent variable HONEYD_HOME");
+		perror("Error: Could not set environment variable PHANTOM_MIRAGE_HOME");
 	}
 	free(full_path);
+}
+
+/*
+ * Look up PHANTOM_MIRAGE_<suffix>; fall back to the deprecated
+ * HONEYD_<suffix> with a warning.
+ */
+char *
+pm_getenv(const char *suffix)
+{
+	char name[64];
+	char *value;
+
+	snprintf(name, sizeof(name), "PHANTOM_MIRAGE_%s", suffix);
+	if ((value = getenv(name)) != NULL)
+		return (value);
+	snprintf(name, sizeof(name), "HONEYD_%s", suffix);
+	if ((value = getenv(name)) != NULL)
+		fprintf(stderr, "phantom-mirage: warning: %s is deprecated, "
+		    "use PHANTOM_MIRAGE_%s\n", name, suffix);
+	return (value);
 }
 
 #ifdef HAVE_PYTHON
@@ -3684,11 +3705,11 @@ main(int argc, char *argv[])
 	}
 
 	/*
-	 * Data directory: HONEYD_DATADIR overrides the compiled-in
+	 * Data directory: PHANTOM_MIRAGE_DATADIR (legacy HONEYD_DATADIR) overrides the compiled-in
 	 * PATH_HONEYDDATA.  We only chdir() into it after option parsing,
 	 * and a missing directory is not fatal (issue #43).
 	 */
-	if ((datadir = getenv("HONEYD_DATADIR")) != NULL && *datadir != '\0') {
+	if ((datadir = pm_getenv("DATADIR")) != NULL && *datadir != '\0') {
 		config.pers = honeyd_data_path(datadir, "nmap-os-db");
 		config.xprobe = honeyd_data_path(datadir, "xprobe2.conf");
 		config.assoc = honeyd_data_path(datadir, "nmap.assoc");
@@ -3699,8 +3720,8 @@ main(int argc, char *argv[])
 	} else
 		datadir = PATH_HONEYDDATA;
 
-	fprintf(stderr, "Honeyd V%s Copyright (c) 2002-2007 Niels Provos\n",
-	    VERSION);
+	fprintf(stderr, PRODUCT_NAME " %s (based on Honeyd)\n"
+	    "Honeyd Copyright (c) 2002-2007 Niels Provos\n", VERSION);
 
 	orig_argc = argc;
 	orig_argv = argv;
@@ -3873,7 +3894,7 @@ main(int argc, char *argv[])
 	}
 
 	if (honeyd_show_version) {
-		printf("Honeyd Version %s\n", VERSION);
+		printf(PRODUCT_NAME " %s (based on Honeyd)\n", VERSION);
 		exit(EXIT_SUCCESS);
 	}
 	if (honeyd_show_usage) {
@@ -4102,7 +4123,7 @@ main(int argc, char *argv[])
 	/* Start Honeyd in the background if necessary */
 	if (!honeyd_debug) {
 		setlogmask(LOG_UPTO(LOG_INFO));
-		fprintf(stderr, "Honeyd starting as background process\n");
+		fprintf(stderr, PRODUCT_NAME " starting as background process\n");
 		if (daemon(1, 0) < 0) {
 			unlink(PIDFILE);
 			syslog(LOG_ERR, "daemon");

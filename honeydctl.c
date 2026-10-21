@@ -92,8 +92,8 @@
 #define LINELEN 2048
 char Buffer[LINELEN];
 
-#define CTLNAME		"honeydctl"
-#define HONEYD_SOCK	"/var/run/honeyd/honeyd.sock"
+#define CTLNAME		"phantom-mirage-ctl"
+#define HONEYD_SOCK	"/run/phantom-mirage/phantom-mirage.sock"
 
 int
 usage()
@@ -348,10 +348,10 @@ main(int argc, char **argv)
 	hist = history_init();
 #  ifdef H_SETSIZE
 	history(hist, &hev, H_SETSIZE, 20);
-	edit = el_init("honeydctl", stdin, stdout, stderr);
+	edit = el_init("phantom-mirage-ctl", stdin, stdout, stderr);
 #  else /* !H_SETSIZE */
 	history(hist, H_EVENT, 20);
-	edit = el_init("honeydctl", stdin, stdout);
+	edit = el_init("phantom-mirage-ctl", stdin, stdout);
 #  endif
 
 	el_source(edit, NULL);

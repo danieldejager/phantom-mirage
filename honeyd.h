@@ -32,7 +32,10 @@
 #ifndef _HONEYD_H_
 #define _HONEYD_H_
 
-#define PIDFILE			"/var/run/honeyd.pid"
+#define PRODUCT_NAME		"Phantom Mirage I"
+#define PIDFILE			"/run/phantom-mirage.pid"
+
+char *pm_getenv(const char *);
 
 #define TCP_DEFAULT_SIZE	512
 #define TCP_MAX_SIZE		4096

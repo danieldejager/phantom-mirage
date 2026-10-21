@@ -1,6 +1,6 @@
 #!/bin/bash
 # Embedded Python 3 service script under the sanitizers (#36).
-# Needs a honeyd built with --with-python, root and NET_ADMIN.
+# Needs a phantom-mirage built with --with-python, root and NET_ADMIN.
 # 10.99.0.0/24 must be routed over lo (see the subsystem step).
 set -euo pipefail
 D=$PWD
@@ -17,24 +17,24 @@ CONF
 mkdir -p /var/run
 # Reject a missing module at config time
 printf 'create x\nadd x tcp port 7 internal "no_such_module"\n' > /tmp/hdpy/bad.conf
-if ./honeyd --verify-config -f /tmp/hdpy/bad.conf -i lo --disable-webserver \
+if ./phantom-mirage --verify-config -f /tmp/hdpy/bad.conf -i lo --disable-webserver \
     -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
     -0 $D/pf.os -m $D/nmap-mac-prefixes > /tmp/hdpy/bad.log 2>&1; then
   cat /tmp/hdpy/bad.log; echo "missing python module was accepted" >&2; exit 1
 fi
 grep -q 'Bad python module' /tmp/hdpy/bad.log
-# Status page on its default address (127.0.0.1) and a test port. honeyd
+# Status page on its default address (127.0.0.1) and a test port. phantom-mirage
 # runs as 65534 after startup and graphs/ must be writable (rrdtool).
 rm -rf /tmp/hdpy/htdocs; cp -r $D/webserver/htdocs /tmp/hdpy/htdocs
 chown -R 65534:65534 /tmp/hdpy/htdocs/graphs
-PYTHONPATH=$D/scripts/python timeout 60 ./honeyd -d -f /tmp/hdpy/py.conf -i lo \
+PYTHONPATH=$D/scripts/python timeout 60 ./phantom-mirage -d -f /tmp/hdpy/py.conf -i lo \
   --webserver-port=8080 --webserver-root=/tmp/hdpy/htdocs \
   -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
   -0 $D/pf.os -m $D/nmap-mac-prefixes \
-  -l /tmp/hdpy/honeyd.log -s /tmp/hdpy/service.log > honeyd-py.log 2>&1 &
+  -l /tmp/hdpy/phantom-mirage.log -s /tmp/hdpy/service.log > phantom-mirage-py.log 2>&1 &
 hp=$!
 for i in $(seq 1 30); do
-  grep -q 'Demoting process privileges' honeyd-py.log && break; sleep 0.5
+  grep -q 'Demoting process privileges' phantom-mirage-py.log && break; sleep 0.5
 done
 sleep 1
 rc=0
@@ -67,7 +67,7 @@ def get(path, method="GET"):
 st, h, body = get("/")
 assert st == 200, st
 assert h["Content-Type"].startswith("text/html"), h["Content-Type"]
-for want in (b"Honeyd", b"Uptime:", b"10.99.0.10", b"Active TCP Connections",
+for want in (b"Phantom Mirage", b"Uptime:", b"10.99.0.10", b"Active TCP Connections",
              b"Input Bytes"):
     assert want in body, want
 assert get("/styles/layout.css")[0] == 200
@@ -76,18 +76,18 @@ assert get("/styles/../../server.py")[0] == 404
 assert get("/", "POST")[0] == 501
 print("status page OK (%d bytes)" % len(body))
 PY
-# honeydctl "!" runs Python inside honeyd (pyextend_run)
-echo '! import honeyd; print(6 * 7, honeyd.version)' | timeout 5 ./honeydctl > honeyd-py-ctl.out 2>&1 || true
-cat honeyd-py-ctl.out
-grep -q '^42 ' honeyd-py-ctl.out || { echo "honeydctl ! did not run python" >&2; rc=1; }
+# phantom-mirage-ctl "!" runs Python inside phantom-mirage (pyextend_run)
+echo '! import honeyd; print(6 * 7, honeyd.version)' | timeout 5 ./phantom-mirage-ctl > phantom-mirage-py-ctl.out 2>&1 || true
+cat phantom-mirage-py-ctl.out
+grep -q '^42 ' phantom-mirage-py-ctl.out || { echo "phantom-mirage-ctl ! did not run python" >&2; rc=1; }
 sleep 1
 kill -INT $hp 2>/dev/null || true
 wait $hp || true
-cat honeyd-py.log
+cat phantom-mirage-py.log
 echo "--- service log"; cat /tmp/hdpy/service.log || true
-cp /tmp/hdpy/service.log honeyd-py-service.log 2>/dev/null || true
-if grep -E 'runtime error|ERROR: AddressSanitizer' honeyd-py.log; then rc=1; fi
-grep -q 'HTTP server listening on 127.0.0.1:8080' honeyd-py.log || { echo "webserver not on 127.0.0.1" >&2; rc=1; }
-if grep -q 'internal webserver disabled' honeyd-py.log; then echo "webserver disabled" >&2; rc=1; fi
+cp /tmp/hdpy/service.log phantom-mirage-py-service.log 2>/dev/null || true
+if grep -E 'runtime error|ERROR: AddressSanitizer' phantom-mirage-py.log; then rc=1; fi
+grep -q 'HTTP server listening on 127.0.0.1:8080' phantom-mirage-py.log || { echo "webserver not on 127.0.0.1" >&2; rc=1; }
+if grep -q 'internal webserver disabled' phantom-mirage-py.log; then echo "webserver disabled" >&2; rc=1; fi
 grep -q 'python echo .* bytes from' /tmp/hdpy/service.log || { echo "honeyd.log() not in service log" >&2; rc=1; }
 exit $rc

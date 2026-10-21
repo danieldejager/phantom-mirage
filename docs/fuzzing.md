@@ -1,6 +1,6 @@
-# Fuzzing honeyd
+# Fuzzing phantom-mirage
 
-honeyd ships three [libFuzzer](https://llvm.org/docs/LibFuzzer.html)
+phantom-mirage ships three [libFuzzer](https://llvm.org/docs/LibFuzzer.html)
 harnesses under `fuzz/`, built with clang and
 `-fsanitize=fuzzer,address,undefined`.
 
@@ -10,7 +10,7 @@ harnesses under `fuzz/`, built with clang and
 | `fuzz_config`   | `parse_line()`: config text (the same path as the control socket and `-f`), then a SIGHUP-style reset | `fuzz/corpus/config`    |
 | `fuzz_macprefix`| `ethernetcode_init()` on an `nmap-mac-prefixes` file, plus lookups | `fuzz/corpus/macprefix` |
 
-`fuzz_packet` and `fuzz_config` run honeyd's normal start-up first. This
+`fuzz_packet` and `fuzz_config` run phantom-mirage's normal start-up first. This
 loads the real `nmap-os-db`, `xprobe2.conf`, `nmap.assoc`, `pf.os` and
 `nmap-mac-prefixes` from the source tree. `fuzz_packet` then installs a
 fixed config (`fuzz/corpus/config/packet_harness.conf`: Linux and Windows
@@ -43,12 +43,12 @@ when there is no `Makefile`. If you have built with gcc before, run
 
 Notes:
 
-* Leak detection is off. honeyd keeps its tables for the life of the
+* Leak detection is off. phantom-mirage keeps its tables for the life of the
   process, so LSan reports are noise.
-* UBSan `alignment` is disabled. honeyd reads headers from pcap buffers
+* UBSan `alignment` is disabled. phantom-mirage reads headers from pcap buffers
   that are not 4-byte aligned, which is fine on x86 and arm64.
 * `-fno-sanitize-recover=all` makes every UBSan report fatal.
-  `UBSAN_OPTIONS` is unreliable here, because honeyd drops privileges
+  `UBSAN_OPTIONS` is unreliable here, because phantom-mirage drops privileges
   and the runtime can then no longer read `/proc/self/environ`.
 * Use `-fork=N -ignore_crashes=1` for long runs, so that one known
   finding does not stop the campaign.

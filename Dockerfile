@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# Honeyd container image (issue #20). Multi-arch: linux/amd64, linux/arm64.
+# Phantom Mirage I container image (based on Honeyd) (issue #20). Multi-arch: linux/amd64, linux/arm64.
 # See docs/docker.md for the required capabilities and a macvlan example.
 
 ########################################################################
@@ -23,11 +23,17 @@ RUN ./autogen.sh \
  && make -j"$(nproc)" \
  && make install DESTDIR=/out \
  && rm -rf /out/usr/include /out/usr/share/man \
- && strip /out/usr/bin/* /out/usr/lib/honeyd/libhoneyd.so
+ && strip /out/usr/bin/* /out/usr/lib/phantom-mirage/libphantom-mirage.so
 
 ########################################################################
 # Runtime stage
 FROM debian:13-slim
+
+LABEL org.opencontainers.image.title="Phantom Mirage I" \
+      org.opencontainers.image.description="Phantom Mirage I network deception daemon, part of the Phantom deception range (based on Honeyd by Niels Provos)" \
+      org.opencontainers.image.version="1.7.0" \
+      org.opencontainers.image.licenses="GPL-2.0-or-later" \
+      org.opencontainers.image.authors="Daniel de Jager <ddejager@dandejager.com>"
 
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -35,15 +41,15 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man
 
 COPY --from=build /out/ /
-COPY docker/honeyd.conf /etc/honeyd/honeyd.conf
-COPY docker/entrypoint.sh /usr/local/bin/honeyd-entrypoint
+COPY docker/phantom-mirage.conf /etc/phantom-mirage/phantom-mirage.conf
+COPY docker/entrypoint.sh /usr/local/bin/phantom-mirage-entrypoint
 
-# honeyd starts as root inside the container so it can open the capture
-# interface, create /run/honeyd (root-owned 0700, #14) and then drops to
+# phantom-mirage starts as root inside the container so it can open the capture
+# interface, create /run/phantom-mirage (root-owned 0700, #14) and then drops to
 # nobody by itself. Give the container only the capabilities listed in
 # docs/docker.md (--cap-drop ALL; no --privileged).
-ENV HONEYD_CONFIG=/etc/honeyd/honeyd.conf \
-    HONEYD_INTERFACES=eth0
+ENV PHANTOM_MIRAGE_CONFIG=/etc/phantom-mirage/phantom-mirage.conf \
+    PHANTOM_MIRAGE_INTERFACES=eth0
 
 STOPSIGNAL SIGINT
-ENTRYPOINT ["/usr/local/bin/honeyd-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/phantom-mirage-entrypoint"]

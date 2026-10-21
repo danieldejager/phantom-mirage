@@ -1,0 +1,7 @@
+/var/log/phantom-mirage/phantom-mirage.log /var/log/phantom-mirage/daemon.log {
+  missingok
+  notifempty
+  monthly
+  rotate 3
+  compress
+}

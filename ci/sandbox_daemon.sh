@@ -1,13 +1,13 @@
 #!/bin/bash
-# --sandbox-daemon (#16): one honeyd with the daemon seccomp allowlist
+# --sandbox-daemon (#16): one phantom-mirage with the daemon seccomp allowlist
 # serving a subsystem, a shell script port, an internal Python 3 service,
-# the status page and honeydctl, through SIGHUP/SIGUSR1; once with
+# the status page and phantom-mirage-ctl, through SIGHUP/SIGUSR1; once with
 # --sandbox-scripts on top. Any denied syscall (daemon: "sandbox-daemon:
 # denied syscall", child: "killed by SIGSYS") fails the run.
 # Needs root, NET_ADMIN, a --with-python build, /tmp/subsys_echo and the
-# libhoneyd.so shim (see the subsystem step). Optional env:
-#   HD_EXTRA  extra honeyd args (e.g. "-u 0 -g 0" in a user namespace)
-#   HD_WRAP   command prefix for honeyd (e.g. strace)
+# libphantom-mirage.so shim (see the subsystem step). Optional env:
+#   HD_EXTRA  extra phantom-mirage args (e.g. "-u 0 -g 0" in a user namespace)
+#   HD_WRAP   command prefix for phantom-mirage (e.g. strace)
 #   HD_LEARN  1: run without --sandbox-daemon (strace collection) and
 #             skip the filter checks and the negative check
 set -uo pipefail
@@ -37,12 +37,12 @@ if [ "${HD_LEARN:-0}" = 1 ]; then SBD=; ACTIVE='Demoting process privileges'; fi
 run() {
   mode=$1; shift
   log=${HD_LOGDIR:-$D}/sandbox-daemon-$mode.log
-  PYTHONPATH=$D/scripts/python timeout 90 ${HD_WRAP:-} ./honeyd -d \
+  PYTHONPATH=$D/scripts/python timeout 90 ${HD_WRAP:-} ./phantom-mirage -d \
     -f $W/sd.conf -i lo $SBD \
     --webserver-port=8080 --webserver-root=$W/htdocs \
     -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
     -0 $D/pf.os -m $D/nmap-mac-prefixes \
-    -l $W/honeyd.log -s $W/service.log --json-log=$W/events.jsonl \
+    -l $W/phantom-mirage.log -s $W/service.log --json-log=$W/events.jsonl \
     --heartbeat=1 ${HD_EXTRA:-} "$@" > $log 2>&1 &
   hp=$!
   for i in $(seq 1 40); do
@@ -67,19 +67,19 @@ with urllib.request.urlopen("http://127.0.0.1:8080/", timeout=5) as r:
     assert r.status == 200 and b"10.99.0.10" in r.read()
 print("traffic OK")
 PY
-  echo '! import honeyd; print(6 * 7)' | timeout 5 ./honeydctl > $W/ctl.out 2>&1 || true
-  grep -q '^42' $W/ctl.out || { echo "$mode: honeydctl ! failed" >&2; cat $W/ctl.out; rc=1; }
-  echo 'list template' | timeout 5 ./honeydctl > $W/ctl2.out 2>&1 || true
-  grep -q '10.99.0.10' $W/ctl2.out || { echo "$mode: honeydctl list failed" >&2; rc=1; }
-  hd=$(pgrep -n -x honeyd || true)
+  echo '! import honeyd; print(6 * 7)' | timeout 5 ./phantom-mirage-ctl > $W/ctl.out 2>&1 || true
+  grep -q '^42' $W/ctl.out || { echo "$mode: phantom-mirage-ctl ! failed" >&2; cat $W/ctl.out; rc=1; }
+  echo 'list template' | timeout 5 ./phantom-mirage-ctl > $W/ctl2.out 2>&1 || true
+  grep -q '10.99.0.10' $W/ctl2.out || { echo "$mode: phantom-mirage-ctl list failed" >&2; rc=1; }
+  hd=$(pgrep -n -x phantom-mirage || true)
   if [ -n "$hd" ]; then
     kill -HUP $hd; sleep 1; kill -USR1 $hd; sleep 1
     python3 -c "import socket; s=socket.create_connection(('10.99.0.10',18080),timeout=5); assert s.recv(16)==b'hello\n'" \
       || { echo "$mode: subsystem dead after SIGHUP" >&2; rc=1; }
-    kill -0 $hd || { echo "$mode: honeyd died" >&2; rc=1; }
+    kill -0 $hd || { echo "$mode: phantom-mirage died" >&2; rc=1; }
     kill -INT $hd
   else
-    echo "$mode: honeyd not running" >&2; rc=1
+    echo "$mode: phantom-mirage not running" >&2; rc=1
   fi
   wait $hp
   echo "=== $mode"; cat $log
@@ -92,10 +92,10 @@ run plain
 run scripts --sandbox-scripts --sandbox-allow-write=$W/rw
 [ "${HD_LEARN:-0}" = 1 ] && exit $rc
 
-# Negative check: a syscall off the list (mount, via honeydctl "!") must
+# Negative check: a syscall off the list (mount, via phantom-mirage-ctl "!") must
 # be reported and kill the daemon with SIGSYS.
 log=${HD_LOGDIR:-$D}/sandbox-daemon-deny.log
-PYTHONPATH=$D/scripts/python timeout 60 ${HD_WRAP:-} ./honeyd -d \
+PYTHONPATH=$D/scripts/python timeout 60 ${HD_WRAP:-} ./phantom-mirage -d \
   -f $W/sd.conf -i lo --sandbox-daemon --disable-webserver \
   -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
   -0 $D/pf.os -m $D/nmap-mac-prefixes ${HD_EXTRA:-} > $log 2>&1 &
@@ -105,9 +105,9 @@ for i in $(seq 1 40); do
 done
 sleep 1
 echo '! import ctypes, os; ctypes.CDLL(None).mount(b"none", b"/mnt", b"tmpfs", 0, None)' |
-  timeout 5 ./honeydctl > /dev/null 2>&1 || true
+  timeout 5 ./phantom-mirage-ctl > /dev/null 2>&1 || true
 wait $hp; st=$?
 echo "=== deny (exit $st)"; cat $log
 grep -q 'sandbox-daemon: denied syscall' $log || { echo "deny: denial not logged" >&2; rc=1; }
-if pgrep -x honeyd >/dev/null; then echo "deny: honeyd still running" >&2; pkill -x honeyd; rc=1; fi
+if pgrep -x phantom-mirage >/dev/null; then echo "deny: phantom-mirage still running" >&2; pkill -x phantom-mirage; rc=1; fi
 exit $rc
