@@ -54,6 +54,6 @@ CC="gcc -fpermissive -fcommon" ./configure
 make            # not -j
 ```
 
-The 37 compiler warnings are still present; cleaning them up is separate work. To run `honeyd` from a build tree, `/usr/share/honeyd` must exist (issue #43).
+The 37 compiler warnings are still present; cleaning them up is separate work. `honeyd` runs from a build tree without `/usr/share/honeyd`: if the data dir is missing it warns and stays in the current directory, relative `-f/-p/-x/-a/-0/-m` paths resolve against the invocation cwd, and `HONEYD_DATADIR` overrides the compiled-in data dir (fixed in #43).
 
 Python support was not tested: it needs Python 2 headers (`Py_InitModule`), which modern distributions no longer ship.

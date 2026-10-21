@@ -51,8 +51,8 @@ jobs:
         # scripts/lib/init.py, so it is left out until issue #36.
         run: |
           D=$PWD
-          # honeyd refuses to start without its compiled-in data dir.
-          mkdir -p /usr/share/honeyd
+          # No /usr/share/honeyd here: honeyd must start without it (#43).
+          test ! -e /usr/share/honeyd
           ./honeyd --version
           ./honeyd --verify-config -f $D/ci/smoke.conf -i lo --disable-webserver \
             -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
@@ -125,7 +125,6 @@ jobs:
         # main checks with those lines filtered out so the rest of startup
         # and config parsing is still covered.
         run: |
-          mkdir -p /usr/share/honeyd
           awk 'length($0) - 7 <= 78' nmap-mac-prefixes > ci-mac-prefixes
           echo "Filtered out $(( $(wc -l < nmap-mac-prefixes) - $(wc -l < ci-mac-prefixes) )) long vendor lines (issue #46)"
 
