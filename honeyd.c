@@ -45,6 +45,7 @@
 #endif
 #include <sys/resource.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <sys/tree.h>
 #include <sys/wait.h>
 #include <sys/queue.h>
@@ -467,6 +468,59 @@ honeyd_rrd_start(const char *rrdtool_path)
  * Initializes data structures pertaining to the daemon
  */
 
+/*
+ * Make sure a per-user directory exists, is a real directory (not a
+ * symlink) and belongs to uid/gid. New directories are created 0700.
+ * With "own" set (honeyd's own directory) an existing directory is also
+ * chowned to uid/gid and its permissions are only ever tightened: group
+ * write and all "other" access are removed, nothing is added. Without it
+ * (a shared parent like ~/.config) an existing directory is left alone.
+ * "path" must not end in '/', or O_NOFOLLOW would not apply.
+ * Returns 0 on success.
+ */
+static int
+honeyd_user_dir(const char *path, uid_t uid, gid_t gid, int own)
+{
+	struct stat st;
+	mode_t mode;
+	int fd, created = 0;
+
+	if (mkdir(path, S_IRWXU) == 0)
+		created = 1;
+	else if (errno != EEXIST) {
+		syslog(LOG_ERR, "%s: mkdir %s: %m", __func__, path);
+		return (-1);
+	}
+
+	/* O_NOFOLLOW: never chown/chmod through a planted symlink as root */
+	fd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+	if (fd == -1) {
+		syslog(LOG_ERR, "%s: open %s: %m", __func__, path);
+		return (-1);
+	}
+	if (fstat(fd, &st) == -1) {
+		syslog(LOG_ERR, "%s: fstat %s: %m", __func__, path);
+		close(fd);
+		return (-1);
+	}
+
+	if (!own && !created) {
+		close(fd);
+		return (0);
+	}
+
+	if ((st.st_uid != uid || st.st_gid != gid) &&
+	    fchown(fd, uid, gid) == -1)
+		syslog(LOG_WARNING, "%s: chown %s: %m", __func__, path);
+
+	mode = st.st_mode & 07777 & ~(S_IWGRP | S_IRWXO);
+	if (mode != (st.st_mode & 07777) && fchmod(fd, mode) == -1)
+		syslog(LOG_WARNING, "%s: chmod %s: %m", __func__, path);
+
+	close(fd);
+	return (0);
+}
+
 void
 honeyd_init(void)
 {
@@ -531,6 +585,7 @@ honeyd_init(void)
 	//set environment variable for scripts to use
 	char *sudo_user = getenv("SUDO_USER");
 	int uid = 0;
+	gid_t gid = 0;
 	char *home_path = NULL;
 	struct passwd *pass = NULL;
 
@@ -550,6 +605,7 @@ honeyd_init(void)
 		}
 	}
 	uid = pass->pw_uid;
+	gid = pass->pw_gid;
 	home_path = pass->pw_dir;
 
 	char config_suffix[] = "/.config";
@@ -558,37 +614,23 @@ honeyd_init(void)
 	strcpy(full_path, home_path);
 	strcat(full_path, config_suffix);
 
-	//Try to make ~/.config/
-	if(mkdir(full_path, S_IRWXU|S_IRWXO) != 0)
-	{
-		if(errno != EEXIST)
-		{
-			perror("Error: Could not create ~/.config");
-		}
-	}
+	/* ~/.config: create if missing (0700, owned by the user); an
+	 * existing one is left untouched. */
+	honeyd_user_dir(full_path, uid, gid, 0);
 
 	strcat(full_path, honeyd_suffix);
-	//Try to make ~/.config/honeyd
-	if(mkdir(full_path, S_IRWXU|S_IRWXO) != 0)
-	{
-		if(errno != EEXIST)
-		{
-			perror("Error: Could not create ~/.config/honeyd");
-		}
-	}
-	if(chown(full_path, uid, 0) != 0)
-	{
-		perror("Error: Could not change owner of ~/.config/honeyd");
-	}
-	if(chmod(full_path, S_IRWXU|S_IRWXO))
-	{
-		perror("Error: Could not change permissions of ~/.config/honeyd");
-	}
+	/* ~/.config/honeyd: owned by the invoking user, 0700 when new,
+	 * existing permissions only tightened. Drop the trailing '/' for
+	 * the check so a symlink is not followed. */
+	full_path[strlen(full_path) - 1] = '\0';
+	honeyd_user_dir(full_path, uid, gid, 1);
+	full_path[strlen(full_path)] = '/';
 
 	if(setenv("HONEYD_HOME", full_path, 1))
 	{
 		perror("Error: Could not set enviromnent variable HONEYD_HOME");
 	}
+	free(full_path);
 }
 
 #ifdef HAVE_PYTHON
