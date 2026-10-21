@@ -54,6 +54,22 @@ static const int allowed[] = {
 #undef A
 };
 
+/*
+ * The --sandbox-scripts launcher (pm-script-ns). Everything it forks
+ * inherits the filter, scripts included, and they already run under the
+ * daemon's allowlist (ns_run() applies it before the exec), so the
+ * launcher's list is the daemon's plus only the calls of the launcher
+ * itself that the daemon must never make.
+ */
+static const int allowed_ns[] = {
+#define A(x) __NR_##x,
+#include "sandbox_daemon_list.h"
+#include "sandbox_ns_list.h"
+#undef A
+};
+
+static const char *sd_what = "sandbox-daemon";
+
 /* Async-signal-safe: write(2) and kill(2) are on the list. */
 static void
 sd_sigsys(int sig, siginfo_t *si, void *ctx)
@@ -61,7 +77,9 @@ sd_sigsys(int sig, siginfo_t *si, void *ctx)
 	char buf[96], num[16];
 	int n = si->si_syscall, i = sizeof(num);
 	size_t len;
-	const char *pre = "phantom-mirage: sandbox-daemon: denied syscall ";
+	const char *pre = sd_what[0] == 's' ?
+	    "phantom-mirage: sandbox-daemon: denied syscall " :
+	    "phantom-mirage: pm-script-ns: denied syscall ";
 
 	(void)sig; (void)ctx;
 	num[--i] = '\0';
@@ -93,16 +111,45 @@ sandbox_daemon_child(void)
 	return (sandbox_daemon());
 }
 
+static int sd_install(const int *, size_t);
+
 int
 sandbox_daemon(void)
 {
-	size_t n = sizeof(allowed) / sizeof(allowed[0]), i, k = 0;
-	struct sock_filter f[8 + 2 * (sizeof(allowed) / sizeof(allowed[0]))];
-	struct sock_fprog prog;
-	struct sigaction sa;
-
 	if (!honeyd_sandbox_daemon)
 		return (0);
+	sd_what = "sandbox-daemon";
+	if (sd_install(allowed, sizeof(allowed) / sizeof(allowed[0])) == -1)
+		return (-1);
+	if (!sd_quiet)
+		syslog(LOG_NOTICE, "sandbox-daemon: seccomp allowlist "
+		    "active (%zu syscalls)",
+		    sizeof(allowed) / sizeof(allowed[0]));
+	return (0);
+}
+
+int
+sandbox_launcher_seccomp(void)
+{
+	if (!honeyd_sandbox_daemon)
+		return (0);
+	sd_what = "pm-script-ns";
+	if (sd_install(allowed_ns,
+	    sizeof(allowed_ns) / sizeof(allowed_ns[0])) == -1)
+		return (-1);
+	syslog(LOG_NOTICE, "sandbox: script launcher seccomp allowlist "
+	    "active (%zu syscalls)", sizeof(allowed_ns) / sizeof(allowed_ns[0]));
+	return (0);
+}
+
+static int
+sd_install(const int *allow, size_t n)
+{
+	size_t i, k = 0;
+	struct sock_filter f[8 + 2 * (sizeof(allowed_ns) /
+	    sizeof(allowed_ns[0]))];
+	struct sock_fprog prog;
+	struct sigaction sa;
 
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_sigaction = sd_sigsys;
@@ -127,7 +174,7 @@ sandbox_daemon(void)
 #endif
 	for (i = 0; i < n; i++) {
 		f[k++] = (struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
-		    allowed[i], 0, 1);
+		    allow[i], 0, 1);
 		f[k++] = (struct sock_filter)BPF_STMT(BPF_RET | BPF_K,
 		    SECCOMP_RET_ALLOW);
 	}
@@ -145,12 +192,15 @@ sandbox_daemon(void)
 	if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0) == -1)
 		return (-1);
 #endif
-	if (!sd_quiet)
-		syslog(LOG_NOTICE, "sandbox-daemon: seccomp allowlist "
-		    "active (%zu syscalls)", n);
 	return (0);
 }
 #else
+int
+sandbox_launcher_seccomp(void)
+{
+	return (0);	/* --sandbox-daemon already failed on this platform */
+}
+
 int
 sandbox_daemon_child(void)
 {

@@ -74,7 +74,16 @@ check_running() {
     echo "$what: launcher $lp: $lab; daemon: $(cat /proc/$mp/attr/apparmor/current 2>/dev/null || cat /proc/$mp/attr/current)"
     [ "$lab" = "pm-script-ns (enforce)" ] || fail "$what: launcher is '$lab', not pm-script-ns (enforce)"
   fi
+  sp=
+  if [ -n "${HD_LTRACE:-}" ] && lp=$(pgrep -x pm-script-ns | head -1); then
+    strace -f -qq -o ${HD_LTRACE}/launcher-$what -p $lp & sp=$!; sleep 1
+  fi
   out=$(probe); echo "$what: $out"
+  if [ "$what" = start ]; then
+    # the failing exec (see the AppArmor notes below), traced too
+    python3 -c 'import socket; s=socket.create_connection(("10.99.0.12",2525),timeout=10); s.settimeout(5); s.recv(64)' 2>/dev/null; sleep 1
+  fi
+  [ -n "$sp" ] && { kill $sp; wait $sp 2>/dev/null; }
   # (hostname stays the host's: the unit's ProtectHostname=yes forbids
   # sethostname, though the script still has its own UTS namespace)
   grep -Eq 'pid=1 host=[^ ]+ links=1 loup=0 tmp=probe' <<<"$out" || fail "$what: script not namespaced: $out"
@@ -101,6 +110,7 @@ systemctl stop $U
 echo "=== journal"; jr
 jr | grep -q 'sandbox-daemon: seccomp allowlist active' || fail "seccomp allowlist not reported"
 jr | grep -q 'sandbox-daemon: Landlock ABI' || fail "daemon Landlock not active"
+jr | grep -q 'script launcher seccomp allowlist active' || fail "launcher seccomp allowlist not active"
 jr | grep -q 'scripts run in their own user, mount, PID, IPC, UTS and network namespaces' || fail "script namespaces not active"
 jr | grep -q 'sandbox: execv(/nonexistent/pm-missing-script)' || fail "launcher exec-failure path not exercised"
 if jr | grep -E 'denied syscall|killed by SIGSYS|WITHOUT|Landlock unavailable|namespaces unavailable'; then fail "denial or warning in the journal"; fi

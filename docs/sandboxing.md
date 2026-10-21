@@ -114,10 +114,24 @@ or AppArmor profile.
 **Caveats.**
 * Scripts must not live in `/tmp`, because they would be hidden by the
   private one.
-* The launcher itself is not under the daemon's filters, since it must
-  call `unshare` and `mount`. It runs as the daemon's dropped user, has
-  closed all the daemon's descriptors, and only takes requests from the
-  daemon over an inherited socketpair.
+* The launcher is not under the daemon's filters, since it must call
+  `unshare` and `mount`. It runs as the daemon's dropped user, has closed
+  all the daemon's descriptors, and only takes requests from the daemon
+  over an inherited socketpair.
+* **Launcher seccomp allowlist** (with `--sandbox-daemon`). After its
+  setup (closing descriptors, the namespace probe), the launcher installs
+  its own allowlist: the daemon's list (`sandbox_daemon_list.h`) plus
+  `sandbox_ns_list.h` (`unshare`, `mount`, `sethostname`). Calls outside
+  it are logged as `pm-script-ns: denied syscall N`.
+  * It can't be narrower than the daemon's list. A seccomp filter is
+    inherited across `fork` and `execve` and can never be loosened.
+    Scripts are forked by the launcher and already run under the daemon's
+    list, so the launcher's list must contain it.
+  * Scripts are unaffected: `ns_run()` still applies the deny-list and the
+    daemon's list before the exec, which takes `unshare`/`mount` away
+    again.
+  * Without `--sandbox-daemon` the launcher has no allowlist, just as
+    scripts then only get the deny-list.
 * Python `internal` services run inside the daemon and get none of this.
 
 Tested on Debian 13 (kernel 6.12, Landlock ABI 6) and in the GitHub
@@ -392,6 +406,15 @@ installed and unused, and the package installs as before.
   runner with `HD_NS=require`) run it, then again with
   `user.max_user_namespaces=0` to check the logged fallback. The ASan
   and arm64 container jobs run it too, and get the fallback.
+* **Launcher syscall audit.** The script-ns jobs and the systemd jobs
+  (amd64 and arm64) attach `strace -f` to the running `pm-script-ns`
+  while scripts are served (including a failing exec). They then run
+  `ci/syscall_audit.sh --launcher`, which fails on any traced call that
+  is not on the launcher's list. Under systemd, CI adds `ptrace
+  (tracedby, readby) peer=unconfined` to the profiles' `local/` includes
+  so the tracer can attach. The shipped profiles don't have this rule.
+  Both jobs also require the `script launcher seccomp allowlist active`
+  log line.
 * The **Docker** job checks the same `/proc/1/status` fields in the
   image (the bounding set is exempt: no `CAP_SETPCAP`), and that
   `--sandbox-scripts` starts.

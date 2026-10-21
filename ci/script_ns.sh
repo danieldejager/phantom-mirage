@@ -6,6 +6,8 @@
 # with and without --sandbox-daemon. Needs root and NET_ADMIN.
 # Env: HD_NS=require  fail unless namespaces were used (default: also
 #                     accept the logged "user namespaces unavailable")
+#      HD_LTRACE=DIR  strace -f the pm-script-ns launcher (and the
+#                     scripts it runs) into DIR/launcher-MODE
 #      HD_EXTRA, HD_WRAP, HD_LOGDIR as in ci/sandbox_daemon.sh
 set -uo pipefail
 D=$PWD
@@ -41,6 +43,13 @@ run() {
   hp=$!
   for i in $(seq 1 40); do grep -q 'sandbox: \(scripts run in their own\|unprivileged user namespaces\)' $log && break; sleep 0.5; done
   sleep 1
+  sp=
+  if [ -n "${HD_LTRACE:-}" ] && lp=$(pgrep -x pm-script-ns | head -1); then
+    strace -f -qq -o ${HD_LTRACE}/launcher-$mode -p $lp & sp=$!; sleep 1
+  fi
+  if [ "$mode" = daemon ]; then
+    grep -q 'script launcher seccomp allowlist active' $log || fail "$mode: launcher seccomp allowlist not active"
+  fi
   out=$(python3 - <<'PY'
 import socket
 for port in (2424, 2425):
@@ -55,6 +64,7 @@ for port in (2424, 2425):
 PY
 )
   echo "$mode: $out"
+  [ -n "$sp" ] && { kill $sp; wait $sp 2>/dev/null; }
   isol=$(grep '^2424' <<<"$out"); net=$(grep '^2425' <<<"$out")
   if grep -q 'scripts run in their own' $log; then
     grep -q 'pid=1 host=phantom-mirage-script links=1 loup=0 tmp=probe' <<<"$isol" || fail "$mode: isolated script: $isol"
