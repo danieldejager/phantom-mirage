@@ -67,6 +67,8 @@ jobs:
           path: |
             build.log
             config.log
+            events.jsonl
+            honeyd.log
           if-no-files-found: ignore
 
   sanitizers:
@@ -187,7 +189,7 @@ jobs:
           grep -q 'rejected ui connection from .* uid 65534' honeyd-ui.log
           if grep -E 'runtime error|ERROR: AddressSanitizer' honeyd-ui.log; then exit 1; fi
 
-      - name: Subsystem connection (sanitized, #22)
+      - name: Subsystem connection + JSON log (sanitized, #22, #24)
         # A TCP connection to a subsystem port used to crash honeyd
         # (event_add(NULL) in cmd_subsystem_schedule_connect). Run a tiny
         # subsystem through the libhoneyd.so shim and connect to it three
@@ -200,6 +202,9 @@ jobs:
           apt-get install -y --no-install-recommends iproute2 python3 >/dev/null
           install -D -m 755 libhoneyd.so /usr/lib/honeyd/libhoneyd.so
           gcc -O1 -o /tmp/subsys_echo ci/subsys_echo.c
+          cp ci/svc_escape.sh /tmp/svc_escape.sh
+          # honeyd opens its logs after dropping to nobody (#24 docs)
+          install -d -m 1777 /tmp/hdlogs
           ip route add 10.99.0.0/24 dev lo
           cat > /tmp/subsys.conf <<'CONF'
           create default
@@ -208,12 +213,15 @@ jobs:
           set linux personality "Linux 2.6.32"
           set linux default tcp action reset
           add linux subsystem "/tmp/subsys_echo"
+          add linux tcp port 2323 "/bin/sh /tmp/svc_escape.sh"
           bind 10.99.0.10 linux
           CONF
           mkdir -p /var/run
           timeout 60 ./honeyd -d -f /tmp/subsys.conf -i lo --disable-webserver \
             -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
-            -0 $D/pf.os -m $D/nmap-mac-prefixes > honeyd-sub.log 2>&1 &
+            -0 $D/pf.os -m $D/nmap-mac-prefixes \
+            -l /tmp/hdlogs/honeyd.log --json-log=/tmp/hdlogs/events.jsonl \
+            > honeyd-sub.log 2>&1 &
           for i in $(seq 1 30); do
             grep -q 'Listen: .*:18080' honeyd-sub.log && break; sleep 0.5
           done
@@ -221,6 +229,9 @@ jobs:
           for i in 1 2 3; do
             python3 -c "import socket; s=socket.create_connection(('10.99.0.10',18080),timeout=5); assert s.recv(16)==b'hello\\n'" && ok=$((ok+1))
           done
+          # script port: its stderr becomes "service" events
+          python3 -c "import socket; s=socket.create_connection(('10.99.0.10',2323),timeout=5); s.recv(1)" || true
+          sleep 2
           kill -INT %1 || true
           wait %1 || true
           cat honeyd-sub.log
@@ -229,6 +240,10 @@ jobs:
           fi
           test "$ok" = 3
           test "$(grep -c 'Connection established: .*subsystem' honeyd-sub.log)" = 3
+          # Text log still written as before; JSON log valid with the schema
+          grep -q 'tcp(6) S ' /tmp/hdlogs/honeyd.log
+          cp /tmp/hdlogs/events.jsonl /tmp/hdlogs/honeyd.log .
+          python3 ci/check_json_log.py events.jsonl | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload build log
         if: always()
@@ -238,6 +253,8 @@ jobs:
           path: |
             build.log
             config.log
+            events.jsonl
+            honeyd.log
           if-no-files-found: ignore
 
   docker:
@@ -292,6 +309,12 @@ jobs:
           docker exec "$cid" stat -c '%a %U %n' /run/honeyd /run/honeyd/honeyd.sock
           test "$(docker exec "$cid" stat -c '%a' /run/honeyd/honeyd.sock)" = 600
           docker exec "$cid" sh -c 'echo "list template" | honeydctl' | grep -q 192.0.2.10
+          docker exec "$cid" grep -q '^Uid:.*65534' /proc/1/status
+          docker rm -f "$cid"
+          # HONEYD_JSON_LOG=stdout passes --json-log=- to honeyd (#24)
+          cid=$(docker run -d $caps $ro -e HONEYD_JSON_LOG=stdout honeyd:ci)
+          sleep 5
+          docker exec "$cid" sh -c 'tr "\0" " " < /proc/1/cmdline' | grep -q -- '--json-log=-'
           docker exec "$cid" grep -q '^Uid:.*65534' /proc/1/status
           docker logs "$cid"
           docker rm -f "$cid"

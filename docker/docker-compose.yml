@@ -29,6 +29,7 @@ services:
       - /root/.config
     environment:
       HONEYD_INTERFACES: eth0
+      HONEYD_JSON_LOG: stdout     # JSON Lines events on stdout (#24)
     volumes:
       - ./honeyd.conf:/etc/honeyd/honeyd.conf:ro   # PLACEHOLDER: site config
     networks:

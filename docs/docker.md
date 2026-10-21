@@ -22,6 +22,7 @@ docker buildx build --platform linux/amd64,linux/arm64 -t honeyd:local .
 | `HONEYD_CONFIG` | `/etc/honeyd/honeyd.conf` | config file (mount your own read-only) |
 | `HONEYD_INTERFACES` | `eth0` | space-separated capture interfaces (one per macvlan network) |
 | `HONEYD_NET` | *(empty)* | optional address/range honeyd answers for |
+| `HONEYD_JSON_LOG` | *(empty)* | `stdout` to write JSON Lines events to the container's stdout for a log shipper ([json-log.md](json-log.md)); any other value is a file path writable by `nobody` |
 | `HONEYD_UI_GROUP` | *(empty)* | group allowed on the control socket (see #14) |
 
 Extra container arguments are appended to the honeyd command line. `--version`/`--help` run honeyd directly. Adding `--verify-config` only checks the config and exits.

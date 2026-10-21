@@ -430,6 +430,7 @@ template_deallocate(struct template *tmpl)
 		free(tmpl->dhcp_req);
 	}
 
+	free(tmpl->origin);
 	free(tmpl->name);
 	free(tmpl);
 }
@@ -740,6 +741,9 @@ template_clone(const char *newname, const struct template *tmpl,
 
 	if ((newtmpl = template_create(newname)) == NULL)
 		return (NULL);
+	/* Remember the configured template name for logging */
+	newtmpl->origin = strdup(tmpl->origin != NULL ?
+	    tmpl->origin : tmpl->name);
 
 	SPLAY_FOREACH(port, porttree, (struct porttree *)&tmpl->ports) {
 		if (port_insert(newtmpl, port->proto, port->number,

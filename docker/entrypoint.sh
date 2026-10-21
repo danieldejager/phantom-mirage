@@ -5,6 +5,9 @@
 #   HONEYD_INTERFACES  space-separated capture interfaces (default eth0)
 #   HONEYD_NET         optional: address/range honeyd answers for
 #                      (honeyd's trailing net argument)
+#   HONEYD_JSON_LOG    optional: "stdout" writes JSON Lines events (#24) to
+#                      the container's stdout (for a log shipper); any
+#                      other value is a file path writable by nobody
 #
 # Any arguments are appended to the honeyd command line. Arguments
 # starting with --version/--help/--verify-config are passed straight to
@@ -20,6 +23,11 @@ case "${1:-}" in
 esac
 
 set -- -f "$conf" --disable-webserver "$@"
+case "${HONEYD_JSON_LOG:-}" in
+"")	;;
+stdout|-) set -- "$@" --json-log=- ;;
+*)	set -- "$@" --json-log="$HONEYD_JSON_LOG" ;;
+esac
 for i in $ifs; do set -- -i "$i" "$@"; done
 
 # honeyd needs these at runtime; with a read-only rootfs mount a tmpfs
