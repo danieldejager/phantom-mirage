@@ -45,7 +45,8 @@ COPY docker/phantom-mirage.conf /etc/phantom-mirage/phantom-mirage.conf
 COPY docker/entrypoint.sh /usr/local/bin/phantom-mirage-entrypoint
 
 # phantom-mirage starts as root inside the container so it can open the capture
-# interface, create /run/phantom-mirage (root-owned 0700, #14) and then drops to
+# interface, create /run/phantom-mirage (root-owned 0700, #14; control socket and pid
+# file) and then drops to
 # nobody by itself. Give the container only the capabilities listed in
 # docs/docker.md (--cap-drop ALL; no --privileged).
 ENV PHANTOM_MIRAGE_CONFIG=/etc/phantom-mirage/phantom-mirage.conf \

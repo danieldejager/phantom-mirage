@@ -33,7 +33,9 @@
 #define _HONEYD_H_
 
 #define PRODUCT_NAME		"Phantom Mirage I"
-#define PIDFILE			"/run/phantom-mirage.pid"
+/* In the root-only control socket dir (ui.h UI_DIR), see honeyd_pidfile_open() */
+#define PIDDIR			"/run/phantom-mirage"
+#define PIDFILE			PIDDIR "/phantom-mirage.pid"
 
 char *pm_getenv(const char *);
 
