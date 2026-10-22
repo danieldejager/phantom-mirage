@@ -11,7 +11,7 @@ Homepage: http://www.honeyd.org
 
 Package: phantom-mirage
 Architecture: any
-Depends: adduser (>= 3.52), ${shlibs:Depends}, ${misc:Depends}
+Depends: adduser (>= 3.52), iproute2, ${shlibs:Depends}, ${misc:Depends}
 Recommends: python3, farpd, phantom-mirage-common, rrdtool
 Conflicts: honeyd
 Replaces: honeyd

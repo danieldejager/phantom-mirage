@@ -40,6 +40,7 @@ phantom-mirage (1.7.0-3) unstable; urgency=medium
   * The shipped /etc/phantom-mirage/phantom-mirage.conf default template
     now answers ICMP echo (TCP/UDP stay filtered), so "ping -c3 <decoy>"
     tests a fresh setup.
+  * Depend on iproute2 (phantom-mirage-setup uses ip(8)).
 
  -- Daniel de Jager <ddejager@dandejager.com>  Fri, 23 Oct 2026 08:10:56 +1100
 
