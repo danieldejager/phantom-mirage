@@ -45,6 +45,7 @@
 
 #include <err.h>
 #include <errno.h>
+#include <limits.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
@@ -625,8 +626,18 @@ cmd_subsystem(struct template *tmpl, struct subsystem *sub,
 		sandbox_script(argv);
 		if (execv(execcmd, argv) == -1)
 		{
-			syslog(LOG_ERR, "%s: execv(%s): %s", __func__, execcmd,
-			    strerror(errno));
+			int e = errno, ea, eo, fd;
+			char rp[PATH_MAX];
+			ea = access(execcmd, X_OK) == -1 ? errno : 0;
+			fd = open(execcmd, O_RDONLY | O_CLOEXEC);
+			eo = fd == -1 ? errno : 0;
+			if (fd != -1)
+				close(fd);
+			syslog(LOG_ERR, "%s: execv(%s): %s (realpath %s, "
+			    "access X_OK: %s, open: %s, uid %d)", __func__,
+			    execcmd, strerror(e),
+			    realpath(execcmd, rp) ? rp : "?",
+			    strerror(ea), strerror(eo), (int)geteuid());
 			exit(EXIT_FAILURE);
 		}
 
