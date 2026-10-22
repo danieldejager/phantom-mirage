@@ -76,7 +76,7 @@
 #include "interface.h"
 #include "sandbox.h"
 
-ssize_t atomicio(ssize_t (*)(), int, void *, size_t);
+#include "atomicio.h"
 
 extern struct callback cb_tcp;
 extern struct callback cb_udp;
@@ -820,7 +820,7 @@ cmd_subsystem_localconnect(struct tuple *hdr, struct command *cmd,
 		/* Confirm success of failure */
 		res = fd == -1 ? -1 : 0;
 		TRACE(sub->cmd.pfd,
-		    atomicio(write, sub->cmd.pfd, &res, 1));
+		    atomicio(vwrite, sub->cmd.pfd, &res, 1));
 		if (fd == -1)
 			return (-1);
 
@@ -850,7 +850,7 @@ cmd_subsystem_localconnect(struct tuple *hdr, struct command *cmd,
 	si.sin_port = htons(hdr->dport);
 
 	/* Write the bound socket address to the other side */
-	if (atomicio(write, port->sub_fd, &si, sizeof(si)) != sizeof(si)) {
+	if (atomicio(vwrite, port->sub_fd, &si, sizeof(si)) != sizeof(si)) {
 		TRACE(port->sub_fd, fdshare_close(port->sub_fd));
 		port->sub_fd = -1;
 		TRACE_RESET(cmd->pfd, close(cmd->pfd));

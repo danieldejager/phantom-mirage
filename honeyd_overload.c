@@ -164,7 +164,7 @@ DECLARE(fcntl, int, (int, int, ...));
 DECLARE(kqueue,int, (void));
 #endif
 
-ssize_t atomicio(ssize_t (*)(), int, void *, size_t);
+#include "atomicio.h"
 
 #ifdef DL_NEED_UNDERSCORE
 #define UNDERSCORE "_"
@@ -371,7 +371,7 @@ send_cmd(struct subsystem_command *cmd)
 {
 	char res;
 
-	if (atomicio(write, magic_fd, cmd,
+	if (atomicio(vwrite, magic_fd, cmd,
 		sizeof(struct subsystem_command)) !=
 	    sizeof(struct subsystem_command)) {
 		DPRINTF((stderr, "%s: write failed\n", __func__));
