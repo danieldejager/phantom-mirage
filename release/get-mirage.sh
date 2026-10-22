@@ -6,7 +6,8 @@
 #     repos/danieldejager/phantom-mirage/contents/release/get-mirage.sh | sh
 #   sh get-mirage.sh [--tag TAG] [install.sh options, e.g. -i eth0 -n CIDR]
 #
-# Picks the newest non-draft release (prereleases included) or --tag,
+# Picks the most recently published non-draft release (prereleases
+# included; the API order and the Latest flag are ignored) or --tag,
 # the .run for this distro (/etc/os-release) and arch (dpkg
 # --print-architecture), checks it against the release's SHA256SUMS and
 # runs it with sudo. Everything is inside main() so a truncated
@@ -35,7 +36,7 @@ main() {
 	[ -r "$osr" ] || die "$osr not found"
 	distro=$(. "$osr" && echo "${ID:-}${VERSION_ID:-}")
 	if [ -z "$tag" ]; then
-		tag=$(gh api "repos/$REPO/releases" --jq '[.[] | select(.draft | not)][0].tag_name // empty') || die "could not list releases"
+		tag=$(gh api "repos/$REPO/releases" --jq '[.[] | select(.draft | not)] | sort_by(.published_at) | last | .tag_name // empty') || die "could not list releases"
 		[ -n "$tag" ] || die "no published release found"
 	fi
 	assets=$(gh api "repos/$REPO/releases/tags/$tag" --jq '.assets[].name') || die "release $tag not found"

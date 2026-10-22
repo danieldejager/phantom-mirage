@@ -17,8 +17,8 @@ cat > "$t/bin/gh" <<'G'
 echo "gh $*" >> "$MOCK/gh.log"
 case "$1 $2" in
 "auth status") [ -e "$MOCK/authok" ] ;;
-"api repos/danieldejager/phantom-mirage/releases") cat "$MOCK/releases.json" | python3 -c '
-import json,sys; r=[x for x in json.load(sys.stdin) if not x["draft"]]; print(r[0]["tag_name"] if r else "")' ;;
+"api repos/danieldejager/phantom-mirage/releases")
+	[ "$3" = --jq ] || exit 9; jq -r "$4" "$MOCK/releases.json" ;;
 "api repos/danieldejager/phantom-mirage/releases/tags/"*)
 	tag=${2##*/}; [ -d "$MOCK/rel/$tag" ] || exit 1; ls -1 "$MOCK/rel/$tag" ;;
 "release download")
@@ -43,12 +43,14 @@ gm
 [ ! -e "$t/sudo.log" ] || fail "sudo called when not authenticated"
 touch "$t/authok"
 
-# 2. newest release is a prerelease (and a draft above it is skipped)
+# 2. newest by published_at is a prerelease; a draft is skipped, and an
+#    older "Latest" release listed first by the API is not picked
 mkrel v1.7.0-3; mkrel v1.7.0-4
 cat > "$t/releases.json" <<'J'
-[{"tag_name":"v1.7.0-5","draft":true,"prerelease":false},
- {"tag_name":"v1.7.0-4","draft":false,"prerelease":true},
- {"tag_name":"v1.7.0-3","draft":false,"prerelease":false}]
+[{"tag_name":"v1.7.0","draft":false,"prerelease":false,"published_at":"2026-10-22T05:59:53Z"},
+ {"tag_name":"v1.7.0-5","draft":true,"prerelease":false,"published_at":null},
+ {"tag_name":"v1.7.0-4","draft":false,"prerelease":true,"published_at":"2026-10-22T23:04:33Z"},
+ {"tag_name":"v1.7.0-3","draft":false,"prerelease":true,"published_at":"2026-10-22T21:38:34Z"}]
 J
 gm -i veth-h -n 10.77.0.248/29
 [ $rc = 0 ] || fail "prerelease rc=$rc"
