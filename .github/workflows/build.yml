@@ -104,6 +104,15 @@ jobs:
             -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
             -0 $D/pf.os -m $D/nmap-mac-prefixes
           for b in phantom-mirage-ctl phantom-mirage-stats phantom-mirage-sniff; do test -x ./$b; done
+          # an "internal" (Python) service in a build without Python must fail
+          # the config cleanly, not crash (seen on Ubuntu 26.04)
+          sed 's/^bind /add linux tcp port 7 internal "echo_banner"\nbind /' ci/smoke.conf > /tmp/py.conf
+          grep -q internal /tmp/py.conf
+          for m in --verify-config -d; do
+            set +e; timeout 20 ./phantom-mirage $m -f /tmp/py.conf -i lo --disable-webserver \
+              -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc -0 $D/pf.os -m $D/nmap-mac-prefixes; rc=$?; set -e
+            echo "$m: exit $rc"; test $rc -ne 0 -a $rc -lt 124
+          done
 
       - name: "make install + run from the installed tree (#36)"
         # make install needs no Python (#36) and must not touch $HOME.
@@ -1015,14 +1024,17 @@ jobs:
             DEBIAN_FRONTEND=noninteractive apt-get install -y ../phantom-mirage_*.deb ../phantom-mirage-common_*.deb
             dpkg -s phantom-mirage | grep -E "^(Version|Depends):"
             phantom-mirage --version
-            # sandbox smoke tests from a --with-python build tree
+            # sandbox smoke tests from a fresh --with-python build tree
+            cp -a /src/phantom-mirage /build; cd /build; make distclean >/dev/null 2>&1 || true
             ./autogen.sh >/dev/null; ./configure -q --prefix=/usr --with-python
+            grep -q "^#define HAVE_PYTHON 1" config.h
             make -j$(nproc) >/dev/null
             install -D -m 755 libphantom-mirage.so /usr/lib/phantom-mirage/libphantom-mirage.so
             gcc -O1 -o /tmp/subsys_echo ci/subsys_echo.c
             HD_LANDLOCK=require bash ci/sandbox_daemon.sh
             bash ci/script_ns.sh
-            grep -h "Landlock ABI" sandbox-daemon-plain.log | head -1'
+            grep -h "Landlock ABI" sandbox-daemon-plain.log | head -1
+            python3 --version'
           ls src/*.deb
           v=$(cd src/phantom-mirage && dpkg-parsechangelog -S Version)
           mkdir -p out
