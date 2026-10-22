@@ -6,7 +6,8 @@
 #   sudo phantom-mirage-uninstall [--yes] [--dry-run]
 #
 # Stops and disables the service, purges phantom-mirage and
-# phantom-mirage-common, removes /etc/default/phantom-mirage (and its
+# phantom-mirage-common (and the old honeyd/honeyd-common if present),
+# removes /etc/init.d/phantom-mirage, /etc/default/phantom-mirage (and its
 # .bak-* copies), /etc/phantom-mirage, /var/lib/phantom-mirage,
 # /var/log/phantom-mirage and the phantom-mirage user/group if still
 # there, turns promiscuous mode off on the configured interface, and
@@ -20,7 +21,7 @@ main() {
 		case $a in
 			--yes|-y) YES=1 ;;
 			--dry-run|-n) DRY=1 ;;
-			-h|--help) sed -n '2,16s/^# \{0,1\}//p' "$0"; exit 0 ;;
+			-h|--help) sed -n '2,17s/^# \{0,1\}//p' "$0"; exit 0 ;;
 			*) echo "unknown option: $a" >&2; exit 2 ;;
 		esac
 	done
@@ -47,10 +48,15 @@ main() {
 	note() { removed="$removed
   $*"; }
 
-	if command -v systemctl >/dev/null 2>&1 && systemctl cat phantom-mirage.service >/dev/null 2>&1; then
-		run systemctl disable --now phantom-mirage.service || true
-		note "service phantom-mirage (stopped, disabled)"
-	fi
+	for svc in phantom-mirage honeyd; do
+		if command -v systemctl >/dev/null 2>&1 && systemctl cat "$svc.service" >/dev/null 2>&1; then
+			run systemctl disable --now "$svc.service" || run systemctl stop "$svc.service" || true
+			note "service $svc (stopped, disabled)"
+		elif [ -x "/etc/init.d/$svc" ]; then
+			run "/etc/init.d/$svc" stop || true
+			note "service $svc (stopped)"
+		fi
+	done
 	FD=/etc/default/farpd
 	if [ -r "$FD" ] && grep -q '^# written by phantom-mirage-setup' "$FD"; then
 		if command -v systemctl >/dev/null 2>&1; then
@@ -65,7 +71,7 @@ main() {
 		fi
 	fi
 	pkgs=
-	for p in phantom-mirage phantom-mirage-common; do
+	for p in phantom-mirage phantom-mirage-common honeyd honeyd-common; do
 		st=$(dpkg-query -W -f='${db:Status-Abbrev}' "$p" 2>/dev/null || true)
 		case $st in ''|un*|pn*) ;; *) pkgs="$pkgs $p" ;; esac
 	done
@@ -74,7 +80,8 @@ main() {
 		run env DEBIAN_FRONTEND=noninteractive apt-get purge -y $pkgs
 		note "packages:$pkgs (purged)"
 	fi
-	for d in "$DEFAULT" "$DEFAULT".bak-* "$DEFAULT".new /etc/phantom-mirage /var/lib/phantom-mirage /var/log/phantom-mirage; do
+	for d in "$DEFAULT" "$DEFAULT".bak-* "$DEFAULT".new /etc/init.d/phantom-mirage /etc/phantom-mirage /var/lib/phantom-mirage /var/log/phantom-mirage \
+		/etc/systemd/system/multi-user.target.wants/phantom-mirage.service; do
 		[ -e "$d" ] || [ -L "$d" ] || continue
 		run rm -rf -- "$d"
 		note "$d"
@@ -86,6 +93,13 @@ main() {
 	if getent group phantom-mirage >/dev/null 2>&1; then
 		run groupdel phantom-mirage || true
 		note "group phantom-mirage"
+	fi
+	if [ -z "$DRY" ] && command -v update-rc.d >/dev/null 2>&1; then
+		update-rc.d -f phantom-mirage remove >/dev/null 2>&1 || true
+	fi
+	if [ -z "$DRY" ] && command -v systemctl >/dev/null 2>&1; then
+		systemctl daemon-reload >/dev/null 2>&1 || true
+		systemctl reset-failed phantom-mirage.service >/dev/null 2>&1 || true
 	fi
 	if [ -n "$IFACE" ] && [ -e "/sys/class/net/$IFACE" ]; then
 		run ip link set dev "$IFACE" promisc off

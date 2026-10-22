@@ -169,7 +169,23 @@ fi
 printf '%s\n' "$NEW" > "$DEFAULT.new" && mv "$DEFAULT.new" "$DEFAULT"
 say "wrote $DEFAULT"
 "$LIBDIR/check-default" "$DEFAULT"
-systemctl enable phantom-mirage
+# enable at boot; a failing "systemctl enable" (e.g. update-rc.d refusing an
+# init script with empty runlevels, as farpd 0.2 ships) only warns: the
+# native unit is then linked into multi-user.target.wants by hand (#110)
+pm_enable() {
+	systemctl enable "$1" && return 0
+	say "warning: systemctl enable $1 failed; linking its systemd unit directly"
+	unit=$(systemctl show -p FragmentPath --value "$1.service" 2>/dev/null || true)
+	if [ -n "$unit" ] && [ -e "$unit" ]; then
+		mkdir -p /etc/systemd/system/multi-user.target.wants
+		ln -sf "$unit" "/etc/systemd/system/multi-user.target.wants/$1.service"
+		systemctl daemon-reload || true
+	else
+		say "warning: $1 is not enabled at boot (start it with: sudo systemctl start $1)"
+	fi
+	return 0
+}
+pm_enable phantom-mirage
 systemctl restart phantom-mirage
 if [ -n "$FARPD" ]; then
 	if [ -e "$FDEFAULT" ] && ! grep -q "^$FMARK" "$FDEFAULT" && [ ! -e "$FDEFAULT.phantom-mirage-orig" ]; then
@@ -178,7 +194,7 @@ if [ -n "$FARPD" ]; then
 	fi
 	printf '%s\n' "$FNEW" > "$FDEFAULT.new" && mv "$FDEFAULT.new" "$FDEFAULT"
 	say "wrote $FDEFAULT (farpd answers ARP for $NET on $IFACE)"
-	systemctl enable farpd
+	pm_enable farpd
 	systemctl restart farpd
 	farpd_state="answering ARP for $NET on $IFACE"
 fi
