@@ -199,17 +199,9 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{ json .SBOM }}' | head -c 300; echo
-          docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{ json .Provenance }}' | head -c 300; echo
-          docker buildx imagetools inspect "$IMAGE@$DIGEST" --raw > index.json
-          python3 - <<'PY'
-          import json
-          idx = json.load(open("index.json"))
-          att = [m for m in idx["manifests"]
-                 if m.get("annotations", {}).get("vnd.docker.reference.type") == "attestation-manifest"]
-          print("attestation manifests in the index:", len(att))
-          assert att, "no SBOM/provenance attestations in the registry"
-          PY
+          # manifests only: never pipe the full SPDX/provenance documents
+          # into head (SIGPIPE made buildx exit 255 under pipefail)
+          python3 ci/check_attestations.py "$IMAGE@$DIGEST"
 
       - name: Summary
         if: always()
