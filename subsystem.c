@@ -65,7 +65,7 @@
 #include "util.h"
 #include "fdpass.h"
 
-ssize_t atomicio(ssize_t (*)(), int, void *, size_t);
+#include "atomicio.h"
 
 
 int
@@ -357,7 +357,7 @@ subsystem_cmd_listen(int fd,
 	}
 
 	res = 0;
-	TRACE(fd, atomicio(write, fd, &res, 1));
+	TRACE(fd, atomicio(vwrite, fd, &res, 1));
 	res = -1;
 
 	/* Repeat until we get a result */
@@ -487,11 +487,11 @@ subsystem_read(int fd, short what, void *arg)
 		}
 
 		/* Confirm success or failure of this phase */
-		TRACE(fd, atomicio(write, fd, &res, 1));
+		TRACE(fd, atomicio(vwrite, fd, &res, 1));
 			
 		/* On success, we also communicate the port back */
 		if (res != -1) {
-			TRACE(fd, atomicio(write, fd, &port, sizeof(port)));
+			TRACE(fd, atomicio(vwrite, fd, &port, sizeof(port)));
 		}
 		goto reschedule;
 	}
@@ -619,7 +619,7 @@ subsystem_read(int fd, short what, void *arg)
 
 			/* Confirm success of this phase */
 			res = 0;
-			TRACE(fd, atomicio(write, fd, &res, 1));
+			TRACE(fd, atomicio(vwrite, fd, &res, 1));
 			
 			/* Now get the control fd */
 			while ((nfd = receive_fd(fd, NULL, NULL)) == -1) {
@@ -632,7 +632,7 @@ subsystem_read(int fd, short what, void *arg)
 
 			/* Confirm success again */
 			res = 0;
-			TRACE(nfd, atomicio(write, nfd, &res, 1));
+			TRACE(nfd, atomicio(vwrite, nfd, &res, 1));
 			
 			/* Send out the SYN packet */
 			con->state = TCP_STATE_SYN_SENT;
@@ -661,7 +661,7 @@ subsystem_read(int fd, short what, void *arg)
 
 			/* Confirm success of this phase */
 			res = 0;
-			TRACE(fd, atomicio(write, fd, &res, 1));
+			TRACE(fd, atomicio(vwrite, fd, &res, 1));
 
 			/* Now get the control fd */
 			while ((nfd = receive_fd(fd, NULL, NULL)) == -1) {
@@ -674,7 +674,7 @@ subsystem_read(int fd, short what, void *arg)
 
 			/* Confirm success again */
 			res = 0;
-			TRACE(nfd, atomicio(write, nfd, &res, 1));
+			TRACE(nfd, atomicio(vwrite, nfd, &res, 1));
                        
 			/* Connect our system to the subsystem */
 			cmd_subsystem_localconnect(&con->conhdr, &con->cmd,
@@ -687,7 +687,7 @@ subsystem_read(int fd, short what, void *arg)
 	}
 
  out:
-	TRACE(fd, atomicio(write, fd, &res, 1));
+	TRACE(fd, atomicio(vwrite, fd, &res, 1));
  reschedule:
 	/* Reschedule read */
 	TRACE(event_get_fd(sub->cmd.pread), event_add(sub->cmd.pread, NULL));

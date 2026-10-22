@@ -21,7 +21,7 @@ permissions:
 
 concurrency:
   group: build-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event.action != 'labeled' }}
 
 jobs:
   # Decides whether the heavy jobs run (see the header).
@@ -104,6 +104,15 @@ jobs:
             -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
             -0 $D/pf.os -m $D/nmap-mac-prefixes
           for b in phantom-mirage-ctl phantom-mirage-stats phantom-mirage-sniff; do test -x ./$b; done
+          # an "internal" (Python) service in a build without Python must fail
+          # the config cleanly, not crash (seen on Ubuntu 26.04)
+          sed 's/^bind /add linux tcp port 7 internal "echo_banner"\nbind /' ci/smoke.conf > /tmp/py.conf
+          grep -q internal /tmp/py.conf
+          for m in --verify-config -d; do
+            set +e; timeout 20 ./phantom-mirage $m -f /tmp/py.conf -i lo --disable-webserver \
+              -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc -0 $D/pf.os -m $D/nmap-mac-prefixes; rc=$?; set -e
+            echo "$m: exit $rc"; test $rc -ne 0 -a $rc -lt 124
+          done
 
       - name: "make install + run from the installed tree (#36)"
         # make install needs no Python (#36) and must not touch $HOME.

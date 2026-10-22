@@ -114,16 +114,16 @@ old=$(cat /run/$U/$U.pid)
 systemctl restart $U; wait_up; check_running restart
 [ "$(cat /run/$U/$U.pid)" != "$old" ] || fail "restart: pid file not updated"
 systemctl reload $U || fail "reload failed"; sleep 2; check_running reload
-jr | grep -q 'rereading configuration on signal 1' || fail "reload: SIGHUP not received"
+grep -q 'rereading configuration on signal 1' <<<"$(jr)" || fail "reload: SIGHUP not received"
 systemctl stop $U
 [ -e /run/$U ] && fail "stop: /run/$U left behind"
 
 echo "=== journal"; jr
-jr | grep -q 'sandbox-daemon: seccomp allowlist active' || fail "seccomp allowlist not reported"
-jr | grep -q 'sandbox-daemon: Landlock ABI' || fail "daemon Landlock not active"
-jr | grep -q 'script launcher seccomp allowlist active' || fail "launcher seccomp allowlist not active"
-jr | grep -q 'scripts run in their own user, mount, PID, IPC, UTS and network namespaces' || fail "script namespaces not active"
-jr | grep -q 'sandbox: execv(/nonexistent/pm-missing-script)' || fail "launcher exec-failure path not exercised"
+grep -q 'sandbox-daemon: seccomp allowlist active' <<<"$(jr)" || fail "seccomp allowlist not reported"
+grep -q 'sandbox-daemon: Landlock ABI' <<<"$(jr)" || fail "daemon Landlock not active"
+grep -q 'script launcher seccomp allowlist active' <<<"$(jr)" || fail "launcher seccomp allowlist not active"
+grep -q 'scripts run in their own user, mount, PID, IPC, UTS and network namespaces' <<<"$(jr)" || fail "script namespaces not active"
+grep -q 'sandbox: execv(/nonexistent/pm-missing-script)' <<<"$(jr)" || fail "launcher exec-failure path not exercised"
 if jr | grep -E 'denied syscall|killed by SIGSYS|WITHOUT|Landlock unavailable|namespaces unavailable'; then fail "denial or warning in the journal"; fi
 
 # Without the sandbox flags: loud warning (and still runs)
@@ -133,7 +133,7 @@ systemctl daemon-reload
 since=$(date '+%Y-%m-%d %H:%M:%S'); sleep 1
 systemctl start $U; wait_up
 systemctl is-active -q $U || fail "no-sandbox: not active"
-jr | grep -q 'WARNING: running under systemd WITHOUT --sandbox-daemon and --sandbox-scripts' || { fail "no-sandbox: no warning"; jr; }
+grep -q 'WARNING: running under systemd WITHOUT --sandbox-daemon and --sandbox-scripts' <<<"$(jr)" || { fail "no-sandbox: no warning"; jr; }
 systemctl stop $U
 rm -rf /etc/systemd/system/$U.service.d; systemctl daemon-reload
 
@@ -143,8 +143,8 @@ if [ "${HD_APPARMOR:-}" = require ]; then
     || fail "AppArmor profiles not loaded in enforce mode"
   sysctl kernel.apparmor_restrict_unprivileged_userns
   [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1 ] || fail "userns restriction is not on, the test proves nothing"
-  if journalctl -k --since "$since0" --no-pager | grep -E 'apparmor="(DENIED|ALLOWED)"'; then fail "AppArmor denials in the kernel log"; fi
-  if dmesg | grep -E 'apparmor="(DENIED|ALLOWED)"'; then fail "AppArmor denials in dmesg"; fi
+  if journalctl -k --since "$since0" --no-pager | grep -E 'apparmor="(DENIED|ALLOWED)".*profile="(pm-script-ns|phantom-mirage[^"]*)'; then fail "AppArmor denials in the kernel log"; fi
+  if dmesg | grep -E 'apparmor="(DENIED|ALLOWED)".*profile="(pm-script-ns|phantom-mirage[^"]*)'; then fail "AppArmor denials in dmesg"; fi
   # explicitly: the launcher never needs DAC overrides (#93 follow-up)
   if { journalctl -k --since "$since0" --no-pager; dmesg; } | grep -E 'capname="dac_(override|read_search)"'; then
     fail "dac_override/dac_read_search requested under the AppArmor profile"

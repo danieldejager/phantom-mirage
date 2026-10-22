@@ -45,6 +45,7 @@
 
 #include <err.h>
 #include <errno.h>
+#include <limits.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
@@ -76,7 +77,7 @@
 #include "interface.h"
 #include "sandbox.h"
 
-ssize_t atomicio(ssize_t (*)(), int, void *, size_t);
+#include "atomicio.h"
 
 extern struct callback cb_tcp;
 extern struct callback cb_udp;
@@ -436,6 +437,7 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 
 	if (cmd->pid == 0) {
 		/* Child privileges */
+		sandbox_script_prepare(argv);
 		cmd_setpriv(tmpl);
 
 		/* Child */
@@ -588,6 +590,7 @@ cmd_subsystem(struct template *tmpl, struct subsystem *sub,
 		char magic_buf[12];
 		int magic_fd;
 		/* Set privileges */
+		sandbox_script_prepare(argv);
 		cmd_setpriv(tmpl);
 
 		/* Child */
@@ -625,7 +628,29 @@ cmd_subsystem(struct template *tmpl, struct subsystem *sub,
 		sandbox_script(argv);
 		if (execv(execcmd, argv) == -1)
 		{
-			syslog(LOG_ERR, "%s: execv(%s)", __func__, execcmd);
+			int e = errno, ea, eo, fd;
+			char rp[PATH_MAX];
+			ea = access(execcmd, X_OK) == -1 ? errno : 0;
+			fd = open(execcmd, O_RDONLY | O_CLOEXEC);
+			eo = fd == -1 ? errno : 0;
+			if (fd != -1)
+				close(fd);
+			int ed, ee;
+			fd = open("/usr/bin", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+			ed = fd == -1 ? errno : 0;
+			if (fd != -1)
+				close(fd);
+			fd = open("/etc/passwd", O_RDONLY | O_CLOEXEC);
+			ee = fd == -1 ? errno : 0;
+			if (fd != -1)
+				close(fd);
+			syslog(LOG_ERR, "%s: execv(%s): %s (realpath %s, "
+			    "access X_OK: %s, open: %s, /usr/bin: %s, "
+			    "/etc/passwd: %s, uid %d)", __func__,
+			    execcmd, strerror(e),
+			    realpath(execcmd, rp) ? rp : "?",
+			    strerror(ea), strerror(eo), strerror(ed),
+			    strerror(ee), (int)geteuid());
 			exit(EXIT_FAILURE);
 		}
 
@@ -820,7 +845,7 @@ cmd_subsystem_localconnect(struct tuple *hdr, struct command *cmd,
 		/* Confirm success of failure */
 		res = fd == -1 ? -1 : 0;
 		TRACE(sub->cmd.pfd,
-		    atomicio(write, sub->cmd.pfd, &res, 1));
+		    atomicio(vwrite, sub->cmd.pfd, &res, 1));
 		if (fd == -1)
 			return (-1);
 
@@ -850,7 +875,7 @@ cmd_subsystem_localconnect(struct tuple *hdr, struct command *cmd,
 	si.sin_port = htons(hdr->dport);
 
 	/* Write the bound socket address to the other side */
-	if (atomicio(write, port->sub_fd, &si, sizeof(si)) != sizeof(si)) {
+	if (atomicio(vwrite, port->sub_fd, &si, sizeof(si)) != sizeof(si)) {
 		TRACE(port->sub_fd, fdshare_close(port->sub_fd));
 		port->sub_fd = -1;
 		TRACE_RESET(cmd->pfd, close(cmd->pfd));

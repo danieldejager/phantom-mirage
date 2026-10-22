@@ -31,7 +31,7 @@ LIBHONEYDFILES= libhoneyd-honeyd_overload.lo libhoneyd-atomicio.lo \
 
 libhoneyd-honeyd_overload.lo: honeyd_overload.c config.h
 	$(LTCOMPILE) -c -o $@ $(srcdir)/honeyd_overload.c
-libhoneyd-atomicio.lo: atomicio.c config.h
+libhoneyd-atomicio.lo: atomicio.c atomicio.h config.h
 	$(LTCOMPILE) -c -o $@ $(srcdir)/atomicio.c
 libhoneyd-fdpass.lo: fdpass.c fdpass.h config.h
 	$(LTCOMPILE) -c -o $@ $(srcdir)/fdpass.c
@@ -81,7 +81,7 @@ pkginclude_HEADERS = hooks.h plugins.h plugins_config.h debug.h
 phantom_mirage_SOURCES	= honeyd.c command.c parse.y lex.l config.c personality.c sandbox.c sandbox.h \
 	sandbox_daemon.c sandbox_daemon_list.h sandbox_ns_list.h sandbox_ns.c sandbox_root.c \
 	util.c ipfrag.c router.c tcp.c udp.c xprobe_assoc.c log.c \
-	fdpass.c atomicio.c subsystem.c hooks.c plugins.c \
+	fdpass.c atomicio.c atomicio.h subsystem.c hooks.c plugins.c \
 	plugins_config.c pool.c interface.c arp.c gre.c \
 	honeyd.h personality.h ipfrag.h	router.h network.c network.h \
 	tcp.h udp.h parse.h \
@@ -148,7 +148,7 @@ INCLUDES = -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
 ########################################################################
 
 smtp_SOURCES = subsystems/smtp.c subsystems/smtp.h subsystems/smtp_main.c \
-	subsystems/smtp_messages.h atomicio.c \
+	subsystems/smtp_messages.h atomicio.c atomicio.h \
 	util.c util.h honeyd_overload.h
 
 smtp_LDADD = @LIBOBJS@ @EVENTLIB@ @DNETLIB@ @PCAPLIB@ @PCRELIB@
@@ -158,7 +158,7 @@ smtp_CFLAGS = -O2 -Wall
 
 proxy_SOURCES = subsystems/proxy.c subsystems/proxy.h subsystems/proxy_main.c \
 	subsystems/proxy_messages.h subsystems/smtp.c subsystems/smtp.h \
-	subsystems/smtp_messages.h atomicio.c \
+	subsystems/smtp_messages.h atomicio.c atomicio.h \
 	util.c util.h honeyd_overload.h
 
 proxy_LDADD = @LIBOBJS@ @EVENTLIB@ @DNETLIB@ @PCAPLIB@ @PCRELIB@

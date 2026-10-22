@@ -5,6 +5,7 @@
 
   /{usr/,}bin/ r,
   /{usr/,}bin/* mr,
+  /usr/lib/cargo/bin/** mr,
   /etc/** r,
   /usr/share/** r,
   /etc/phantom-mirage/** r,

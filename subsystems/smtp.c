@@ -77,7 +77,7 @@ extern int debug;
 	if (debug >= x) fprintf y; \
 } while (0)
 
-ssize_t atomicio(ssize_t (*)(), int, void *, size_t);
+#include "../atomicio.h"
 
 /* globals */
 
@@ -637,7 +637,7 @@ smtp_write_count(const char *countname, int count)
 		return (-1);
 	}
 
-	if (atomicio(write, fd, &count, sizeof(count)) != count) {
+	if (atomicio(vwrite, fd, &count, sizeof(count)) != count) {
 		count = -1;
 		goto out;
 	}
@@ -694,7 +694,7 @@ smtp_hashed_store(const char *datadir, void *data, size_t datalen)
 		return (adigest);
 	}
 
-	atomicio(write, fd, data, datalen);
+	atomicio(vwrite, fd, data, datalen);
 	close(fd);
 
 	return (adigest);

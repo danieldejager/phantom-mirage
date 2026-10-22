@@ -38,6 +38,21 @@ bind 10.99.0.10 linux
 CONF
 mkdir -p /var/run
 rc=0
+# Landlock must never grant write access to /tmp or another broad dir
+BROAD='^(/|/tmp|/var/tmp|/dev/shm|/run|/var/run|/var|/var/lib|/var/log|/usr|/etc|/home|/root)/?$'
+check_writable() {
+  local w
+  w=$(sed -n 's/.*sandbox-daemon: Landlock writable://p' "$1" | head -1)
+  [ -z "$SBD" ] && return 0
+  if ! grep -q 'sandbox-daemon: Landlock writable:' "$1"; then
+    grep -q 'Landlock unavailable' "$1" || { echo "$2: Landlock writable set not logged" >&2; rc=1; }
+    return 0
+  fi
+  for p in $w; do
+    if [[ $p =~ $BROAD ]]; then echo "$2: Landlock makes $p writable" >&2; rc=1; fi
+  done
+  echo "$2: Landlock writable:$w"
+}
 SBD=--sandbox-daemon
 ACTIVE='sandbox-daemon: seccomp allowlist active'
 if [ "${HD_LEARN:-0}" = 1 ]; then SBD=; ACTIVE='Demoting process privileges'; fi
@@ -117,6 +132,7 @@ PY
   wait $hp
   echo "=== $mode"; cat $log
   grep -q "$ACTIVE" $log || { echo "$mode: filter not reported active" >&2; rc=1; }
+  check_writable $log "$mode"
   if grep -E 'sandbox-daemon: denied syscall|killed by SIGSYS|runtime error|ERROR: AddressSanitizer' $log; then
     echo "$mode: denied syscall or sanitizer report" >&2; rc=1
   fi
@@ -124,6 +140,25 @@ PY
 run plain
 run scripts --sandbox-scripts --sandbox-allow-write=$W/rw
 [ "${HD_LEARN:-0}" = 1 ] && exit $rc
+
+# Broad write grants are refused: --sandbox-allow-write=/tmp fails, and a
+# log file directly in /tmp only makes that file writable.
+if ./phantom-mirage --sandbox-scripts --sandbox-allow-write=/tmp --verify-config -f $W/sd.conf -i lo \
+    -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc -0 $D/pf.os -m $D/nmap-mac-prefixes >/dev/null 2>&1; then
+  echo "--sandbox-allow-write=/tmp was accepted" >&2; rc=1
+fi
+if [ -n "$SBD" ]; then
+  log=${HD_LOGDIR:-$D}/sandbox-daemon-broad.log
+  PYTHONPATH=$D/scripts/python timeout 20 ${HD_WRAP:-} ./phantom-mirage -d -f $W/sd.conf -i lo --sandbox-daemon --disable-webserver \
+    -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc -0 $D/pf.os -m $D/nmap-mac-prefixes \
+    -l /tmp/pm-broad-$$.log ${HD_EXTRA:-} > $log 2>&1 &
+  hp=$!
+  for i in $(seq 1 40); do grep -q 'Landlock writable:\|Landlock unavailable' $log && break; sleep 0.5; done
+  hd=$(pgrep -n -x phantom-mirage || true); [ -n "$hd" ] && kill -INT $hd; wait $hp
+  check_writable $log broad
+  grep -q 'Landlock writable:.* /tmp/pm-broad-[0-9]*\.log' $log || grep -q 'Landlock unavailable' $log || { echo "broad: log file not granted on its own" >&2; rc=1; }
+  rm -f /tmp/pm-broad-$$.log
+fi
 [ "$NOPY" = 1 ] && { echo "sandbox-daemon: off-list syscall check needs Python (skipped)"; exit $rc; }
 
 # Negative check: a syscall off the list (mount, via phantom-mirage-ctl "!") must

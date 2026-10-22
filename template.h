@@ -133,7 +133,7 @@ void		template_subsystem_start(struct template *tmpl,
 struct template	*template_clone(const char *, const struct template *,
 		    struct interface *, int);
 struct template *template_find(const char *);
-void template_dump_ips();
+void template_dump_ips(char *);
 struct template *template_find_best(const char *, const struct ip_hdr *,
 		    u_short);
 void		template_list_glob(struct evbuffer *buffer,

@@ -14,7 +14,9 @@ override_dh_autoreconf:
 	dh_autoreconf ./autogen.sh
 
 override_dh_auto_configure:
-	dh_auto_configure -- --sysconfdir=/etc
+	# rrdtool is optional at run time (Recommends); fix its path so the
+	# build does not depend on what the build machine has installed
+	dh_auto_configure -- --sysconfdir=/etc ac_cv_path_PATH_RRDTOOL=/usr/bin/rrdtool
 
 override_dh_auto_install:
 	dh_auto_install --destdir=$(D)
@@ -26,6 +28,11 @@ override_dh_auto_install:
 	done
 	mv $(D)/usr/share/phantom-mirage/config.sample $(D)/etc/phantom-mirage/phantom-mirage.conf
 	rm -f $(D)/usr/share/phantom-mirage/README.md
+	# graphs and honeyd_traffic.rrd go to a dedicated writable dir (#16)
+	mkdir -p $(D)/var/lib/phantom-mirage/graphs
+	cp $(D)/usr/share/phantom-mirage/webserver/htdocs/graphs/*.gif $(D)/var/lib/phantom-mirage/graphs/
+	rm -rf $(D)/usr/share/phantom-mirage/webserver/htdocs/graphs
+	ln -s /var/lib/phantom-mirage/graphs $(D)/usr/share/phantom-mirage/webserver/htdocs/graphs
 	find $(D) -name '*.la' -delete
 	# AppArmor: "userns" for the --sandbox-scripts launcher only (#16)
 	install -D -m 0644 debian/apparmor/usr.lib.phantom-mirage.pm-script-ns \

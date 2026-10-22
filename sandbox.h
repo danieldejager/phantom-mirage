@@ -23,9 +23,11 @@ int sandbox_verify_post(uid_t uid, gid_t gid);
  * before exec.  argv is the command about to be exec'd; absolute paths in
  * it are allowed read/exec.  Best-effort for features the kernel lacks. */
 void sandbox_script(char * const argv[]);
+void sandbox_script_prepare(char * const argv[]);
 
 /* --sandbox-allow-write=DIR (repeatable) */
 int sandbox_add_write_path(const char *path);
+int sandbox_path_broad(const char *path);
 
 extern int honeyd_sandbox_scripts;
 

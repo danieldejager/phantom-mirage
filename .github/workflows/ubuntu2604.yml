@@ -1,0 +1,119 @@
+name: ubuntu-26.04
+
+# Ubuntu 26.04 readiness on native runners (amd64 + arm64): build the .deb
+# on 26.04, install it, run the packaged unit under real systemd with
+# AppArmor, and the sandbox suites from a --with-python build tree.
+# CI minutes: manual dispatch, or a PR labelled "full-ci" or
+# "ci-ubuntu-26.04" (this workflow only), only.
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ubuntu2604-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ubuntu2604:
+    name: Ubuntu 26.04 / ${{ matrix.arch }} .deb + sandbox
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'full-ci' || github.event.label.name == 'ci-ubuntu-26.04'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            os: ubuntu-26.04
+          - arch: arm64
+            os: ubuntu-26.04-arm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src/phantom-mirage
+
+      - name: System
+        run: |
+          . /etc/os-release; echo "$PRETTY_NAME $(uname -m) kernel $(uname -r)" | tee -a "$GITHUB_STEP_SUMMARY"
+          sysctl kernel.apparmor_restrict_unprivileged_userns || true
+          python3 --version; gcc --version | head -1
+
+      - name: Build the .deb on 26.04
+        working-directory: src/phantom-mirage
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential devscripts equivs
+          sudo mk-build-deps -i -r -t 'apt-get -y --no-install-recommends' debian/control
+          dpkg-buildpackage -us -uc -b
+
+      - name: Install it (with rrdtool, so traffic graphs are on)
+        working-directory: src
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ./phantom-mirage_*.deb ./phantom-mirage-common_*.deb
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends iproute2 python3 rrdtool strace
+          dpkg -s phantom-mirage | grep -E '^(Version|Depends):' | tee -a "$GITHUB_STEP_SUMMARY"
+          ls -ld /var/lib/phantom-mirage/graphs /usr/share/phantom-mirage/webserver/htdocs/graphs
+          test "$(stat -c %U /var/lib/phantom-mirage/graphs)" = phantom-mirage
+
+      - name: AppArmor profile loaded; packaged unit under systemd
+        run: |
+          sudo apparmor_parser -Q -K /etc/apparmor.d/usr.lib.phantom-mirage.pm-script-ns
+          sudo aa-status | grep -E 'pm-script-ns|phantom-mirage-script'
+          sudo HD_APPARMOR=require bash src/phantom-mirage/ci/systemd_unit.sh
+          ! sudo journalctl -u phantom-mirage --no-pager | grep -E 'denied syscall|killed by SIGSYS|read-only root:|not running it|Landlock writable:.* /tmp( |$)'
+
+      - name: Sandbox suites from a --with-python build tree
+        # Landlock must be active and never grant /tmp; script namespaces
+        # required (the build tree has no AppArmor profile, hence the sysctl)
+        working-directory: src/phantom-mirage
+        env:
+          HD_LANDLOCK: require
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-dev python3-dpkt procps util-linux
+          git clean -fdxq
+          ./autogen.sh >/dev/null && ./configure -q --prefix=/usr --with-python
+          grep -q '^#define HAVE_PYTHON 1' config.h
+          grep -q '^#define PATH_RRDTOOL "/usr/bin/rrdtool"' config.h || grep PATH_RRDTOOL Makefile | head -1
+          make -j"$(nproc)" >/dev/null
+          sudo install -D -m 755 libphantom-mirage.so /usr/lib/phantom-mirage/libphantom-mirage.so
+          gcc -O1 -o /tmp/subsys_echo ci/subsys_echo.c
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          mkdir -p logs
+          sudo -E HD_LOGDIR=$PWD/logs bash ci/sandbox_daemon.sh
+          sudo HD_NS=require HD_LOGDIR=$PWD/logs bash ci/script_ns.sh
+          grep -h 'Landlock ABI\|Landlock writable' logs/sandbox-daemon-*.log | sort -u | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Name the .debs
+        if: always()
+        run: |
+          v=$(cd src/phantom-mirage && dpkg-parsechangelog -S Version)
+          mkdir -p out
+          for f in src/*.deb; do
+            [ -e "$f" ] || continue
+            n=$(basename "$f" | sed -E "s/^([a-z-]+)_[^_]+_([a-z0-9]+)\.deb$/\1_${v}_ubuntu26.04_\2.deb/")
+            cp "$f" "out/$n"
+          done
+          ls -l out | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phantom-mirage_ubuntu26.04_${{ matrix.arch }}
+          path: out/*.deb
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: logs-ubuntu26.04-${{ matrix.arch }}
+          path: src/phantom-mirage/logs/
+          if-no-files-found: ignore
+
+      - name: Journal
+        if: failure()
+        run: sudo journalctl -u phantom-mirage --no-pager | tail -n 100

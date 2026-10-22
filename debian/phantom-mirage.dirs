@@ -4,3 +4,4 @@ usr/lib/phantom-mirage
 etc/phantom-mirage
 etc/default
 var/log/phantom-mirage
+var/lib/phantom-mirage/graphs

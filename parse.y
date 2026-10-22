@@ -713,6 +713,11 @@ action		: flags STRING
 		$$.flags = $1;
 		free($3);
 #else
+		/* fail the config cleanly: no uninitialised port action */
+		memset(&$$, 0, sizeof($$));
+		$$.status = PORT_CLOSED;
+		$$.flags = $1;
+		free($3);
 		yyerror("Python support is not available.");
 #endif
 	}

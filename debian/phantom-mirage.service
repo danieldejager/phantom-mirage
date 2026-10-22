@@ -41,7 +41,7 @@ ProtectSystem=strict
 # pid file. The daemon empties the pid file on exit (it can't unlink it
 # after the privilege drop); systemd removes the directory on stop.
 PIDFile=/run/phantom-mirage/phantom-mirage.pid
-ReadWritePaths=/var/log/phantom-mirage /run
+ReadWritePaths=/var/log/phantom-mirage /var/lib/phantom-mirage/graphs /run
 RuntimeDirectory=phantom-mirage
 RuntimeDirectoryMode=0700
 RuntimeDirectoryPreserve=no
