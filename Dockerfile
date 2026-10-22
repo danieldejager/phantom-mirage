@@ -30,7 +30,7 @@ RUN ./autogen.sh \
 FROM debian:13-slim
 
 LABEL org.opencontainers.image.title="Phantom Mirage I" \
-      org.opencontainers.image.description="Phantom Mirage I network deception daemon, part of the Phantom deception range (based on Honeyd by Niels Provos)" \
+      org.opencontainers.image.description="Phantom Mirage I, based on Honeyd" \
       org.opencontainers.image.version="1.7.0" \
       org.opencontainers.image.licenses="GPL-2.0-or-later" \
       org.opencontainers.image.authors="Daniel de Jager <ddejager@dandejager.com>"
