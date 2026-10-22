@@ -183,6 +183,27 @@ docker exec -it <container> phantom-mirage-ctl
   API. It fails loudly if the visibility is not `private` or can't be
   read.
 
+### Retention (cleanup)
+
+After a successful publish (push, private-visibility check, signature and
+attestation checks), the `GHCR retention` job in `publish.yml` prunes
+`ghcr.io/danieldejager/phantom-mirage` with
+[dataaxiom/ghcr-cleanup-action](https://github.com/dataaxiom/ghcr-cleanup-action),
+which understands multi-arch indexes and OCI referrers. It uses
+`GITHUB_TOKEN` (`packages: write`) only.
+
+* Kept: `edge`, every release tag (`v*`, `X.Y.Z`, `X.Y`, `X`), and the
+  3 newest other tagged images (the `sha-*` tags).
+* Never deleted on their own: the untagged per-platform manifests, cosign
+  `sha256-<digest>.sig` tags and attestation (SBOM/provenance) manifests of a
+  kept image. They are removed only as orphans of a deleted image.
+* Ghost/partial multi-arch images are cleaned, and the result is validated.
+
+Mode: a **dry run** (it only logs what it would delete) unless the workflow is
+dispatched with `cleanup=delete`, or for `v*` tag pushes the repository
+variable `GHCR_CLEANUP` is `delete`. `cleanup=skip` skips it. Do the first
+dispatch as a dry run and review the log before enabling deletes.
+
 ### Signing (cosign, private key)
 
 Images are signed by digest (`--recursive`: the index and every platform
