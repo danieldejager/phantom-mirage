@@ -2,19 +2,25 @@
 # phantom-mirage-setup: write a clean /etc/default/phantom-mirage and start
 # the service (#110). POSIX sh, run as root.
 #
-#   sudo phantom-mirage-setup [--interface IF] [--network CIDR] [--dry-run]
+#   sudo phantom-mirage-setup [--interface IF] [--network CIDR] [--no-farpd] [--dry-run]
 #
 # Without --interface it uses the default-route interface; without
 # --network it picks a /29 near the top of that interface's IPv4 subnet
 # whose 8 addresses do not answer ping/arping and are not in the neighbour
 # table. The old file is kept as /etc/default/phantom-mirage.bak-<time>.
+# Unless --no-farpd, it also points farpd (if installed) at the same
+# INTERFACE/NETWORK so the decoys answer ARP: /etc/default/farpd is
+# rewritten (the original kept once as /etc/default/farpd.phantom-mirage-orig,
+# which phantom-mirage-uninstall restores) and farpd is enabled/restarted.
 set -eu
 
 DEFAULT=/etc/default/phantom-mirage
 LIBDIR=${PM_LIBDIR:-/usr/lib/phantom-mirage}
-IFACE= NET= DRY=
+IFACE= NET= DRY= FARPD=1
+FDEFAULT=/etc/default/farpd
+FMARK='# written by phantom-mirage-setup'
 
-usage() { sed -n '2,11s/^# \{0,1\}//p' "$0"; exit "${1:-0}"; }
+usage() { sed -n '2,15s/^# \{0,1\}//p' "$0"; exit "${1:-0}"; }
 die() { echo "phantom-mirage-setup: $*" >&2; exit 1; }
 say() { echo "phantom-mirage-setup: $*"; }
 
@@ -25,6 +31,7 @@ while [ $# -gt 0 ]; do
 		--network|-n) [ $# -ge 2 ] || usage 2; NET=$2; shift 2 ;;
 		--network=*) NET=${1#*=}; shift ;;
 		--dry-run) DRY=1; shift ;;
+		--no-farpd) FARPD=; shift ;;
 		-h|--help) usage 0 ;;
 		*) echo "unknown option: $1" >&2; usage 2 ;;
 	esac
@@ -118,12 +125,38 @@ OPTIONS="--disable-webserver"
 EOT
 )
 
+# /etc/default/farpd in the farpd package's own format (farpd.service reads
+# it with EnvironmentFile=, the init script sources it): one line each.
+FNEW=$(cat <<EOT
+$FMARK on $(date -R) for phantom-mirage.
+# Original: $FDEFAULT.phantom-mirage-orig (restored by phantom-mirage-uninstall).
+# Interface where farpd will listen in
+INTERFACE="$IFACE"
+
+# Network for which fake arp daemon will answer to (the decoys)
+NETWORK="$NET"
+EOT
+)
+farpd_state=
+if [ -z "$FARPD" ]; then
+	farpd_state="skipped (--no-farpd): the decoys only get traffic routed to this host"
+elif [ ! -x /usr/sbin/farpd ]; then
+	farpd_state="NOT configured: farpd is not installed, so nothing answers ARP for $NET (sudo apt-get install -y farpd, then run phantom-mirage-setup again)"
+	FARPD=
+fi
+
 if [ -n "$DRY" ]; then
 	say "dry run: would back up $DEFAULT and write:"
 	printf '%s\n' "$NEW" | sed 's/^/    /'
 	t=$(mktemp); printf '%s\n' "$NEW" > "$t"
 	PM_LIBDIR=$LIBDIR "$LIBDIR/check-default" "$t" || { rm -f "$t"; exit 78; }
 	rm -f "$t"
+	if [ -n "$FARPD" ]; then
+		say "dry run: would back up $FDEFAULT (once, to $FDEFAULT.phantom-mirage-orig), write:"
+		printf '%s\n' "$FNEW" | sed 's/^/    /'
+		say "dry run: would run systemctl enable farpd and systemctl restart farpd"
+	fi
+	[ -n "$farpd_state" ] && say "farpd: $farpd_state"
 	say "dry run: would run $LIBDIR/check-default $DEFAULT, then systemctl enable phantom-mirage and systemctl restart phantom-mirage"
 	exit 0
 fi
@@ -138,8 +171,25 @@ say "wrote $DEFAULT"
 "$LIBDIR/check-default" "$DEFAULT"
 systemctl enable phantom-mirage
 systemctl restart phantom-mirage
+if [ -n "$FARPD" ]; then
+	if [ -e "$FDEFAULT" ] && ! grep -q "^$FMARK" "$FDEFAULT" && [ ! -e "$FDEFAULT.phantom-mirage-orig" ]; then
+		cp -p "$FDEFAULT" "$FDEFAULT.phantom-mirage-orig"
+		say "original farpd config kept as $FDEFAULT.phantom-mirage-orig"
+	fi
+	printf '%s\n' "$FNEW" > "$FDEFAULT.new" && mv "$FDEFAULT.new" "$FDEFAULT"
+	say "wrote $FDEFAULT (farpd answers ARP for $NET on $IFACE)"
+	systemctl enable farpd
+	systemctl restart farpd
+	farpd_state="answering ARP for $NET on $IFACE"
+fi
 sleep 2
 systemctl --no-pager --lines=10 status phantom-mirage || true
+systemctl --no-pager --lines=5 status farpd 2>/dev/null || true
 first=${NET%/*}
+say "farpd: $farpd_state"
 echo
-echo "Test: from another machine on this LAN run 'nmap -Pn -p 22,80 $first' (decoys need ARP: e.g. 'farpd -i $IFACE $NET', see /usr/share/doc/phantom-mirage/README.Debian); logs: journalctl -u phantom-mirage -f"
+if grep -q '^[[:space:]]*set default default icmp action open' /etc/phantom-mirage/phantom-mirage.conf 2>/dev/null && [ -n "$FARPD" ]; then
+	echo "Test: from another machine on this LAN run 'ping -c3 $first' (logs: journalctl -u phantom-mirage -f)"
+else
+	echo "Test: from another machine on this LAN run 'nmap -Pn -p 22,80 $first' (logs: journalctl -u phantom-mirage -f)"
+fi

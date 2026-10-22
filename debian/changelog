@@ -32,6 +32,14 @@ phantom-mirage (1.7.0-3) unstable; urgency=medium
     and promiscuous mode. release/install.sh (attach to releases as
     install.sh; automake rejects a top-level install.sh) for release
     folders: SHA256SUMS check, distro/arch pick, purge, install, setup.
+  * phantom-mirage-setup also configures farpd (if installed) for the same
+    INTERFACE/NETWORK in /etc/default/farpd (farpd's own format; original
+    kept as farpd.phantom-mirage-orig) and enables/restarts it; --no-farpd
+    skips this. phantom-mirage-uninstall stops farpd and restores the
+    original. install.sh installs farpd if it is missing.
+  * The shipped /etc/phantom-mirage/phantom-mirage.conf default template
+    now answers ICMP echo (TCP/UDP stay filtered), so "ping -c3 <decoy>"
+    tests a fresh setup.
 
  -- Daniel de Jager <ddejager@dandejager.com>  Fri, 23 Oct 2026 08:10:56 +1100
 

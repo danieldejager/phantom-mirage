@@ -21,6 +21,12 @@ RUN="yes", checks the file, runs "systemctl enable" + "restart", and prints
 the service status and a one-line test hint. --dry-run only shows what it
 would write and do.
 
+If farpd is installed, setup also writes INTERFACE/NETWORK to
+/etc/default/farpd (the original is kept once as
+/etc/default/farpd.phantom-mirage-orig) and enables/restarts farpd, so the
+decoys answer ARP. --no-farpd skips this. The shipped config makes the
+decoys answer ping, so from another LAN machine: ping -c3 <first decoy>.
+
 From a release folder (the .debs, SHA256SUMS, install.sh,
 phantom-mirage-uninstall), one command installs and configures:
 
@@ -62,8 +68,9 @@ Fix the file and run "sudo systemctl restart phantom-mirage". The same
 check can be run by hand:
   sudo /usr/lib/phantom-mirage/check-default /etc/default/phantom-mirage
 
-If you use farpd to answer ARP for the decoys, give it the same small
-block (farpd is a separate package and is not started from this file).
+farpd must use the same small block; phantom-mirage-setup does this for
+you (by hand: INTERFACE="eth0" and NETWORK="10.211.55.200/29" in
+/etc/default/farpd, then "systemctl enable --now farpd").
 
 Notice also that in order for phantom-mirage to work you will probably need
 a user-space ARP daemon that answers requests for IP addresses

@@ -10,7 +10,9 @@
 # .bak-* copies), /etc/phantom-mirage, /var/lib/phantom-mirage,
 # /var/log/phantom-mirage and the phantom-mirage user/group if still
 # there, turns promiscuous mode off on the configured interface, and
-# prints what it removed. Without --yes it asks first.
+# prints what it removed. If phantom-mirage-setup wrote /etc/default/farpd,
+# farpd is stopped and disabled and the original file restored from
+# /etc/default/farpd.phantom-mirage-orig (farpd itself stays installed). Without --yes it asks first.
 
 main() {
 	YES= DRY=
@@ -18,7 +20,7 @@ main() {
 		case $a in
 			--yes|-y) YES=1 ;;
 			--dry-run|-n) DRY=1 ;;
-			-h|--help) sed -n '2,13s/^# \{0,1\}//p' "$0"; exit 0 ;;
+			-h|--help) sed -n '2,16s/^# \{0,1\}//p' "$0"; exit 0 ;;
 			*) echo "unknown option: $a" >&2; exit 2 ;;
 		esac
 	done
@@ -48,6 +50,19 @@ main() {
 	if command -v systemctl >/dev/null 2>&1 && systemctl cat phantom-mirage.service >/dev/null 2>&1; then
 		run systemctl disable --now phantom-mirage.service || true
 		note "service phantom-mirage (stopped, disabled)"
+	fi
+	FD=/etc/default/farpd
+	if [ -r "$FD" ] && grep -q '^# written by phantom-mirage-setup' "$FD"; then
+		if command -v systemctl >/dev/null 2>&1; then
+			run systemctl disable --now farpd.service || true
+		fi
+		if [ -e "$FD.phantom-mirage-orig" ]; then
+			run mv -f -- "$FD.phantom-mirage-orig" "$FD"
+			note "farpd config written by setup (original $FD restored; farpd stopped, disabled)"
+		else
+			run rm -f -- "$FD"
+			note "$FD written by setup (no original to restore; farpd stopped, disabled)"
+		fi
 	fi
 	pkgs=
 	for p in phantom-mirage phantom-mirage-common; do

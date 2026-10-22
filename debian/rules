@@ -27,6 +27,11 @@ override_dh_auto_install:
 	  ln -s /etc/phantom-mirage/$$f $(D)/usr/share/phantom-mirage/$$f; \
 	done
 	mv $(D)/usr/share/phantom-mirage/config.sample $(D)/etc/phantom-mirage/phantom-mirage.conf
+	# Debian only (#110): unbound decoys (default template) answer ICMP echo
+	# so "ping <decoy>" works after phantom-mirage-setup; TCP/UDP stay filtered
+	sed -i 's/^set default default icmp action filtered$$/set default default icmp action open/' \
+	  $(D)/etc/phantom-mirage/phantom-mirage.conf
+	grep -q '^set default default icmp action open$$' $(D)/etc/phantom-mirage/phantom-mirage.conf
 	rm -f $(D)/usr/share/phantom-mirage/README.md
 	# graphs and honeyd_traffic.rrd go to a dedicated writable dir (#16)
 	mkdir -p $(D)/var/lib/phantom-mirage/graphs

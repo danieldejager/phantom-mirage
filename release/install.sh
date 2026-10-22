@@ -8,7 +8,8 @@
 # Verifies SHA256SUMS, picks the .debs for this distro (ubuntu26.04 or
 # debian13) and architecture (dpkg --print-architecture), purges any
 # installed Phantom Mirage first (config included: meant for test boxes),
-# installs non-interactively and runs phantom-mirage-setup.
+# installs farpd from the archive if missing, installs non-interactively
+# and runs phantom-mirage-setup (which points farpd at the decoys).
 set -eu
 cd "$(dirname "$0")"
 die() { echo "install.sh: $*" >&2; exit 1; }
@@ -42,6 +43,13 @@ if dpkg-query -W -f='${db:Status-Abbrev}\n' phantom-mirage phantom-mirage-common
 	elif [ -x /usr/sbin/phantom-mirage-uninstall ]; then /usr/sbin/phantom-mirage-uninstall --yes
 	else DEBIAN_FRONTEND=noninteractive apt-get purge -y phantom-mirage phantom-mirage-common
 	fi
+fi
+
+if ! dpkg-query -W -f='${db:Status-Abbrev}' farpd 2>/dev/null | grep -q '^ii'; then
+	say "installing farpd from the archive (answers ARP for the decoys)"
+	DEBIAN_FRONTEND=noninteractive apt-get install -y farpd || {
+		apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y farpd
+	} || say "warning: could not install farpd; decoys will not answer ARP (phantom-mirage-setup will say so)"
 fi
 
 say "installing"
