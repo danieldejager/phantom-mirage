@@ -231,8 +231,13 @@ ll_allow(int rfd, const char *path, __u64 access, __u64 handled)
 	struct stat st;
 	int fd;
 
-	if ((fd = open(path, O_PATH | O_CLOEXEC)) == -1)
-		return;		/* missing paths are simply not allowed */
+	if ((fd = open(path, O_PATH | O_CLOEXEC)) == -1) {
+		/* missing paths are simply not allowed */
+		if (errno != ENOENT)
+			syslog(LOG_WARNING, "sandbox: landlock path %s: %s",
+			    path, strerror(errno));
+		return;
+	}
 	if (fstat(fd, &st) == 0 && !S_ISDIR(st.st_mode))
 		access &= LL_FILE;
 	memset(&pb, 0, sizeof(pb));

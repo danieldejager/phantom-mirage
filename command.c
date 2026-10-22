@@ -633,11 +633,22 @@ cmd_subsystem(struct template *tmpl, struct subsystem *sub,
 			eo = fd == -1 ? errno : 0;
 			if (fd != -1)
 				close(fd);
+			int ed, ee;
+			fd = open("/usr/bin", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+			ed = fd == -1 ? errno : 0;
+			if (fd != -1)
+				close(fd);
+			fd = open("/etc/passwd", O_RDONLY | O_CLOEXEC);
+			ee = fd == -1 ? errno : 0;
+			if (fd != -1)
+				close(fd);
 			syslog(LOG_ERR, "%s: execv(%s): %s (realpath %s, "
-			    "access X_OK: %s, open: %s, uid %d)", __func__,
+			    "access X_OK: %s, open: %s, /usr/bin: %s, "
+			    "/etc/passwd: %s, uid %d)", __func__,
 			    execcmd, strerror(e),
 			    realpath(execcmd, rp) ? rp : "?",
-			    strerror(ea), strerror(eo), (int)geteuid());
+			    strerror(ea), strerror(eo), strerror(ed),
+			    strerror(ee), (int)geteuid());
 			exit(EXIT_FAILURE);
 		}
 
