@@ -48,7 +48,7 @@ main() {
 	have_arch=$(dpkg --print-architecture 2>/dev/null || echo unknown)
 	have_distro=unknown
 	osr=${PM_OS_RELEASE:-/etc/os-release}
-	if [ -r "$osr" ]; then have_distro=$(. "$osr" && echo "$ID$VERSION_ID"); fi
+	if [ -r "$osr" ]; then have_distro=$(. "$osr" && echo "${ID:-}${VERSION_ID:-}"); fi
 	[ "$have_distro" = "$PM_DISTRO" ] || die "this installer is for $PM_DISTRO, but this system is $have_distro; download the .run for $have_distro"
 	[ "$have_arch" = "$PM_ARCH" ] || die "this installer is for $PM_ARCH, but this system is $have_arch; download the .run for $have_arch"
 	skip=$(awk '/^__PM_PAYLOAD_BELOW__$/ { print NR + 1; exit }' "$self")

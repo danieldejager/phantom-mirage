@@ -33,7 +33,7 @@ main() {
 	arch=$(dpkg --print-architecture) || die "dpkg --print-architecture failed"
 	osr=${PM_OS_RELEASE:-/etc/os-release}
 	[ -r "$osr" ] || die "$osr not found"
-	distro=$(. "$osr" && echo "$ID$VERSION_ID")
+	distro=$(. "$osr" && echo "${ID:-}${VERSION_ID:-}")
 	if [ -z "$tag" ]; then
 		tag=$(gh api "repos/$REPO/releases" --jq '[.[] | select(.draft | not)][0].tag_name // empty') || die "could not list releases"
 		[ -n "$tag" ] || die "no published release found"
