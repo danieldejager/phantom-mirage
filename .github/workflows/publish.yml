@@ -89,9 +89,17 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+          # explicit: metadata-action would otherwise copy the GitHub repo
+          # description into the image
           labels: |
+            org.opencontainers.image.title=phantom-mirage
+            org.opencontainers.image.description=Phantom Mirage I, based on Honeyd
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.url=https://github.com/${{ github.repository }}
+          annotations: |
+            org.opencontainers.image.title=phantom-mirage
+            org.opencontainers.image.description=Phantom Mirage I, based on Honeyd
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
       - name: Build (and push on master / v*)
         id: build
@@ -102,6 +110,7 @@ jobs:
           push: ${{ env.PUSH == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
           # in-toto SBOM and SLSA provenance as registry attestations
           # (private, next to the image; not sent to any transparency log)
           sbom: true
@@ -168,7 +177,14 @@ jobs:
           echo "signature verified for $IMAGE@$DIGEST"
           # no Rekor bundle attached to the signature: it was never logged
           cosign download signature "$IMAGE@$DIGEST" > sig.json
-          if grep -q 'dev.sigstore.cosign/bundle\|"Bundle"\|rekor' sig.json; then
+          # one JSON object per line; cosign always emits a "Bundle" field,
+          # null when nothing was logged. Fail only on a real bundle.
+          jq -c '{Bundle: .Bundle, RFC3161Timestamp: .RFC3161Timestamp}' sig.json
+          n=$(jq -s 'length' sig.json)
+          logged=$(jq -s '[.[] | select(.Bundle != null and .Bundle != {})] | length' sig.json)
+          echo "signatures: $n, with a transparency-log bundle: $logged"
+          [ "$n" -gt 0 ] || { echo "::error::no signature found"; exit 1; }
+          if [ "$logged" != 0 ]; then
             echo "::error::the signature carries a transparency-log bundle"; exit 1
           fi
           echo "no transparency-log bundle on the signature"
@@ -176,7 +192,9 @@ jobs:
       - name: Attestations stay in the registry
         # buildx stores the SBOM and provenance as attestation manifests in
         # the image index (unsigned, private); check they are there.
-        if: env.PUSH == 'true'
+        # also when signing/verification failed: the attestations are
+        # pushed with the image and should be checked regardless
+        if: env.PUSH == 'true' && !cancelled() && steps.build.outputs.digest != ''
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
