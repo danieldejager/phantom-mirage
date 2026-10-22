@@ -1,0 +1,92 @@
+# AppArmor profile "phantom-mirage-docker" for the phantom-mirage container
+# with --sandbox-scripts namespaces (#16). Load on the host, then run with
+#   --security-opt apparmor=phantom-mirage-docker
+#   --security-opt seccomp=docker/seccomp-sandbox-scripts.json
+#
+#   sudo apparmor_parser -r -W docker/apparmor-phantom-mirage
+#
+# Based on Docker's docker-default (github.com/moby/profiles apparmor/
+# template.go @4b8214fc4971e06172938a1f1554ccff6647ee80). Differences:
+#  * "deny mount," is replaced by the mount operations the pm-script-ns
+#    launcher (sandbox_ns.c, sandbox_root.c) performs inside a script's new
+#    user + mount namespace, all with targets under /tmp, where the
+#    script's root is built; every other mount stays denied (AppArmor
+#    denies mounts that no rule allows);
+#  * "umount," is narrowed to the one detach of the old root after
+#    pivot_root, and the single pivot_root(".", ".") in /tmp is allowed;
+#  * ABI 4.0 for "userns,": creating the script's user namespace (Ubuntu
+#    23.10+ otherwise refuses it for confined programs); "unix," keeps the
+#    unix sockets that "network," covered under ABI 3.0 (control socket).
+# Outside a user namespace the container has no CAP_SYS_ADMIN, so these
+# rules grant nothing there.
+
+abi <abi/4.0>,
+#include <tunables/global>
+
+profile phantom-mirage-docker flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  network,
+  unix,
+  deny network ax25,
+  deny network ipx,
+  deny network appletalk,
+  deny network netrom,
+  deny network rose,
+  deny network econet,
+  deny network atmsvc,
+  deny network irda,
+  deny network wanpipe,
+  deny network isdn,
+  deny network caif,
+  deny network alg,
+  deny network vsock,
+  capability,
+  file,
+  signal (receive) peer=unconfined,
+  signal (receive) peer=runc,
+  signal (receive) peer=crun,
+  signal (receive) peer=docker-default,
+  signal (send,receive) peer=phantom-mirage-docker,
+
+  # pm-script-ns: the script's own user namespace
+  userns,
+
+  # --- mounts of the pm-script-ns launcher (only these) ---
+  # private mount propagation in the new mount namespace
+  mount options=(rw, rprivate) -> /,
+  # the new root (sandbox_root.c NR) and the namespace probe: a tmpfs on /tmp
+  mount fstype=tmpfs options=(rw, nosuid, nodev) tmpfs -> /tmp/,
+  # read-only binds of /usr/bin, /usr/lib*, the data dir, script dirs,
+  # the working dir and --sandbox-allow-write dirs into the new root
+  mount options=(rw, rbind) -> /tmp/**,
+  mount options in (ro, remount, bind, nosuid, nodev, noexec) -> /tmp/**,
+  # device nodes
+  mount options=(rw, bind) /dev/{null,zero,random,urandom} -> /tmp/dev/{null,zero,random,urandom},
+  # the script's private /tmp and own /proc
+  mount fstype=tmpfs options=(rw, nosuid, nodev) tmpfs -> /tmp/tmp/,
+  mount fstype=proc options=(rw, nosuid, nodev, noexec) proc -> /tmp/proc/,
+  # the new root read-only
+  mount options=(ro, remount, nosuid, nodev) -> /tmp/,
+  # switch to it and detach the old root
+  pivot_root oldroot=/tmp/ /tmp/,
+  umount /,
+
+  deny @{PROC}/* w,
+  deny @{PROC}/{[^1-9/],[^1-9/][^0-9/],[^1-9s/][^0-9y/][^0-9s/],[^1-9/][^0-9/][^0-9/][^0-9/]*}/** w,
+  deny @{PROC}/sys/[^k]** w,
+  deny @{PROC}/sys/kernel/{?,??,[^s][^h][^m]**} w,
+  deny @{PROC}/sysrq-trigger rwklx,
+  deny @{PROC}/kcore rwklx,
+
+  deny /sys/[^f]*/** wklx,
+  deny /sys/f[^s]*/** wklx,
+  deny /sys/fs/[^c]*/** wklx,
+  deny /sys/fs/c[^g]*/** wklx,
+  deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/devices/virtual/powercap/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+
+  ptrace (trace,tracedby,read,readby) peer=phantom-mirage-docker,
+}

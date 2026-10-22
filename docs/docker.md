@@ -54,45 +54,92 @@ docker run --rm --network decoy-vlan10 \
 
 ## Sandboxing in the container (`--sandbox-daemon`, `--sandbox-scripts`)
 
-`--sandbox-daemon` (seccomp allowlist + Landlock) needs nothing beyond the
-capabilities above: the default Docker seccomp profile allows `seccomp(2)`
-and the Landlock calls, and `no-new-privileges` is what the filters need
-anyway.
+**The default `docker run` keeps Docker's `docker-default` AppArmor profile
+and its default seccomp profile on.** With those, `--sandbox-daemon`
+(seccomp allowlist + Landlock) works fully, and `--sandbox-scripts` runs
+scripts **without namespaces**: the launcher's probe can't create a user
+namespace, the daemon logs
 
-`--sandbox-scripts` with per-script namespaces (own user/pid/mount/net/uts
-namespace, read-only root via `pivot_root`, no network) additionally needs:
+    sandbox: unprivileged user namespaces unavailable (...); scripts run WITHOUT namespaces, ...
 
-| Option | Why |
-|---|---|
-| `--security-opt seccomp=docker/seccomp-sandbox-scripts.json` | Docker's default profile only allows `unshare`, `mount`, `umount2`, `pivot_root` and `sethostname` with `CAP_SYS_ADMIN`. This profile is the [moby default](https://github.com/moby/profiles) plus those five calls; the kernel only grants them inside the script's new user namespace. No capability is added. |
-| `--security-opt apparmor=unconfined` | the `docker-default` AppArmor profile denies all mounts (the script's private `/tmp` and read-only root). A custom profile allowing `mount`/`pivot_root` and `userns` works too. |
-| host: `kernel.apparmor_restrict_unprivileged_userns=0` | Ubuntu 23.10+ only: otherwise unconfined programs can't create user namespaces |
+and keeps serving; scripts still run under Landlock and the launcher's
+seccomp filters (no outbound connects; no TCP bind on Landlock ABI 4+),
+but share the container's root filesystem, PID space and network. CI
+checks this default run (`ci/docker_sandbox.sh`, `HD_NS=fallback`).
 
-Without these phantom-mirage logs `sandbox: unprivileged user namespaces
-unavailable` and runs scripts under Landlock/seccomp only (still no
-network on Landlock ABI 4+).
+### Opt-in: per-script namespaces (recommended setup)
+
+Per-script user/pid/mount/net/uts namespaces with a read-only minimal root
+are **opt-in**. The recommended way keeps AppArmor enforcing with a
+custom profile that differs from `docker-default` only in the mounts the
+launcher needs:
 
 ```sh
+sudo apparmor_parser -r -W docker/apparmor-phantom-mirage   # on the host, once per boot
 docker run --rm --network decoy-vlan10 \
   --cap-drop ALL --cap-add NET_RAW --cap-add NET_ADMIN \
   --cap-add SETUID --cap-add SETGID \
   --read-only --tmpfs /run --tmpfs /tmp --tmpfs /root/.config \
   --security-opt no-new-privileges \
+  --security-opt apparmor=phantom-mirage-docker \
   --security-opt seccomp=docker/seccomp-sandbox-scripts.json \
-  --security-opt apparmor=unconfined \
   -v "$PWD/site.conf:/etc/phantom-mirage/phantom-mirage.conf:ro" \
   phantom-mirage:local --sandbox-daemon --sandbox-scripts
 ```
 
-CI (`ci/docker_sandbox.sh`, the `docker` job for amd64 and `docker-arm64`
-on a native arm64 runner; QEMU can't run seccomp filters) builds
+| Option | Why |
+|---|---|
+| `--security-opt apparmor=phantom-mirage-docker` | `docker/apparmor-phantom-mirage`: `docker-default` (moby/profiles), with `deny mount` replaced by only the launcher's mounts, all with targets under `/tmp` where the script root is built (see below); `umount` narrowed to the old-root detach; one `pivot_root`; `userns` (needs AppArmor 4 / ABI 4.0, e.g. Ubuntu 24.04, Debian 13). Every other mount stays denied. No host sysctl change is needed. |
+| `--security-opt seccomp=docker/seccomp-sandbox-scripts.json` | the moby default seccomp profile plus `unshare`, `mount`, `umount2`, `pivot_root`, `sethostname`, which the default only allows with `CAP_SYS_ADMIN`. No capability is added; the kernel only grants them inside the script's new user namespace. |
+
+The profile allows exactly:
+
+| Rule | Launcher step |
+|---|---|
+| `mount options=(rw, rprivate) -> /` | private propagation in the new mount namespace |
+| `mount fstype=tmpfs options=(rw, nosuid, nodev) tmpfs -> /tmp/` | the namespace probe and the new root (a tmpfs) |
+| `mount options=(rw, rbind) -> /tmp/**` | binding `/usr/bin`, `/usr/lib*`, the data dir, script dirs, the working dir and `--sandbox-allow-write` dirs into the new root |
+| `mount options in (ro, remount, bind, nosuid, nodev, noexec) -> /tmp/**` | making those binds read-only (`--sandbox-allow-write` ones stay writable) |
+| `mount options=(rw, bind) /dev/{null,zero,random,urandom} -> /tmp/dev/...` | the four device nodes |
+| `mount fstype=tmpfs ... tmpfs -> /tmp/tmp/` | the script's private `/tmp` |
+| `mount fstype=proc options=(rw, nosuid, nodev, noexec) proc -> /tmp/proc/` | its own `/proc` |
+| `mount options=(ro, remount, nosuid, nodev) -> /tmp/` | the new root read-only |
+| `pivot_root oldroot=/tmp/ /tmp/`, `umount /` | switch root, detach the old one |
+
+If a host can't load the profile and you use only the seccomp profile, the
+probe's mount is refused by `docker-default` and the daemon falls back as
+above (logged); it never runs a script half-isolated: if namespaces come
+up but the read-only root can't be built, that script is not run.
+
+### Last resort: `apparmor=unconfined` (not recommended)
+
+`--security-opt apparmor=unconfined` (plus, on Ubuntu 23.10+, host
+`kernel.apparmor_restrict_unprivileged_userns=0`) also makes namespaces
+work, but turns off **all** AppArmor confinement of the container, not
+just the mount rules, and the sysctl weakens the whole host. It is an
+opt-in trade-off for hosts without AppArmor 4 where per-script
+namespaces matter more than container confinement; prefer the custom
+profile, or the default run with its logged fallback.
+
+### CI
+
+`ci/docker_sandbox.sh` (the `docker` job for amd64, `docker-arm64` on a
+native arm64 runner; QEMU can't run seccomp filters) builds
 `ci/Dockerfile.sandbox-test` on top of the built image (adds only python3,
-iproute2, procps and the ci/ scripts; local, never pushed) and runs
-`ci/sandbox_daemon.sh` and `ci/script_ns.sh` (`HD_NS=require`) with the
-image's own binaries. The test harness adds `CHOWN` and `KILL` (it chowns
-the graphs dir and signals the daemon after it dropped to `nobody`) and an
-exec `/tmp` for its test subsystem; production doesn't need those. The
-image has no embedded Python, so the Python service, status page and the
+iproute2, procps and the ci/ scripts; local, never pushed) and, with the
+image's own binaries, runs:
+
+1. `ci/sandbox_daemon.sh` under default AppArmor/seccomp;
+2. `ci/script_ns.sh` with `HD_NS=require` under `phantom-mirage-docker` +
+   the seccomp profile (namespaces, read-only root, no network);
+3. `ci/script_ns.sh` with `HD_NS=fallback` in a plain default run
+   (`docker-default`, default seccomp): the fallback must be logged and
+   the scripts must still run.
+
+The test harness adds `CHOWN` and `KILL` (it chowns the graphs dir and
+signals the daemon after it dropped to `nobody`) and an exec `/tmp` for
+its test subsystem; production doesn't need those. The image has no
+embedded Python, so the Python service, status page and the
 off-list-syscall probe are covered by the source-build jobs only.
 
 ## Networking

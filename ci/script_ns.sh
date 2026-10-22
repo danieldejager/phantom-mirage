@@ -7,6 +7,8 @@
 # with and without --sandbox-daemon. Needs root and NET_ADMIN.
 # Env: HD_NS=require  fail unless namespaces were used (default: also
 #                     accept the logged "user namespaces unavailable")
+#      HD_NS=fallback fail unless the daemon fell back (logged) and the
+#                     scripts still ran, without namespaces
 #      HD_LTRACE=DIR  strace -f the pm-script-ns launcher (and the
 #                     scripts it runs) into DIR/launcher-MODE
 #      HD_EXTRA, HD_WRAP, HD_LOGDIR as in ci/sandbox_daemon.sh
@@ -89,7 +91,9 @@ PY
   echo "$mode: $out"
   [ -n "$sp" ] && { kill $sp; wait $sp 2>/dev/null; }
   isol=$(grep '^2424' <<<"$out"); net=$(grep '^2425' <<<"$out")
-  if grep -q 'scripts run in their own' $log; then
+  if [ "${HD_NS:-}" = fallback ] && grep -q 'scripts run in their own' $log; then
+    fail "$mode: namespaces used, expected the fallback"
+  elif grep -q 'scripts run in their own' $log; then
     grep -q 'pid=1 host=phantom-mirage-script links=1 loup=0 tmp=probe' <<<"$isol" || fail "$mode: isolated script: $isol"
     grep -q 'pid=1 host=phantom-mirage-script' <<<"$net" || fail "$mode: net script not namespaced: $net"
     [ -e /tmp/ns_probe_a ] && fail "$mode: /tmp is not private"
