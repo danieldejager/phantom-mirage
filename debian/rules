@@ -61,7 +61,9 @@ override_dh_installexamples:
 	dh_installexamples -pphantom-mirage debian/config.localhost sample-config/*
 
 override_dh_installinit:
-	dh_installinit -pphantom-mirage --no-start --no-stop-on-upgrade
+	# runlevels in the LSB header (update-rc.d refuses empty ones, #110) but
+	# disabled by default; phantom-mirage-setup enables it
+	dh_installinit -pphantom-mirage --no-start --no-stop-on-upgrade --update-rcd-params=defaults-disabled
 
 override_dh_installlogrotate:
 	dh_installlogrotate -pphantom-mirage

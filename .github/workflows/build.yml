@@ -162,7 +162,7 @@ jobs:
           ci/test_check_default.sh
           ci/test_pm_start.sh
           SH=dash ci/test_pm_start.sh
-          sh -n release/install.sh debian/scripts/phantom-mirage-setup debian/scripts/phantom-mirage-uninstall
+          sh -n release/install.sh release/make-run.sh release/get-mirage.sh debian/scripts/phantom-mirage-setup debian/scripts/phantom-mirage-uninstall
           cd regress
           bad=0
           for t in general.py detect.py routing.py; do
@@ -184,6 +184,25 @@ jobs:
             phantom-mirage.log
             regress-*.log
           if-no-files-found: ignore
+
+  scripts:
+    name: Release + debian scripts (shellcheck, mocked tests)
+    if: github.event.action != 'labeled' || github.event.label.name == 'full-ci'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          sudo apt-get install -y -qq shellcheck >/dev/null
+          shellcheck --version | head -2
+          # SC1007 (a= b=), SC1090/SC2010/SC2034: intentional patterns
+          shellcheck -s sh -S warning -e SC1007,SC1090,SC2010,SC2034 \
+            release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh
+      - name: ci/test_get_mirage.sh + ci/test_make_run.sh (sh and dash)
+        run: |
+          sh ci/test_get_mirage.sh && dash ci/test_get_mirage.sh
+          sh ci/test_make_run.sh && dash ci/test_make_run.sh
 
   sanitizers:
     name: Debian 13 / ASan + UBSan
@@ -572,8 +591,8 @@ jobs:
           test -n "$want"
           phantom-mirage --version 2>&1 | tee version.txt
           grep -qx "Phantom Mirage I $want (based on Honeyd)" version.txt
-          test "$(dpkg-query -W -f='${Version}' phantom-mirage)" = "$want-3"
-          test "$(dpkg-query -W -f='${Version}' phantom-mirage-common)" = "$want-3"
+          test "$(dpkg-query -W -f='${Version}' phantom-mirage)" = "$want-4"
+          test "$(dpkg-query -W -f='${Version}' phantom-mirage-common)" = "$want-4"
           test "$want" = 1.7.0
           test -e /etc/phantom-mirage/phantom-mirage.conf
           # shipped defaults must be refused with a clear message (#110)
@@ -606,6 +625,45 @@ jobs:
           systemd-analyze verify /usr/lib/systemd/system/phantom-mirage.service
           systemd-analyze security --offline=yes /usr/lib/systemd/system/phantom-mirage.service | tail -n 1 || true
           test ! -e /etc/systemd/system/multi-user.target.wants/phantom-mirage.service
+          # #110: installed, not enabled, no start links; update-rc.d accepts
+          # the init script's LSB runlevels and enable works
+          if systemctl is-enabled phantom-mirage; then echo 'enabled after install' >&2; exit 1; fi
+          if ls /etc/rc[2345].d/S*phantom-mirage 2>/dev/null; then echo 'start links after install' >&2; exit 1; fi
+          grep -q '^# Default-Start: *2 3 4 5$' /etc/init.d/phantom-mirage
+          update-rc.d phantom-mirage defaults
+          ls /etc/rc[2345].d/S*phantom-mirage
+          systemctl enable phantom-mirage
+          test -L /etc/systemd/system/multi-user.target.wants/phantom-mirage.service
+          systemctl disable phantom-mirage
+
+      - name: "update-rc.d farpd defaults (report only, #110)"
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends farpd >/dev/null
+          rc=0; update-rc.d farpd defaults > farpd-rcd.txt 2>&1 || rc=$?
+          cat farpd-rcd.txt
+          { echo '### update-rc.d farpd defaults'; echo "exit $rc"; echo '```'; cat farpd-rcd.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^# Default-(Start|Stop)' /etc/init.d/farpd || true
+
+      - name: Build the debian13 .run
+        working-directory: src
+        run: |
+          v=$(cd phantom-mirage && dpkg-parsechangelog -S Version)
+          mkdir -p debs run
+          for f in phantom-mirage_*.deb phantom-mirage-common_*.deb; do
+            cp "$f" "debs/$(echo "$f" | sed -E "s/^([a-z-]+)_[^_]+_([a-z0-9]+)\.deb$/\1_${v}_debian13_\2.deb/")"
+          done
+          sh phantom-mirage/release/make-run.sh debs debian13 "$(dpkg --print-architecture)" run
+          ls -l run
+          # refuses this distro mismatch cleanly (payload is not run)
+          rc=0; PM_OS_RELEASE=/dev/null sh run/*.run > wrong.txt 2>&1 || rc=$?
+          cat wrong.txt; test $rc != 0 && grep -q 'is for debian13' wrong.txt
+
+      - name: Upload .run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phantom-mirage-run-debian13
+          path: src/run/*.run
+          if-no-files-found: error
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4

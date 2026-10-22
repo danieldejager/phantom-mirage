@@ -100,6 +100,18 @@ jobs:
           done
           ls -l out | tee -a "$GITHUB_STEP_SUMMARY"
 
+      - name: Build the ubuntu26.04 .run (release/make-run.sh)
+        run: |
+          mkdir -p run
+          sh src/phantom-mirage/release/make-run.sh out ubuntu26.04 ${{ matrix.arch }} run
+          (cd run && sha256sum *.run | tee SHA256SUMS)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phantom-mirage-run-ubuntu26.04-${{ matrix.arch }}
+          path: run/
+          if-no-files-found: error
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -117,3 +129,101 @@ jobs:
       - name: Journal
         if: failure()
         run: sudo journalctl -u phantom-mirage --no-pager | tail -n 100
+
+  e2e:
+    # Reproduces #110 end to end on real VMs (systemd as PID 1, no
+    # container): the broken v1.7.0-3 install, then the new .run over it.
+    name: Ubuntu 26.04 / ${{ matrix.arch }} e2e (.run over v1.7.0-3)
+    needs: ubuntu2604
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'full-ci' || github.event.label.name == 'ci-ubuntu-26.04'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            os: ubuntu-26.04-arm
+          - arch: amd64
+            os: ubuntu-26.04
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: phantom-mirage-run-ubuntu26.04-${{ matrix.arch }}
+          path: run
+
+      - name: veth pair (host veth-h 10.77.0.1/24, netns client 10.77.0.2/24)
+        run: |
+          sudo ip netns add client
+          sudo ip link add veth-h type veth peer name veth-c
+          sudo ip link set veth-c netns client
+          sudo ip addr add 10.77.0.1/24 dev veth-h
+          sudo ip link set veth-h up
+          sudo ip netns exec client ip addr add 10.77.0.2/24 dev veth-c
+          sudo ip netns exec client ip link set veth-c up
+          sudo ip netns exec client ip link set lo up
+          sudo ip netns exec client ping -c1 -W2 10.77.0.1
+
+      - name: Install v1.7.0-3 from its release (expected to fail at enable)
+        run: |
+          gh release download v1.7.0-3 -R "$REPO" -D old -p '*_ubuntu26.04_*' -p install.sh -p phantom-mirage-uninstall -p SHA256SUMS
+          ls -l old
+          rc=0; sudo sh old/install.sh -i veth-h -n 10.77.0.248/29 > old.txt 2>&1 || rc=$?
+          cat old.txt
+          echo "v1.7.0-3 install.sh exit $rc" | tee -a "$GITHUB_STEP_SUMMARY"
+          dpkg-query -W phantom-mirage phantom-mirage-common || true
+          systemctl is-enabled phantom-mirage || true
+
+      - name: sudo sh <the .run> -i veth-h -n 10.77.0.248/29
+        run: |
+          set -o pipefail
+          run=$(ls run/*.run)
+          (cd run && sha256sum -c SHA256SUMS)
+          sudo sh "$run" -i veth-h -n 10.77.0.248/29 2>&1 | tee new1.txt
+          grep -E 'install.sh: old version removed cleanly: .*phantom-mirage=1\.7\.0-3' new1.txt
+          { echo '### e2e install over v1.7.0-3'; echo '```'; grep -E 'removed cleanly|previous install|farpd|enable' new1.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Services active + enabled; decoy answers ping
+        run: |
+          sleep 3
+          for s in phantom-mirage farpd; do
+            echo "$s: $(systemctl is-active $s) $(systemctl is-enabled $s)"
+            systemctl is-active --quiet $s
+            systemctl is-enabled --quiet $s
+          done
+          sudo ip netns exec client ping -c3 -W3 10.77.0.248 | tee ping.txt
+          grep -q ' 0% packet loss' ping.txt
+          sudo ip netns exec client ip neigh show | tee -a ping.txt
+          { echo '### ping 10.77.0.248'; echo '```'; cat ping.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Re-run the .run over the new install
+        run: |
+          set -o pipefail
+          sudo sh run/*.run -i veth-h -n 10.77.0.248/29 2>&1 | tee new2.txt
+          grep -E 'install.sh: old version removed cleanly: .*phantom-mirage=1\.7\.0-4' new2.txt
+          sleep 3
+          for s in phantom-mirage farpd; do
+            systemctl is-active --quiet $s
+            systemctl is-enabled --quiet $s
+          done
+          sudo ip netns exec client ping -c3 -W3 10.77.0.248
+
+      - name: phantom-mirage-uninstall --yes
+        run: |
+          sudo phantom-mirage-uninstall --yes
+          for p in phantom-mirage phantom-mirage-common; do
+            st=$(dpkg-query -W -f='${db:Status-Abbrev}' $p 2>/dev/null || true)
+            case $st in ''|un*|pn*) ;; *) echo "$p still installed: $st" >&2; exit 1 ;; esac
+          done
+          for d in /etc/phantom-mirage /etc/default/phantom-mirage /etc/init.d/phantom-mirage /var/lib/phantom-mirage /var/log/phantom-mirage /etc/systemd/system/multi-user.target.wants/phantom-mirage.service; do
+            if [ -e "$d" ] || [ -L "$d" ]; then echo "left behind: $d" >&2; exit 1; fi
+          done
+          if systemctl cat phantom-mirage.service >/dev/null 2>&1; then echo 'unit still present' >&2; exit 1; fi
+
+      - name: Journal
+        if: always()
+        run: |
+          sudo journalctl -u phantom-mirage -u farpd --no-pager | tail -n 100

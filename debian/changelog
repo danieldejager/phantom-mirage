@@ -1,3 +1,24 @@
+phantom-mirage (1.7.0-4) unstable; urgency=medium
+
+  * Fix "systemctl enable phantom-mirage" failing (GitHub #110): the init
+    script's LSB header had empty Default-Start/Default-Stop, which
+    update-rc.d refuses. It now lists Required-Start $remote_fs $syslog
+    $network, Default-Start 2 3 4 5 and Default-Stop 0 1 6; dh_installinit
+    uses defaults-disabled so the package is still not enabled on install.
+  * phantom-mirage-setup: if "systemctl enable" fails (farpd 0.2 ships an
+    init script with empty runlevels too), warn and link the systemd unit
+    into multi-user.target.wants instead of aborting.
+  * phantom-mirage-uninstall also purges the old honeyd/honeyd-common
+    packages and leftovers (/etc/init.d/phantom-mirage, wants link).
+  * install.sh always runs the uninstall first, checks nothing is left and
+    says so ("old version removed cleanly: ..." or "no previous install
+    found (clean)").
+  * New release/make-run.sh (self-extracting phantom-mirage_<ver>_<distro>_<arch>.run)
+    and release/get-mirage.sh (download the newest release with gh, verify,
+    install).
+
+ -- Daniel de Jager <ddejager@dandejager.com>  Fri, 23 Oct 2026 09:25:47 +1100
+
 phantom-mirage (1.7.0-3) unstable; urgency=medium
 
   * Refuse to start with an unusable /etc/default/phantom-mirage instead of
