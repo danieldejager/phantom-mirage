@@ -256,8 +256,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           owner: danieldejager
           package: phantom-mirage
-          use-regex: true
-          exclude-tags: '^(edge|v.*|[0-9]+(\.[0-9]+){0,2})$'
+          # wildcard-match globs (no regex: the action rejects nested
+          # quantifiers as ReDoS-prone): edge, v*, and semver tags
+          # 1 / 1.7 / 1.7.0 (majors up to 99). sha-* is left to keep-n-tagged.
+          exclude-tags: 'edge,v*,?,??,?.*,??.*'
           keep-n-tagged: 3
           delete-untagged: true
           delete-orphaned-images: true
