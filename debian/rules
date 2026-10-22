@@ -25,7 +25,7 @@ override_dh_auto_install:
 	  ln -s /etc/phantom-mirage/$$f $(D)/usr/share/phantom-mirage/$$f; \
 	done
 	mv $(D)/usr/share/phantom-mirage/config.sample $(D)/etc/phantom-mirage/phantom-mirage.conf
-	rm -f $(D)/usr/share/phantom-mirage/README
+	rm -f $(D)/usr/share/phantom-mirage/README.md
 	find $(D) -name '*.la' -delete
 	# AppArmor: "userns" for the --sandbox-scripts launcher only (#16)
 	install -D -m 0644 debian/apparmor/usr.lib.phantom-mirage.pm-script-ns \

@@ -126,10 +126,13 @@ def status_page(mod):
 <head>
 <meta charset="utf-8">
 <title>%s</title>
+<link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32.png">
 <link rel="stylesheet" type="text/css" href="/styles/layout.css">
 </head>
 <body>
 <div id="header">
+<img class="logo" src="/images/phantom-mirage-logo.png" alt="Phantom Mirage I" height="64">
 <h1>%s</h1>
 <div class="date">Uptime: %s</div>
 </div>

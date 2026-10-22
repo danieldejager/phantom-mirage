@@ -51,3 +51,10 @@ Kept for compatibility: the embedded Python module is still "honeyd" and
 the Python service hooks are still honeyd_init/honeyd_readdata/
 honeyd_writedata/honeyd_end; plugin headers still install under
 <includedir>/honeyd so existing #include <honeyd/...> lines keep working.
+
+Brand assets
+------------
+The Phantom Mirage name and logo files (docs/assets/phantom-mirage-*,
+webserver/htdocs/images/phantom-mirage-logo.png, favicon.svg, favicon-32.png)
+are brand assets of Daniel de Jager. They are not part of the GPL-licensed
+code and are not licensed under the GPL; all rights reserved.

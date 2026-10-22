@@ -52,7 +52,7 @@ libhoneyd_DATA = libphantom-mirage.so
 honeyddatadir = $(datadir)/phantom-mirage
 honeydlibdir = $(libdir)/phantom-mirage
 honeydincludedir = $(includedir)/honeyd
-honeyddata_DATA = README nmap.assoc xprobe2.conf nmap-os-db config.sample \
+honeyddata_DATA = README.md nmap.assoc xprobe2.conf nmap-os-db config.sample \
 		config.ethernet pf.os nmap-mac-prefixes
 
 honeydplugins = @PLUGINS@
@@ -181,6 +181,9 @@ WEBDIR_FILES = \
 	webserver/htdocs/images/arrow_down.gif \
 	webserver/htdocs/images/arrow_right.gif \
 	webserver/htdocs/images/google_logo.gif \
+	webserver/htdocs/images/phantom-mirage-logo.png \
+	webserver/htdocs/images/favicon.svg \
+	webserver/htdocs/images/favicon-32.png \
 	webserver/htdocs/graphs/traffic_daily.gif \
 	webserver/htdocs/graphs/traffic_hourly.gif \
 	webserver/htdocs/styles/layout.css \
