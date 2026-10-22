@@ -1,5 +1,5 @@
 phantom-mirage for Debian
------------------
+-------------------------
 
 I've added some of the contributed scripts at 
 http://www.citi.umich.edu/u/provos/honeyd/contrib.html
@@ -8,20 +8,52 @@ However, some of the most complex ones (POP.emulator and issemul8) should
 probably be packaged separately [As a matter of fact issemul8 is packaged
 as 'iisemulator']
 
-Installing and starting (systemd)
---------------------------------
+Quick start: phantom-mirage-setup
+---------------------------------
 
-The service does not start until /etc/default/phantom-mirage is set up:
+  sudo phantom-mirage-setup            # or: --interface IF --network CIDR
 
-  1. sudo apt install ./phantom-mirage_*.deb ./phantom-mirage-common_*.deb
-  2. Find the decoy interface:  ip -br a
-  3. Edit /etc/default/phantom-mirage:
-       INTERFACE="enp0s5"            # from step 2
-       NETWORK=192.168.50.8/29       # small, UNUSED block on that LAN
+It uses the default-route interface (or --interface), picks a /29 near
+the top of that interface's subnet whose addresses do not answer
+ping/arping (or --network), writes a clean /etc/default/phantom-mirage
+(the old one is kept as /etc/default/phantom-mirage.bak-<time>), sets
+RUN="yes", checks the file, runs "systemctl enable" + "restart", and prints
+the service status and a one-line test hint. --dry-run only shows what it
+would write and do.
+
+From a release folder (the .debs, SHA256SUMS, install.sh,
+phantom-mirage-uninstall), one command installs and configures:
+
+  sudo sh install.sh
+
+It checks SHA256SUMS, picks the .debs for this distro (ubuntu26.04 or
+debian13) and architecture, purges any installed Phantom Mirage first
+(config included; meant for test boxes), installs and runs
+phantom-mirage-setup (extra arguments are passed on to it).
+
+To remove everything again (service, packages, /etc/default/phantom-mirage,
+/etc/phantom-mirage, /var/lib/phantom-mirage, /var/log/phantom-mirage, the
+phantom-mirage user/group; promiscuous mode off on the interface):
+
+  sudo phantom-mirage-uninstall        # --yes: no prompt, --dry-run: show only
+
+Configuring by hand
+-------------------
+
+  1. Find the decoy interface:  ip -br a
+  2. Edit /etc/default/phantom-mirage:
+       INTERFACE="enp0s5"            # from step 1
+       NETWORK="192.168.50.8/29"     # small, UNUSED block on that LAN
+     One KEY=VALUE per line, values with spaces quoted as a whole, no
+     quote spanning lines, comments only on their own lines. The file is
+     NOT sourced by a shell or read with systemd's EnvironmentFile=; the
+     service (/usr/lib/phantom-mirage/pm-start) refuses anything else
+     with the line number, e.g.
+       phantom-mirage: /etc/default/phantom-mirage line 31: unbalanced or stray quote in NETWORK="10.211.55.200/29 (...)
      NETWORK wider than /24 is refused unless ALLOW_WIDE_NETWORK=yes.
      Never include addresses used by real hosts or the gateway.
-  4. sudo systemctl enable --now phantom-mirage
-  5. Check:  systemctl status phantom-mirage ; journalctl -u phantom-mirage
+  3. sudo systemctl enable --now phantom-mirage
+  4. Check:  systemctl status phantom-mirage ; journalctl -u phantom-mirage
 
 If the settings are missing or wrong, the service stops at once (exit
 status 78, no restart loop) and the journal says why, e.g.

@@ -36,6 +36,11 @@ override_dh_auto_install:
 	find $(D) -name '*.la' -delete
 	# /etc/default sanity check run before start (#110)
 	install -D -m 0755 debian/scripts/check-default $(D)/usr/lib/phantom-mirage/check-default
+	# strict /etc/default reader + start wrapper (#110), setup/uninstall helpers
+	install -D -m 0644 debian/scripts/default-lib.sh $(D)/usr/lib/phantom-mirage/default-lib.sh
+	install -D -m 0755 debian/scripts/pm-start $(D)/usr/lib/phantom-mirage/pm-start
+	install -D -m 0755 debian/scripts/phantom-mirage-setup $(D)/usr/sbin/phantom-mirage-setup
+	install -D -m 0755 debian/scripts/phantom-mirage-uninstall $(D)/usr/sbin/phantom-mirage-uninstall
 	# AppArmor: "userns" for the --sandbox-scripts launcher only (#16)
 	install -D -m 0644 debian/apparmor/usr.lib.phantom-mirage.pm-script-ns \
 	  $(D)/etc/apparmor.d/usr.lib.phantom-mirage.pm-script-ns

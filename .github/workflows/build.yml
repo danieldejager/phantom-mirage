@@ -160,6 +160,9 @@ jobs:
           ci/test_check_attestations.sh
           python3 ci/test_scripts.py
           ci/test_check_default.sh
+          ci/test_pm_start.sh
+          SH=dash ci/test_pm_start.sh
+          sh -n install.sh debian/scripts/phantom-mirage-setup debian/scripts/phantom-mirage-uninstall
           cd regress
           bad=0
           for t in general.py detect.py routing.py; do
@@ -577,6 +580,11 @@ jobs:
           rc=0; /usr/lib/phantom-mirage/check-default /etc/default/phantom-mirage 2>chk.txt || rc=$?
           test $rc = 78 && grep -q 'INTERFACE is not set' chk.txt
           grep -q '^RestartPreventExitStatus=78' /usr/lib/systemd/system/phantom-mirage.service
+          # no EnvironmentFile= (#110): pm-start parses /etc/default strictly
+          ! grep -q '^EnvironmentFile' /usr/lib/systemd/system/phantom-mirage.service
+          test -x /usr/lib/phantom-mirage/pm-start && test -f /usr/lib/phantom-mirage/default-lib.sh
+          test -x /usr/sbin/phantom-mirage-setup && test -x /usr/sbin/phantom-mirage-uninstall
+          phantom-mirage-uninstall --dry-run
           test -e /usr/share/phantom-mirage/nmap-os-db
           getent passwd phantom-mirage
           # AppArmor profile shipped; this container has no AppArmor and the

@@ -278,8 +278,10 @@ bind and the status page start). Children inherit the ruleset.
 ## systemd defaults
 
 `debian/phantom-mirage.service` runs the daemon with
-`--sandbox-daemon --sandbox-scripts` (`Environment=SANDBOX=…`, which
-`/etc/default/phantom-mirage` may override) and with
+`--sandbox-daemon --sandbox-scripts` (the default `SANDBOX` in
+`/usr/lib/phantom-mirage/pm-start`, which `SANDBOX=` in
+`/etc/default/phantom-mirage` or `Environment=SANDBOX=` in a drop-in may
+override) and with
 `RestrictNamespaces=user mnt pid ipc uts net` instead of `yes`, so the
 script launcher can create per-script namespaces.
 

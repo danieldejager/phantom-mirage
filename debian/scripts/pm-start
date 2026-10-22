@@ -1,0 +1,48 @@
+#!/bin/sh
+# Start wrapper for the systemd unit (#110). Reads /etc/default/phantom-mirage
+# with the strict one-line-per-value parser in default-lib.sh (never
+# EnvironmentFile= or ". file"), checks it, builds argv and execs the daemon.
+#
+# Usage: pm-start check|verify|run
+# Tests: PM_DEFAULT, PM_LIBDIR, PM_SYSFS_NET, PM_DAEMON, PM_UID/PM_GID and
+# PM_PRINT_ARGV=1 (print argv, one word per line, instead of exec).
+set -f	# OPTIONS/NETWORK are split on blanks below, never globbed
+DEFAULT=${PM_DEFAULT:-/etc/default/phantom-mirage}
+. "${PM_LIBDIR:-/usr/lib/phantom-mirage}/default-lib.sh"
+
+DAEMON=${PM_DAEMON:-/usr/bin/phantom-mirage}
+ETC=/etc/phantom-mirage
+# Sandbox on by default (#16); /etc/default or a unit drop-in may override.
+SANDBOX=${SANDBOX---sandbox-daemon --sandbox-scripts}
+INTERFACE= NETWORK= OPTIONS= ALLOW_WIDE_NETWORK=
+
+pm_load_default "$DEFAULT"
+pm_check "$DEFAULT"
+
+mode=$1
+case $mode in
+	check)
+		exit 0 ;;
+	verify)
+		set -- "$DAEMON" --verify-config -f "$ETC/phantom-mirage.conf" ;;
+	run)
+		uid=${PM_UID:-$(id -u phantom-mirage)} || pm_fail "user phantom-mirage does not exist"
+		gid=${PM_GID:-$(id -g phantom-mirage)} || pm_fail "user phantom-mirage does not exist"
+		set -- "$DAEMON" -d -f "$ETC/phantom-mirage.conf" \
+			-l /var/log/phantom-mirage/phantom-mirage.log \
+			-p "$ETC/nmap-os-db" -a "$ETC/nmap.assoc" -0 "$ETC/pf.os" \
+			-x "$ETC/xprobe2.conf" -m "$ETC/nmap-mac-prefixes" \
+			-u "$uid" -g "$gid" ;;
+	*)
+		echo "usage: $0 check|verify|run" >&2; exit 2 ;;
+esac
+
+[ -n "$INTERFACE" ] && set -- "$@" -i "$INTERFACE"
+[ "$mode" = run ] && set -- "$@" $SANDBOX
+set -- "$@" $OPTIONS $NETWORK
+
+if [ -n "$PM_PRINT_ARGV" ]; then
+	printf '%s\n' "$@"
+	exit 0
+fi
+exec "$@"

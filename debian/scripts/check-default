@@ -1,61 +1,13 @@
 #!/bin/sh
 # Sanity-check /etc/default/phantom-mirage before the daemon starts (#110).
-# Run by the systemd unit (ExecStartPre) and the init script. On a
-# configuration error it prints one clear line on stderr (the journal under
-# systemd) and exits 78 (EX_CONFIG); the unit has RestartPreventExitStatus=78
-# so a config error does not turn into a restart loop.
+# Run by the systemd unit (via pm-start) and the init script. On a
+# configuration error it prints one clear "phantom-mirage: ..." line on
+# stderr (the journal under systemd) and exits 78 (EX_CONFIG); the unit has
+# RestartPreventExitStatus=78 so a config error is not retried.
 #
 # Usage: check-default [DEFAULT_FILE]
-# The values are taken from the environment (systemd's EnvironmentFile=)
-# and, if DEFAULT_FILE is given and readable, from that file.
-# PM_SYSFS_NET overrides /sys/class/net (tests only).
-
+# PM_SYSFS_NET overrides /sys/class/net, PM_LIBDIR the library dir (tests).
 DEFAULT=${1:-/etc/default/phantom-mirage}
-SYSNET=${PM_SYSFS_NET:-/sys/class/net}
-EX_CONFIG=78
-
-if [ $# -gt 0 ] && [ -r "$DEFAULT" ]; then
-	. "$DEFAULT"
-fi
-
-fail() {
-	echo "phantom-mirage: $*" >&2
-	exit $EX_CONFIG
-}
-
-if [ -z "$INTERFACE" ]; then
-	fail "INTERFACE is not set in $DEFAULT; set it to the decoy interface (list interfaces with: ip -br a)"
-fi
-case $INTERFACE in
-	*/*|.|..|*[[:space:]]*) fail "INTERFACE=\"$INTERFACE\" in $DEFAULT is not a valid interface name (use one name; extra ones go in OPTIONS as -i NAME)" ;;
-esac
-if [ ! -e "$SYSNET/$INTERFACE" ]; then
-	fail "interface \"$INTERFACE\" (INTERFACE in $DEFAULT) does not exist; list interfaces with: ip -br a"
-fi
-
-if [ "$ALLOW_WIDE_NETWORK" = yes ]; then
-	exit 0
-fi
-
-if [ -z "$NETWORK" ]; then
-	fail "NETWORK is not set in $DEFAULT; set it to a small unused block (e.g. 192.168.50.8/29), or set ALLOW_WIDE_NETWORK=yes to answer for every address on $INTERFACE"
-fi
-
-for net in $NETWORK; do
-	case $net in
-		*/*)
-			bits=${net##*/}
-			case $bits in
-				''|*[!0-9]*) fail "NETWORK \"$net\" in $DEFAULT has an invalid prefix length" ;;
-			esac
-			case $net in
-				*:*) min=120 ;;	# IPv6: at most 256 addresses, like an IPv4 /24
-				*) min=24 ;;
-			esac
-			if [ "$bits" -lt "$min" ]; then
-				fail "NETWORK=$net in $DEFAULT is wider than /$min; use a small unused block (e.g. a /29), or set ALLOW_WIDE_NETWORK=yes if you really mean it"
-			fi
-			;;
-	esac
-done
-exit 0
+. "${PM_LIBDIR:-/usr/lib/phantom-mirage}/default-lib.sh"
+pm_load_default "$DEFAULT"
+pm_check "$DEFAULT"
