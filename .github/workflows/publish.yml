@@ -2,8 +2,8 @@ name: publish
 
 # Signed, private container images on GHCR (#20):
 #   ghcr.io/danieldejager/phantom-mirage
-# Pushes ONLY on pushes to master and on v* tags, never from pull requests
-# (on PRs this workflow only builds, to prove it still works).
+# Pushes ONLY on v* tags and on a manual dispatch from master with
+# push=true; never from pull requests.
 #
 # * Auth: the workflow's own GITHUB_TOKEN (packages: write). No PAT.
 # * Tags: sha-<short> always, edge on master, semver on v* tags.
@@ -16,32 +16,36 @@ name: publish
 # * The package must be private: checked through the API after every
 #   push (also the very first one, which creates the package).
 
+# CI minutes: only v* tags and manual dispatch (push=true to publish
+# edge/sha from master); the build is checked by the nightly Docker job.
 on:
   push:
-    branches: [master]
     tags: ['v*']
-  pull_request:
-    paths:
-      - .github/workflows/publish.yml
-      - Dockerfile
-      - docker/**
+  workflow_dispatch:
+    inputs:
+      push:
+        description: Push and sign the image (from master)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
   group: publish-${{ github.ref }}
-  cancel-in-progress: false
+  # never cancel a publish half-way (pushed but unsigned); only build-only runs
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' && !inputs.push }}
 
 env:
   IMAGE: ghcr.io/danieldejager/phantom-mirage
-  PUSH: ${{ github.event_name == 'push' }}
+  PUSH: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push && github.ref == 'refs/heads/master') }}
   COSIGN_VERSION: v2.6.5
 
 jobs:
   image:
     name: Build, push, sign (amd64 + arm64)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
