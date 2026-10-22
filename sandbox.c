@@ -224,6 +224,8 @@ sandbox_verify_post(uid_t uid, gid_t gid)
 #define LL_TRUNCATE 0
 #endif
 
+static int ll_failed;
+
 static void
 ll_allow(int rfd, const char *path, __u64 access, __u64 handled)
 {
@@ -233,7 +235,9 @@ ll_allow(int rfd, const char *path, __u64 access, __u64 handled)
 
 	if ((fd = open(path, O_PATH | O_CLOEXEC)) == -1) {
 		/* missing paths are simply not allowed */
-		if (errno != ENOENT)
+		if (errno == EMFILE || errno == ENFILE)
+			ll_failed = 1;
+		if (errno != ENOENT && errno != EACCES)
 			syslog(LOG_WARNING, "sandbox: landlock path %s: %s",
 			    path, strerror(errno));
 		return;
@@ -253,8 +257,15 @@ ll_allow(int rfd, const char *path, __u64 access, __u64 handled)
 static void script_net_handled(struct landlock_ruleset_attr *, int);
 static void script_net_rules(int, int);
 
+/*
+ * Build the script ruleset; returns its fd (abi in *abip) or -1. Done
+ * before cmd_setpriv() lowers RLIMIT_NOFILE (default 30): the child still
+ * holds the daemon's descriptors, so opening the rule paths afterwards
+ * can fail with EMFILE, leaving an empty ruleset that denies everything
+ * (subsystems died after SIGHUP, #105).
+ */
 static int
-sandbox_landlock(char * const argv[])
+ll_script_build(char * const argv[], int *abip)
 {
 	static const char *ro[] = {
 		"/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32",
@@ -312,7 +323,36 @@ sandbox_landlock(char * const argv[])
 	if (sandbox_script_private_tmp)
 		ll_allow(rfd, "/tmp", rw, handled);
 	script_net_rules(rfd, abi);
+	if (ll_failed) {
+		close(rfd);
+		errno = EMFILE;
+		return (-1);
+	}
+	*abip = abi;
+	return (rfd);
+}
 
+static int ll_prepared_rfd = -1, ll_prepared_abi;
+
+void
+sandbox_script_prepare(char * const argv[])
+{
+	if (!honeyd_sandbox_scripts || ll_prepared_rfd != -1)
+		return;
+	ll_prepared_rfd = ll_script_build(argv, &ll_prepared_abi);
+}
+
+static int
+sandbox_landlock(char * const argv[])
+{
+	int rfd, abi;
+
+	if (ll_prepared_rfd != -1) {
+		rfd = ll_prepared_rfd;
+		abi = ll_prepared_abi;
+		ll_prepared_rfd = -1;
+	} else if ((rfd = ll_script_build(argv, &abi)) == -1)
+		return (-1);
 	if (syscall(SYS_landlock_restrict_self, rfd, 0) == -1) {
 		close(rfd);
 		return (-1);
@@ -321,6 +361,8 @@ sandbox_landlock(char * const argv[])
 	return (abi);
 }
 #else
+void sandbox_script_prepare(char * const argv[]) { (void)argv; }
+
 static int
 sandbox_landlock(char * const argv[])
 {
@@ -806,6 +848,7 @@ int sandbox_daemon_landlock(void) { return (0); }
 
 void sandbox_drop_caps_pre(void) { }
 int sandbox_verify_post(uid_t uid, gid_t gid) { return (0); }
+void sandbox_script_prepare(char * const argv[]) { }
 void
 sandbox_script(char * const argv[])
 {

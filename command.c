@@ -437,6 +437,7 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 
 	if (cmd->pid == 0) {
 		/* Child privileges */
+		sandbox_script_prepare(argv);
 		cmd_setpriv(tmpl);
 
 		/* Child */
@@ -589,6 +590,7 @@ cmd_subsystem(struct template *tmpl, struct subsystem *sub,
 		char magic_buf[12];
 		int magic_fd;
 		/* Set privileges */
+		sandbox_script_prepare(argv);
 		cmd_setpriv(tmpl);
 
 		/* Child */
