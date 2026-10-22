@@ -39,12 +39,7 @@ docker run "${base[@]}" "${logs[@]}" \
   --security-opt apparmor=phantom-mirage-docker \
   -e HD_NS=require -e HD_LOGDIR=/logs \
   phantom-mirage:sandbox-test bash -c 'set -e; grep "^phantom-mirage-docker (enforce)" /proc/self/attr/current
-    # the profile, not the namespace, decides: a tmpfs on /tmp is allowed,
-    # the same mount anywhere else is denied
-    nb="setpriv --reuid 65534 --regid 65534 --clear-groups"
-    $nb unshare -Urm mount -t tmpfs -o nosuid,nodev tmpfs /tmp
-    if $nb unshare -Urm mount -t tmpfs -o nosuid,nodev tmpfs /mnt 2>/dev/null; then echo "mount on /mnt allowed" >&2; exit 1; fi
-    echo "profile: /tmp tmpfs allowed, /mnt denied"
+    bash ci/apparmor_probe.sh
     bash ci/script_ns.sh' || rc=1
 echo "::endgroup::"
 # Default docker run: docker-default AppArmor and default seccomp stay on;
