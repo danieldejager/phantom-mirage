@@ -835,11 +835,6 @@ jobs:
           docker rm -f "$cid"
           docker image ls phantom-mirage:ci --format 'Image size: {{.Size}}' | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - name: Allow unprivileged user namespaces (host)
-        # Ubuntu 24.04 restricts them for unconfined programs; the script
-        # namespace check runs the container with apparmor=unconfined
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-
       - name: "Sandbox checks inside the image: daemon + --sandbox-scripts (#16)"
         run: bash ci/docker_sandbox.sh phantom-mirage:ci
 
@@ -870,11 +865,6 @@ jobs:
           load: true
           tags: phantom-mirage:ci
           cache-from: type=gha
-
-      - name: Allow unprivileged user namespaces (host)
-        # Ubuntu 24.04 restricts them for unconfined programs; the script
-        # namespace check runs the container with apparmor=unconfined
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: "Sandbox checks inside the image: daemon + --sandbox-scripts (#16)"
         run: bash ci/docker_sandbox.sh phantom-mirage:ci
