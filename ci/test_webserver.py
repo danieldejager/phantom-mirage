@@ -51,6 +51,14 @@ assert b"x&lt;y&gt;.conf" in r and b"no active UDP connections" in r
 assert b"2.00 KB/s" in r
 assert get(b"HEAD /index.py HTTP/1.0\r\n\r\n").endswith(b"\r\n\r\n")
 assert get(b"GET /styles/layout.css HTTP/1.0\r\n\r\n").startswith(b"HTTP/1.0 200")
+# the logo and favicons are served locally (no external URLs: standalone)
+assert b'src="/images/phantom-mirage-logo.png"' in r and b'href="/images/favicon.svg"' in r
+assert b"http://" not in r.split(b"\r\n\r\n", 1)[1] and b"https://" not in r.split(b"\r\n\r\n", 1)[1]
+for path, ctype in ((b"/images/phantom-mirage-logo.png", b"image/png"),
+                    (b"/images/favicon-32.png", b"image/png"),
+                    (b"/images/favicon.svg", b"image/svg+xml")):
+    x = get(b"GET " + path + b" HTTP/1.0\r\n\r\n")
+    assert x.startswith(b"HTTP/1.0 200") and b"Content-Type: " + ctype in x, (path, x[:200])
 for bad in (b"/../server.py", b"/styles/../../server.py", b"/server.py",
             b"/styles/%2e%2e/%2e%2e/server.py", b"/nope", b"/index.py?delete_ip=1x"):
     r = get(b"GET " + bad + b" HTTP/1.0\r\n\r\n")

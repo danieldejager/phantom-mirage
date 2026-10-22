@@ -183,10 +183,7 @@ TD.tableHeadingInside {
 }
 
 #header {
-  background-image: url("/images/logo.gif");
-  background-position: 4px 2px;
-  background-repeat: no-repeat;
-  background-color: #aaaacc;
+  background-color: #ffffff;
   width: 100%;
   padding: 0;
   margin: 0;
@@ -214,3 +211,5 @@ TD.tableHeadingInside {
   margin-top: -1.5em;
   text-align: right;
 }
+
+#header .logo { display: block; margin: 8px auto 0 auto; }

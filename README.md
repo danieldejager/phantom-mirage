@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/phantom-mirage-logo.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/phantom-mirage-logo-light.png">
+    <img alt="Phantom Mirage I" src="docs/assets/phantom-mirage-logo-light.png" width="420">
+  </picture>
+</p>
+
 Phantom Mirage I (version: see AC_INIT in configure.ac, or run `phantom-mirage --version`)
 Part of the Phantom deception product range.
 
@@ -37,12 +45,16 @@ Make sure that you have them installed.
 
 To install dependencies in Ubuntu:
 
+```sh
 $ sudo apt-get install libevent-dev libdumbnet-dev libpcap-dev libpcre3-dev libedit-dev bison flex libtool automake
+```
 
 To install dependencies in ArchLinux:
 
+```sh
 # First get these packages
 $ pacman -S libdnet libpcap libevent pcre libedit bison flex libtool automake
+```
 
 Python is optional. The regression tests in regress/ need python3 and
 python3-dpkt. Embedded Python 3 service scripts ("internal" services) need
@@ -50,10 +62,12 @@ python3-dpkt. Embedded Python 3 service scripts ("internal" services) need
 
 To build phantom-mirage, run the following commands:
 
+```sh
 $ ./autogen.sh
 $ ./configure
 $ make
 $ sudo make install
+```
 
 Python support is off unless you pass --with-python. See docs/python.md.
 
@@ -66,11 +80,15 @@ Documentation:
 You can find documentation as part of this release.  The manual
 page can be accessed with the following commands:
 
+```sh
 $ man phantom-mirage
+```
 
 or in the source directory
 
+```sh
 $ nroff -mdoc phantom-mirage.8
+```
 
 More information can be found at http://www.honeyd.org/ and https://github.com/DataSoft/Honeyd
 
@@ -80,7 +98,9 @@ Running:
 Phantom Mirage requires root-privileges for execution.  Normally, you run it
 with arguments similiar to the following:
 
+```sh
 $ sudo ./honeyd -d -f config.sample 10.0.0.0/8
+```
 
 It is strongly recommend that you run Phantom Mirage in a chroot environment
 under a sandbox like systrace.  If possible, Phantom Mirage drops privileges
