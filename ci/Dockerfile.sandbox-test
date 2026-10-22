@@ -1,0 +1,26 @@
+# CI only, never pushed: the built phantom-mirage image plus the test tools
+# the sandbox checks need (python3 as a traffic client, ip, pgrep) and the
+# ci/ scripts. The phantom-mirage binaries and data files are the image's own.
+ARG BASE=phantom-mirage:ci
+FROM debian:13-slim AS tools
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc libc6-dev \
+ && rm -rf /var/lib/apt/lists/*
+COPY ci/subsys_echo.c /subsys_echo.c
+RUN gcc -O1 -o /subsys_echo /subsys_echo.c
+
+FROM ${BASE}
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      python3 iproute2 procps \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=tools /subsys_echo /usr/local/libexec/pm-ci/subsys_echo
+COPY ci/ /pm-ci/ci/
+WORKDIR /pm-ci
+RUN ln -s /usr/bin/phantom-mirage /usr/bin/phantom-mirage-ctl . \
+ && for f in nmap-os-db xprobe2.conf nmap.assoc pf.os nmap-mac-prefixes; do \
+      ln -s /usr/share/phantom-mirage/$f .; done \
+ && ln -s /usr/share/phantom-mirage/webserver webserver \
+ && ln -s /usr/share/phantom-mirage/scripts scripts
+ENTRYPOINT []
+CMD ["/bin/bash"]

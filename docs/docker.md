@@ -52,6 +52,49 @@ docker run --rm --network decoy-vlan10 \
   -v "$PWD/site.conf:/etc/phantom-mirage/phantom-mirage.conf:ro" phantom-mirage:local
 ```
 
+## Sandboxing in the container (`--sandbox-daemon`, `--sandbox-scripts`)
+
+`--sandbox-daemon` (seccomp allowlist + Landlock) needs nothing beyond the
+capabilities above: the default Docker seccomp profile allows `seccomp(2)`
+and the Landlock calls, and `no-new-privileges` is what the filters need
+anyway.
+
+`--sandbox-scripts` with per-script namespaces (own user/pid/mount/net/uts
+namespace, read-only root via `pivot_root`, no network) additionally needs:
+
+| Option | Why |
+|---|---|
+| `--security-opt seccomp=docker/seccomp-sandbox-scripts.json` | Docker's default profile only allows `unshare`, `mount`, `umount2`, `pivot_root` and `sethostname` with `CAP_SYS_ADMIN`. This profile is the [moby default](https://github.com/moby/profiles) plus those five calls; the kernel only grants them inside the script's new user namespace. No capability is added. |
+| `--security-opt apparmor=unconfined` | the `docker-default` AppArmor profile denies all mounts (the script's private `/tmp` and read-only root). A custom profile allowing `mount`/`pivot_root` and `userns` works too. |
+| host: `kernel.apparmor_restrict_unprivileged_userns=0` | Ubuntu 23.10+ only: otherwise unconfined programs can't create user namespaces |
+
+Without these phantom-mirage logs `sandbox: unprivileged user namespaces
+unavailable` and runs scripts under Landlock/seccomp only (still no
+network on Landlock ABI 4+).
+
+```sh
+docker run --rm --network decoy-vlan10 \
+  --cap-drop ALL --cap-add NET_RAW --cap-add NET_ADMIN \
+  --cap-add SETUID --cap-add SETGID \
+  --read-only --tmpfs /run --tmpfs /tmp --tmpfs /root/.config \
+  --security-opt no-new-privileges \
+  --security-opt seccomp=docker/seccomp-sandbox-scripts.json \
+  --security-opt apparmor=unconfined \
+  -v "$PWD/site.conf:/etc/phantom-mirage/phantom-mirage.conf:ro" \
+  phantom-mirage:local --sandbox-daemon --sandbox-scripts
+```
+
+CI (`ci/docker_sandbox.sh`, the `docker` job for amd64 and `docker-arm64`
+on a native arm64 runner; QEMU can't run seccomp filters) builds
+`ci/Dockerfile.sandbox-test` on top of the built image (adds only python3,
+iproute2, procps and the ci/ scripts; local, never pushed) and runs
+`ci/sandbox_daemon.sh` and `ci/script_ns.sh` (`HD_NS=require`) with the
+image's own binaries. The test harness adds `CHOWN` and `KILL` (it chowns
+the graphs dir and signals the daemon after it dropped to `nobody`) and an
+exec `/tmp` for its test subsystem; production doesn't need those. The
+image has no embedded Python, so the Python service, status page and the
+off-list-syscall probe are covered by the source-build jobs only.
+
 ## Networking
 
 Use **macvlan** (or ipvlan L2) on the decoy VLAN, not the default bridge. phantom-mirage has to see raw frames and answer ARP for every decoy address. `docker/docker-compose.yml` is an example with placeholder values: parent `eth0.10` (VLAN 10 on a trunk port), subnet `192.0.2.0/24`. For several VLANs, attach one macvlan network per VLAN and list every interface in `PHANTOM_MIRAGE_INTERFACES`.

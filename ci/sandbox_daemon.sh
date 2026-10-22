@@ -12,6 +12,11 @@
 #             skip the filter checks and the negative check
 #   HD_LANDLOCK  "require": fail unless the daemon reports Landlock active
 #             (default: also accept the logged "Landlock unavailable")
+#   HD_NOPY   1: the binary has no embedded Python (the Docker image): no
+#             internal Python service, status page or phantom-mirage-ctl "!"
+#             probes; Landlock is then checked from the daemon's log only
+#             and the off-list syscall check is skipped
+#   HD_SUBSYS subsystem binary (default /tmp/subsys_echo)
 set -uo pipefail
 D=$PWD
 W=${HD_WORK:-/tmp/hdsd}
@@ -26,9 +31,9 @@ set default default tcp action block
 create linux
 set linux personality "Linux 2.6.32"
 set linux default tcp action reset
-add linux subsystem "/tmp/subsys_echo"
+add linux subsystem "${HD_SUBSYS:-/tmp/subsys_echo}"
 add linux tcp port 2323 "/bin/sh $W/svc_escape.sh"
-add linux tcp port 7 internal "echo_banner"
+$( [ "${HD_NOPY:-0}" = 1 ] || echo 'add linux tcp port 7 internal "echo_banner"' )
 bind 10.99.0.10 linux
 CONF
 mkdir -p /var/run
@@ -36,12 +41,15 @@ rc=0
 SBD=--sandbox-daemon
 ACTIVE='sandbox-daemon: seccomp allowlist active'
 if [ "${HD_LEARN:-0}" = 1 ]; then SBD=; ACTIVE='Demoting process privileges'; fi
+NOPY=${HD_NOPY:-0}
+if [ "$NOPY" = 1 ]; then WEB=--disable-webserver; else WEB="--webserver-port=8080 --webserver-root=$W/htdocs"; fi
+export NOPY
 run() {
   mode=$1; shift
   log=${HD_LOGDIR:-$D}/sandbox-daemon-$mode.log
   PYTHONPATH=$D/scripts/python timeout 90 ${HD_WRAP:-} ./phantom-mirage -d \
     -f $W/sd.conf -i lo $SBD \
-    --webserver-port=8080 --webserver-root=$W/htdocs \
+    $WEB \
     -p $D/nmap-os-db -x $D/xprobe2.conf -a $D/nmap.assoc \
     -0 $D/pf.os -m $D/nmap-mac-prefixes \
     -l $W/log/phantom-mirage.log -s $W/log/service.log --json-log=$W/log/events.jsonl \
@@ -53,27 +61,33 @@ run() {
   done
   sleep 1
   python3 - <<'PY' || { echo "$mode: traffic checks failed" >&2; rc=1; }
-import socket, urllib.request
+import os, socket, urllib.request
+nopy = os.environ.get("NOPY") == "1"
 for n in range(3):
     s = socket.create_connection(("10.99.0.10", 18080), timeout=5)
     assert s.recv(16) == b"hello\n"
     s.close()
 s = socket.create_connection(("10.99.0.10", 2323), timeout=5); s.recv(1); s.close()
-for n in range(2):
+for n in range(0 if nopy else 2):
     s = socket.create_connection(("10.99.0.10", 7), timeout=5)
     f = s.makefile("rb")
     assert f.readline().startswith(b"honeyd echo (python ")
     s.sendall(b"hi\r\n"); assert f.readline() == b"echo: hi\r\n"
     s.sendall(b"quit\r\n"); s.close()
-with urllib.request.urlopen("http://127.0.0.1:8080/", timeout=5) as r:
-    assert r.status == 200 and b"10.99.0.10" in r.read()
+if not nopy:
+    with urllib.request.urlopen("http://127.0.0.1:8080/", timeout=5) as r:
+        assert r.status == 200 and b"10.99.0.10" in r.read()
 print("traffic OK")
 PY
-  echo '! import honeyd; print(6 * 7)' | timeout 5 ./phantom-mirage-ctl > $W/ctl.out 2>&1 || true
-  grep -q '^42' $W/ctl.out || { echo "$mode: phantom-mirage-ctl ! failed" >&2; cat $W/ctl.out; rc=1; }
+  if [ "$NOPY" != 1 ]; then
+    echo '! import honeyd; print(6 * 7)' | timeout 5 ./phantom-mirage-ctl > $W/ctl.out 2>&1 || true
+    grep -q '^42' $W/ctl.out || { echo "$mode: phantom-mirage-ctl ! failed" >&2; cat $W/ctl.out; rc=1; }
+  fi
   echo 'list template' | timeout 5 ./phantom-mirage-ctl > $W/ctl2.out 2>&1 || true
   grep -q '10.99.0.10' $W/ctl2.out || { echo "$mode: phantom-mirage-ctl list failed" >&2; rc=1; }
-  if [ -z "$SBD" ]; then :; elif grep -q 'sandbox-daemon: Landlock ABI' $log; then
+  if [ -z "$SBD" ]; then :; elif [ "$NOPY" = 1 ] && grep -q 'sandbox-daemon: Landlock ABI' $log; then
+    : # no "!" probe without Python; the log line says Landlock is on
+  elif grep -q 'sandbox-daemon: Landlock ABI' $log; then
     # Landlock on the daemon: writes outside the log/socket/graphs dirs
     # and TCP connects (no proxy configured) are refused with EACCES.
     echo "! import ctypes, socket; c = ctypes.CDLL(None, use_errno=True); r = c.open(b'$W/ll_probe', 0o1101, 0o644); e = ctypes.get_errno(); g = c.open(b'$W/log/ll_ok', 0o1101, 0o644); print('LL', r, e, g >= 0, socket.socket().connect_ex(('127.0.0.1', 8080)))" |
@@ -110,6 +124,7 @@ PY
 run plain
 run scripts --sandbox-scripts --sandbox-allow-write=$W/rw
 [ "${HD_LEARN:-0}" = 1 ] && exit $rc
+[ "$NOPY" = 1 ] && { echo "sandbox-daemon: off-list syscall check needs Python (skipped)"; exit $rc; }
 
 # Negative check: a syscall off the list (mount, via phantom-mirage-ctl "!") must
 # be reported and kill the daemon with SIGSYS.
