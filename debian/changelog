@@ -13,6 +13,10 @@ phantom-mirage (1.7.0-4) unstable; urgency=medium
   * install.sh always runs the uninstall first, checks nothing is left and
     says so ("old version removed cleanly: ..." or "no previous install
     found (clean)").
+  * Comment out the sample's "bind 192.168.3.137 windows" in the Debian
+    /etc/phantom-mirage/phantom-mirage.conf: its ethernet address made the
+    config fail ("no interface that can reach 192.168.3.137") on hosts not
+    on that network, so the service never started.
   * New release/make-run.sh (self-extracting phantom-mirage_<ver>_<distro>_<arch>.run)
     and release/get-mirage.sh (download the newest release with gh, verify,
     install).

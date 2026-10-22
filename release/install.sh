@@ -42,7 +42,7 @@ grep -E "[ *](${main}|${common})\$" SHA256SUMS | sha256sum -c - || die "checksum
 # conffiles such as /etc/init.d/phantom-mirage, config, state, logs, farpd
 # config written by setup) with the uninstall script shipped next to this
 # file, so a half-configured older release never leaks into the new one.
-old=$(dpkg-query -W -f='${Package} ${Version} ${db:Status-Abbrev}\n' phantom-mirage phantom-mirage-common honeyd honeyd-common 2>/dev/null | awk '$3 !~ /^(un|pn)/ {print $1"="$2}' | tr '\n' ' ' || true)
+old=$(dpkg-query -W -f='${Package}\t${Version}\t${db:Status-Abbrev}\n' phantom-mirage phantom-mirage-common honeyd honeyd-common 2>/dev/null | awk -F'\t' '$3 != "" && $3 !~ /^(un|pn)/ {print $1"="$2}' | tr '\n' ' ' || true)
 if [ -r ./phantom-mirage-uninstall ]; then sh ./phantom-mirage-uninstall --yes
 elif [ -x /usr/sbin/phantom-mirage-uninstall ]; then /usr/sbin/phantom-mirage-uninstall --yes
 else die "phantom-mirage-uninstall not found next to install.sh"

@@ -630,9 +630,12 @@ jobs:
           if systemctl is-enabled phantom-mirage; then echo 'enabled after install' >&2; exit 1; fi
           if ls /etc/rc[2345].d/S*phantom-mirage 2>/dev/null; then echo 'start links after install' >&2; exit 1; fi
           grep -q '^# Default-Start: *2 3 4 5$' /etc/init.d/phantom-mirage
+          # links already exist (K, defaults-disabled): defaults keeps them,
+          # enable turns them into start links
           update-rc.d phantom-mirage defaults
-          ls /etc/rc[2345].d/S*phantom-mirage
+          ls -l /etc/rc?.d/*phantom-mirage
           systemctl enable phantom-mirage
+          ls /etc/rc[2345].d/S*phantom-mirage
           test -L /etc/systemd/system/multi-user.target.wants/phantom-mirage.service
           systemctl disable phantom-mirage
 
