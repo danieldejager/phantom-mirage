@@ -133,17 +133,24 @@ jobs:
   e2e:
     # Reproduces #110 end to end on real VMs (systemd as PID 1, no
     # container): the broken v1.7.0-3 install, then the new .run over it.
-    name: Ubuntu 26.04 / ${{ matrix.arch }} e2e (.run over v1.7.0-3)
+    name: Ubuntu 26.04 / ${{ matrix.arch }} e2e (.run over ${{ matrix.from }})
     needs: ubuntu2604
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'full-ci' || github.event.label.name == 'ci-ubuntu-26.04'
     strategy:
       fail-fast: false
       matrix:
+        arch: [arm64, amd64]
+        from: ['1.7.0-2', '1.7.0-3']
         include:
           - arch: arm64
             os: ubuntu-26.04-arm
           - arch: amd64
             os: ubuntu-26.04
+          # 1.7.0-2 shipped in release v1.7.0 (no install.sh)
+          - from: '1.7.0-2'
+            rel: v1.7.0
+          - from: '1.7.0-3'
+            rel: v1.7.0-3
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
@@ -167,14 +174,26 @@ jobs:
           sudo ip netns exec client ip link set lo up
           sudo ip netns exec client ping -c1 -W2 10.77.0.1
 
-      - name: Install v1.7.0-3 from its release (expected to fail at enable)
+      - name: Install ${{ matrix.from }} from release ${{ matrix.rel }} (may fail to start)
+        env:
+          FROM: ${{ matrix.from }}
+          REL: ${{ matrix.rel }}
         run: |
-          gh release download v1.7.0-3 -R "$REPO" -D old -p '*_ubuntu26.04_*' -p install.sh -p phantom-mirage-uninstall -p SHA256SUMS
+          gh release download "$REL" -R "$REPO" -D old -p "*_${FROM}_ubuntu26.04_*" -p SHA256SUMS
           ls -l old
-          rc=0; sudo sh old/install.sh -i veth-h -n 10.77.0.248/29 > old.txt 2>&1 || rc=$?
+          (cd old && grep -E "_${FROM}_ubuntu26\.04_(all|${{ matrix.arch }})\.deb" SHA256SUMS | sha256sum -c)
+          rc=0
+          if [ -f old/install.sh ] || gh release download "$REL" -R "$REPO" -D old -p install.sh -p phantom-mirage-uninstall 2>/dev/null; then
+            sudo sh old/install.sh -i veth-h -n 10.77.0.248/29 > old.txt 2>&1 || rc=$?
+          else
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+              ./old/phantom-mirage-common_${FROM}_ubuntu26.04_all.deb \
+              ./old/phantom-mirage_${FROM}_ubuntu26.04_${{ matrix.arch }}.deb > old.txt 2>&1 || rc=$?
+          fi
           cat old.txt
-          echo "v1.7.0-3 install.sh exit $rc" | tee -a "$GITHUB_STEP_SUMMARY"
-          dpkg-query -W phantom-mirage phantom-mirage-common || true
+          echo "$FROM install exit $rc" | tee -a "$GITHUB_STEP_SUMMARY"
+          dpkg-query -W phantom-mirage phantom-mirage-common
           systemctl is-enabled phantom-mirage || true
 
       - name: sudo sh <the .run> -i veth-h -n 10.77.0.248/29
@@ -183,8 +202,8 @@ jobs:
           run=$(ls run/*.run)
           (cd run && sha256sum -c SHA256SUMS)
           sudo sh "$run" -i veth-h -n 10.77.0.248/29 2>&1 | tee new1.txt
-          grep -E 'install.sh: old version removed cleanly: .*phantom-mirage=1\.7\.0-3' new1.txt
-          { echo '### e2e install over v1.7.0-3'; echo '```'; grep -E 'removed cleanly|previous install|farpd|enable' new1.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          grep -E "install.sh: old version removed cleanly: .*phantom-mirage=$(echo '${{ matrix.from }}' | sed 's/\./\\./g')" new1.txt
+          { echo '### e2e install over ${{ matrix.from }}'; echo '```'; grep -E 'removed cleanly|previous install|farpd|enable' new1.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Services active + enabled; decoy answers ping
         run: |
