@@ -5,18 +5,25 @@
 RUN="no"
 
 
-# Default options.
-# Interface to listen on (if unset phantom-mirage will select
-# an interface himself) 
-# Note: Use only one! if you wish to use
-# more than one use multiple -i in OPTIONS
+# Interface Phantom Mirage listens on (required). Use the interface that
+# carries the decoy addresses; list the interfaces with:
+#   ip -br a
+# e.g. INTERFACE="eth0" or INTERFACE="enp0s5". Use only one here; for
+# more, add "-i NAME" to OPTIONS. The service refuses to start (and does
+# not restart in a loop) while this is empty or names a missing interface.
 INTERFACE=""
 
-# Network Phantom Mirage will listen for. IF this is not set
-# Phantom Mirage will claim _all_ IP addresses set on the configured
-# interface (which is probably _not_ what you want)
-# This "sane" default will prevent you from doing it.
-NETWORK=10.0.0.0/8
+# Addresses Phantom Mirage answers for (required). Use a SMALL, UNUSED
+# block on that interface's LAN, e.g. a /29 (8 addresses):
+#   NETWORK=192.168.50.8/29
+# Never include addresses used by real hosts (or the gateway): Phantom
+# Mirage (and farpd, if you run it for these addresses) would take them
+# over. Blocks wider than /24 are refused unless ALLOW_WIDE_NETWORK=yes.
+# If NETWORK is empty the service refuses to start; with
+# ALLOW_WIDE_NETWORK=yes and NETWORK empty it claims every address it
+# sees on INTERFACE (almost never what you want).
+NETWORK=""
+#ALLOW_WIDE_NETWORK=yes
 
 # You can set some other options here for example:
 # Notice that some of the options are already defined in the

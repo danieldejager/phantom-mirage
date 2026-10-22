@@ -8,6 +8,31 @@ However, some of the most complex ones (POP.emulator and issemul8) should
 probably be packaged separately [As a matter of fact issemul8 is packaged
 as 'iisemulator']
 
+Installing and starting (systemd)
+--------------------------------
+
+The service does not start until /etc/default/phantom-mirage is set up:
+
+  1. sudo apt install ./phantom-mirage_*.deb ./phantom-mirage-common_*.deb
+  2. Find the decoy interface:  ip -br a
+  3. Edit /etc/default/phantom-mirage:
+       INTERFACE="enp0s5"            # from step 2
+       NETWORK=192.168.50.8/29       # small, UNUSED block on that LAN
+     NETWORK wider than /24 is refused unless ALLOW_WIDE_NETWORK=yes.
+     Never include addresses used by real hosts or the gateway.
+  4. sudo systemctl enable --now phantom-mirage
+  5. Check:  systemctl status phantom-mirage ; journalctl -u phantom-mirage
+
+If the settings are missing or wrong, the service stops at once (exit
+status 78, no restart loop) and the journal says why, e.g.
+  phantom-mirage: INTERFACE is not set in /etc/default/phantom-mirage; ...
+Fix the file and run "sudo systemctl restart phantom-mirage". The same
+check can be run by hand:
+  sudo /usr/lib/phantom-mirage/check-default /etc/default/phantom-mirage
+
+If you use farpd to answer ARP for the decoys, give it the same small
+block (farpd is a separate package and is not started from this file).
+
 Notice also that in order for phantom-mirage to work you will probably need
 a user-space ARP daemon that answers requests for IP addresses
 which have been configured in phantom-mirage. Such a daemon is provided in

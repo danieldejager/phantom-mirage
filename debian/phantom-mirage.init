@@ -134,6 +134,8 @@ start()
     if [ "x$RUN" != "xyes" ] ; then
         not_configured
     fi
+    # INTERFACE/NETWORK sanity check (#110); prints why on failure
+    /usr/lib/phantom-mirage/check-default "$DEFAULT" || exit 1
     date=`date -R`
     echo "$date - Starting phantom-mirage" >>$LOGDIR/daemon.log
     start-stop-daemon --quiet --start --pidfile "$PIDFILE" \
