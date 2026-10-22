@@ -26,6 +26,7 @@ void sandbox_script(char * const argv[]);
 
 /* --sandbox-allow-write=DIR (repeatable) */
 int sandbox_add_write_path(const char *path);
+int sandbox_path_broad(const char *path);
 
 extern int honeyd_sandbox_scripts;
 

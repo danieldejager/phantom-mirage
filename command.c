@@ -625,7 +625,8 @@ cmd_subsystem(struct template *tmpl, struct subsystem *sub,
 		sandbox_script(argv);
 		if (execv(execcmd, argv) == -1)
 		{
-			syslog(LOG_ERR, "%s: execv(%s)", __func__, execcmd);
+			syslog(LOG_ERR, "%s: execv(%s): %s", __func__, execcmd,
+			    strerror(errno));
 			exit(EXIT_FAILURE);
 		}
 

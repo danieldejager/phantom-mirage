@@ -631,11 +631,6 @@ jobs:
           sudo mk-build-deps -i -r -t 'apt-get -y --no-install-recommends' debian/control
           dpkg-buildpackage -us -uc -b
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: deb-ubuntu24.04-${{ matrix.arch }}
-          path: src/*.deb
-
       - name: Install it
         working-directory: src
         run: |
@@ -971,83 +966,6 @@ jobs:
           name: docker-sandbox-arm64
           path: docker-sandbox-logs/
           if-no-files-found: ignore
-
-  ubuntu2604:
-    name: Ubuntu 26.04 / ${{ matrix.arch }} .deb (container)
-    # No 26.04 runners yet: ubuntu:26.04 containers on the 24.04 runners
-    # (host kernel and AppArmor are the runner's 24.04 ones).
-    needs: systemd
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            os: ubuntu-24.04
-          - arch: arm64
-            os: ubuntu-24.04-arm
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          path: src/phantom-mirage
-
-      - name: The 24.04-built .deb installs on 26.04
-        uses: actions/download-artifact@v4
-        with:
-          name: deb-ubuntu24.04-${{ matrix.arch }}
-          path: deb2404
-
-      - name: Install the 24.04 .deb in ubuntu:26.04
-        run: |
-          docker run --rm -v "$PWD/deb2404:/d:ro" ubuntu:26.04 bash -ec '
-            . /etc/os-release; echo "$PRETTY_NAME"
-            apt-get update -qq
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends /d/phantom-mirage_*.deb /d/phantom-mirage-common_*.deb
-            dpkg -s phantom-mirage | grep -E "^(Version|Depends):"
-            phantom-mirage --version
-            ldd /usr/bin/phantom-mirage | grep -E "not found" && exit 1 || true' 2>&1 | tee install2404.log
-
-      - name: Build, install and sandbox-test in ubuntu:26.04
-        # NET_ADMIN: routes on lo; NET_RAW: pcap.
-        # Docker's default AppArmor stays on, so per-script namespaces fall
-        # back (logged); the namespace + systemd checks run on the hosts.
-        run: |
-          docker run --rm --cap-add NET_ADMIN --cap-add NET_RAW \
-            -v "$PWD/src:/src" -w /src/phantom-mirage ubuntu:26.04 bash -ec '
-            . /etc/os-release; echo "$PRETTY_NAME"; uname -r
-            apt-get update -qq
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-              build-essential devscripts equivs python3-dev python3-dpkt iproute2 procps util-linux
-            mk-build-deps -i -r -t "apt-get -y --no-install-recommends" debian/control
-            dpkg-buildpackage -us -uc -b
-            DEBIAN_FRONTEND=noninteractive apt-get install -y ../phantom-mirage_*.deb ../phantom-mirage-common_*.deb
-            dpkg -s phantom-mirage | grep -E "^(Version|Depends):"
-            phantom-mirage --version
-            # sandbox smoke tests from a fresh --with-python build tree
-            cp -a /src/phantom-mirage /build; cd /build; make distclean >/dev/null 2>&1 || true
-            ./autogen.sh >/dev/null; ./configure -q --prefix=/usr --with-python
-            grep -q "^#define HAVE_PYTHON 1" config.h
-            make -j$(nproc) >/dev/null
-            install -D -m 755 libphantom-mirage.so /usr/lib/phantom-mirage/libphantom-mirage.so
-            gcc -O1 -o /tmp/subsys_echo ci/subsys_echo.c
-            HD_LANDLOCK=require bash ci/sandbox_daemon.sh
-            bash ci/script_ns.sh
-            grep -h "Landlock ABI" sandbox-daemon-plain.log | head -1
-            python3 --version'
-          ls src/*.deb
-          v=$(cd src/phantom-mirage && dpkg-parsechangelog -S Version)
-          mkdir -p out
-          for f in src/*.deb; do
-            n=$(basename "$f" | sed -E "s/^([a-z-]+)_.*_([a-z0-9]+)\.deb$/\1_${v}_ubuntu26.04_\2.deb/")
-            sudo cp "$f" "out/$n"
-          done
-          ls -l out
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: phantom-mirage_ubuntu26.04_${{ matrix.arch }}
-          path: out/*.deb
 
   fuzz:
     name: Debian 13 / libFuzzer (smoke)

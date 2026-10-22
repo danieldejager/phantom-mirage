@@ -434,7 +434,14 @@ honeyd_rrd_cb(int fd, short what, void *unused)
 
 	/* Create a graph every five minutes */
 	if (count++ % 5 == 0) {
-		char filename[1024];
+		char filename[1024], defs[1536];
+
+		snprintf(defs, sizeof(defs),
+		    "DEF:inoctets=%s/graphs/honeyd_traffic.rrd:input:AVERAGE "
+		    "DEF:outoctets=%s/graphs/honeyd_traffic.rrd:output:AVERAGE "
+		    "AREA:inoctets#00FF00:\"In traffic\" "
+		    "LINE1:outoctets#0000FF:\"Out traffic\"",
+		    honeyd_webserver_root, honeyd_webserver_root);
 		struct timeval tv;
 
 		/* Hourly graph */
@@ -444,11 +451,7 @@ honeyd_rrd_cb(int fd, short what, void *unused)
 		snprintf(filename, sizeof(filename),
 		    "%s/graphs/traffic_hourly.gif", honeyd_webserver_root);
 
-		rrdtool_graph(honeyd_traffic_db, filename, &tv, NULL,
-		    "DEF:inoctets=/tmp/honeyd_traffic.rrd:input:AVERAGE "
-		    "DEF:outoctets=/tmp/honeyd_traffic.rrd:output:AVERAGE "
-		    "AREA:inoctets#00FF00:\"In traffic\" "
-		    "LINE1:outoctets#0000FF:\"Out traffic\"");
+		rrdtool_graph(honeyd_traffic_db, filename, &tv, NULL, defs);
 
 		/* Daily graph */
 		timerclear(&tv);
@@ -457,11 +460,7 @@ honeyd_rrd_cb(int fd, short what, void *unused)
 		snprintf(filename, sizeof(filename),
 		    "%s/graphs/traffic_daily.gif", honeyd_webserver_root);
 
-		rrdtool_graph(honeyd_traffic_db, filename, &tv, NULL,
-		    "DEF:inoctets=/tmp/honeyd_traffic.rrd:input:AVERAGE "
-		    "DEF:outoctets=/tmp/honeyd_traffic.rrd:output:AVERAGE "
-		    "AREA:inoctets#00FF00:\"In traffic\" "
-		    "LINE1:outoctets#0000FF:\"Out traffic\"");
+		rrdtool_graph(honeyd_traffic_db, filename, &tv, NULL, defs);
 	}
 }
 
@@ -469,7 +468,15 @@ void
 honeyd_rrd_start(const char *rrdtool_path)
 {
 	/* Initialize our traffic stats for rrdtool */
-	char *honeyd_traffic_filename = "/tmp/honeyd_traffic.rrd";
+	static char honeyd_traffic_filename[1024];
+
+	snprintf(honeyd_traffic_filename, sizeof(honeyd_traffic_filename),
+	    "%s/graphs/honeyd_traffic.rrd", honeyd_webserver_root);
+	if (access(rrdtool_path, X_OK) == -1) {
+		syslog(LOG_NOTICE, "%s: %s not available; no traffic graphs",
+		    __func__, rrdtool_path);
+		return;
+	}
 	if ((honeyd_rrd_drv = rrdtool_init(rrdtool_path)) == NULL)
 	{
 		syslog(LOG_ERR, "%s: cannot start rrdtool", __func__);
@@ -3773,7 +3780,12 @@ sbd_dir(const char *path, int writable)
 	strlcpy(buf, path, sizeof(buf));
 	if ((p = strrchr(buf, '/')) != NULL)
 		*(p == buf ? p + 1 : p) = '\0';
-	if (writable)
+	if (writable && sandbox_path_broad(buf)) {
+		/* e.g. -l /tmp/x.log: only that file, never all of /tmp */
+		syslog(LOG_WARNING, "sandbox-daemon: %s is in %s; only the file "
+		    "itself is writable (use a dedicated directory)", path, buf);
+		sandbox_daemon_allow_write(path);
+	} else if (writable)
 		sandbox_daemon_allow_write(buf);
 	else
 		sandbox_daemon_allow_read(buf);
@@ -3858,8 +3870,7 @@ honeyd_sandbox_daemon_landlock(const char *datadir, void (*before)(void))
 	sbd_dir(ui_file, 1);
 	snprintf(buf, sizeof(buf), "%s/graphs", honeyd_webserver_root);
 	sandbox_daemon_allow_write(buf);
-	if (honeyd_rrdtool_path != NULL && strlen(honeyd_rrdtool_path))
-		sandbox_daemon_allow_write("/tmp");	/* honeyd_traffic.rrd */
+	/* honeyd_traffic.rrd lives in the graphs dir too (never /tmp) */
 
 	before();
 	sandbox_daemon_landlock();
@@ -4062,7 +4073,7 @@ pm_daemon_main(int argc, char *argv[])
 		case 'S':
 			if (sandbox_add_write_path(optarg) == -1) {
 				fprintf(stderr, "--sandbox-allow-write: need an "
-				    "absolute path (max 16)\n");
+				    "absolute path, not a broad directory like /tmp (max 16)\n");
 				exit(EXIT_FAILURE);
 			}
 			break;

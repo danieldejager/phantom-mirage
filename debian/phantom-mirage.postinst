@@ -75,6 +75,11 @@ case "$1" in
 			fi
 		fi
 	done
+	# status page graphs + honeyd_traffic.rrd (#16: never in /tmp)
+	if [ -d /var/lib/phantom-mirage/graphs ] && [ -n "$HONEYUID" ]; then
+		chown -R $HONEYUID:root /var/lib/phantom-mirage/graphs
+		chmod 0755 /var/lib/phantom-mirage/graphs
+	fi
 
     ;;
 

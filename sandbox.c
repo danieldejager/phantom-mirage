@@ -24,6 +24,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,10 +41,40 @@ int sandbox_script_private_tmp = 0;
 static const char *write_paths[MAX_WRITE_PATHS];
 static int nwrite_paths;
 
+/*
+ * Directories Landlock must never make writable as a whole (#16): shared
+ * scratch space and system trees. Trailing slashes are ignored.
+ */
+int
+sandbox_path_broad(const char *path)
+{
+	static const char *broad[] = {
+		"/", "/tmp", "/var/tmp", "/dev/shm", "/run", "/var/run",
+		"/run/lock", "/var/lock", "/var", "/var/lib", "/var/log",
+		"/var/cache", "/usr", "/etc", "/home", "/root", "/opt", "/srv",
+		"/mnt", "/media", "/dev", "/proc", "/sys", "/boot", "/bin",
+		"/sbin", "/lib", "/lib64", NULL
+	};
+	char buf[PATH_MAX];
+	size_t n;
+	int i;
+
+	if (path == NULL ||
+	    (size_t)snprintf(buf, sizeof(buf), "%s", path) >= sizeof(buf))
+		return (1);
+	for (n = strlen(buf); n > 1 && buf[n - 1] == '/'; n--)
+		buf[n - 1] = '\0';
+	for (i = 0; broad[i] != NULL; i++)
+		if (strcmp(buf, broad[i]) == 0)
+			return (1);
+	return (0);
+}
+
 int
 sandbox_add_write_path(const char *path)
 {
-	if (nwrite_paths >= MAX_WRITE_PATHS || path[0] != '/')
+	if (nwrite_paths >= MAX_WRITE_PATHS || path[0] != '/' ||
+	    sandbox_path_broad(path))
 		return (-1);
 	write_paths[nwrite_paths++] = path;
 	return (0);
@@ -489,8 +520,14 @@ daemon_landlock(char *net, size_t netlen)
 	for (i = 0; i < ndaemon_ro; i++)
 		ll_allow(rfd, daemon_ro[i], LL_RO, handled);
 	ll_allow(rfd, "/dev/null", LL_FILE, handled);
-	for (i = 0; i < ndaemon_rw; i++)
+	for (i = 0; i < ndaemon_rw; i++) {
+		if (sandbox_path_broad(daemon_rw[i])) {
+			syslog(LOG_WARNING, "sandbox-daemon: refusing to make "
+			    "%s writable (too broad)", daemon_rw[i]);
+			continue;
+		}
 		ll_allow(rfd, daemon_rw[i], rw, handled);
+	}
 	for (i = 0; i < nwrite_paths; i++)
 		ll_allow(rfd, write_paths[i], rw, handled);
 #ifdef LANDLOCK_ACCESS_NET_BIND_TCP
@@ -543,6 +580,17 @@ sandbox_daemon_landlock(void)
 	syslog(LOG_NOTICE, "sandbox-daemon: Landlock ABI %d active: "
 	    "%d read-only, %d writable paths; network: %s", abi,
 	    ndaemon_ro, ndaemon_rw + nwrite_paths, net);
+	{
+		char w[2048];
+		size_t l = 0;
+		int i;
+
+		w[0] = '\0';
+		for (i = 0; i < ndaemon_rw + nwrite_paths && l < sizeof(w); i++)
+			l += snprintf(w + l, sizeof(w) - l, " %s", i < ndaemon_rw ?
+			    daemon_rw[i] : write_paths[i - ndaemon_rw]);
+		syslog(LOG_NOTICE, "sandbox-daemon: Landlock writable:%s", w);
+	}
 	return (abi);
 }
 
