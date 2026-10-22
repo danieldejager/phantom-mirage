@@ -296,6 +296,7 @@ jobs:
         shell: bash
         run: |
           python3 ci/test_webserver.py
+          ci/test_check_attestations.sh
           ci/python_service.sh
 
       - name: Python 3 service scripts under scripts/ (#36)
