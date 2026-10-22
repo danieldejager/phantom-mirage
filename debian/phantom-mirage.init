@@ -94,8 +94,15 @@ not_configured () {
 
 # Read config (will override defaults)
 # and check if it is configured
+# The file is parsed one KEY=VALUE per line (default-lib.sh), never
+# sourced: a stray quote must not swallow the comments after it (#110).
 if [ -f "$DEFAULT" ] ; then
-        . $DEFAULT
+        if ( . /usr/lib/phantom-mirage/default-lib.sh && pm_load_default "$DEFAULT" ) ; then
+                . /usr/lib/phantom-mirage/default-lib.sh
+                pm_load_default "$DEFAULT"
+        else
+                case "$1" in start|restart|force-reload) exit 1 ;; esac
+        fi
 fi
 
 trap "" 1

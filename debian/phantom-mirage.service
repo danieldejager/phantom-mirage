@@ -6,20 +6,22 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# Same settings as the SysV script. INTERFACE, NETWORK and OPTIONS come
-# from /etc/default/phantom-mirage (RUN= is ignored; enable the unit instead).
-# Sandboxing is on by default (#16). SANDBOX can be overridden in
-# /etc/default/phantom-mirage, but see RestrictNamespaces= below first.
-Environment="SANDBOX=--sandbox-daemon --sandbox-scripts"
-EnvironmentFile=-/etc/default/phantom-mirage
+# INTERFACE, NETWORK, OPTIONS and SANDBOX come from
+# /etc/default/phantom-mirage (RUN= is ignored; enable the unit instead).
+# The file is read by pm-start, NOT with EnvironmentFile=: systemd lets a
+# quoted value span lines, so one stray quote made NETWORK swallow the
+# comments below it (#110). pm-start accepts one KEY=VALUE per line only.
+# Sandboxing is on by default (#16): pm-start uses
+# SANDBOX="--sandbox-daemon --sandbox-scripts" unless /etc/default/phantom-mirage
+# (or Environment=SANDBOX= in a drop-in) sets it; see RestrictNamespaces= below.
+# Config check (#110): a bad line, a missing/unknown INTERFACE or a
+# missing/too-wide NETWORK is logged as one "phantom-mirage: ..." line and
+# exits 78 (EX_CONFIG); RestartPreventExitStatus=78 stops the restart loop.
 # phantom-mirage starts as root to open pcap/raw sockets, then drops to the
-# phantom-mirage user itself (-u/-g take numeric IDs, hence the shell).
-# Config check (#110): a missing/unknown INTERFACE or a missing/too-wide
-# NETWORK is logged as one "phantom-mirage: ..." line and exits 78
-# (EX_CONFIG); RestartPreventExitStatus=78 below stops the restart loop.
-ExecStartPre=/usr/lib/phantom-mirage/check-default /etc/default/phantom-mirage
-ExecStartPre=/bin/sh -c 'exec /usr/bin/phantom-mirage --verify-config -f /etc/phantom-mirage/phantom-mirage.conf $${INTERFACE:+-i $$INTERFACE} $OPTIONS $NETWORK'
-ExecStart=/bin/sh -c 'exec /usr/bin/phantom-mirage -d -f /etc/phantom-mirage/phantom-mirage.conf -l /var/log/phantom-mirage/phantom-mirage.log -p /etc/phantom-mirage/nmap-os-db -a /etc/phantom-mirage/nmap.assoc -0 /etc/phantom-mirage/pf.os -x /etc/phantom-mirage/xprobe2.conf -m /etc/phantom-mirage/nmap-mac-prefixes -u $$(id -u phantom-mirage) -g $$(id -g phantom-mirage) $${INTERFACE:+-i $$INTERFACE} $SANDBOX $OPTIONS $NETWORK'
+# phantom-mirage user itself (pm-start passes its numeric -u/-g).
+ExecStartPre=/usr/lib/phantom-mirage/pm-start check
+ExecStartPre=/usr/lib/phantom-mirage/pm-start verify
+ExecStart=/usr/lib/phantom-mirage/pm-start run
 # Sandboxing (#16), on by default through SANDBOX above:
 # --sandbox-daemon confines the daemon, and everything it starts, to a
 # seccomp syscall allowlist and Landlock after its privilege drop. It is

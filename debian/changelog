@@ -11,8 +11,38 @@ phantom-mirage (1.7.0-3) unstable; urgency=medium
   * Ship NETWORK="" instead of 10.0.0.0/8 and document INTERFACE
     (find it with "ip -br a") and NETWORK (a small unused block such as a
     /29) in /etc/default/phantom-mirage. Install steps in README.Debian.
+  * Fix /etc/default/phantom-mirage being read wrongly (GitHub #110): the
+    unit used EnvironmentFile=, whose parser (like ". file" in the init
+    script) lets a quoted value continue over several lines. One
+    unbalanced quote on the NETWORK= line made NETWORK swallow every
+    comment line up to OPTIONS="--disable-webserver" (so OPTIONS was lost
+    and "-x and" from "This includes: -f, -l, -p, -x and -a." reached the
+    daemon: "cannot open xprobe2 fingerprint file //and"). The file is now
+    parsed by /usr/lib/phantom-mirage/default-lib.sh (one KEY=VALUE per
+    line, quotes must close on the same line, no inline comments, no $ `
+    or \); errors name the line and exit 78. The unit runs
+    /usr/lib/phantom-mirage/pm-start check|verify|run, which builds argv
+    itself; the init script uses the same parser.
+  * New /usr/sbin/phantom-mirage-setup: picks the default-route interface
+    and a free /29 near the top of its subnet (or --interface/--network),
+    writes a clean /etc/default/phantom-mirage (old one backed up), sets
+    RUN=yes, checks it and enables/restarts the service. --dry-run.
+  * New /usr/sbin/phantom-mirage-uninstall (--yes, --dry-run): stops and
+    purges the packages and removes config, state, logs, the user/group
+    and promiscuous mode. release/install.sh (attach to releases as
+    install.sh; automake rejects a top-level install.sh) for release
+    folders: SHA256SUMS check, distro/arch pick, purge, install, setup.
+  * phantom-mirage-setup also configures farpd (if installed) for the same
+    INTERFACE/NETWORK in /etc/default/farpd (farpd's own format; original
+    kept as farpd.phantom-mirage-orig) and enables/restarts it; --no-farpd
+    skips this. phantom-mirage-uninstall stops farpd and restores the
+    original. install.sh installs farpd if it is missing.
+  * The shipped /etc/phantom-mirage/phantom-mirage.conf default template
+    now answers ICMP echo (TCP/UDP stay filtered), so "ping -c3 <decoy>"
+    tests a fresh setup.
+  * Depend on iproute2 (phantom-mirage-setup uses ip(8)).
 
- -- Daniel de Jager <ddejager@dandejager.com>  Thu, 22 Oct 2026 21:45:51 +1100
+ -- Daniel de Jager <ddejager@dandejager.com>  Fri, 23 Oct 2026 08:10:56 +1100
 
 phantom-mirage (1.7.0-2) unstable; urgency=medium
 

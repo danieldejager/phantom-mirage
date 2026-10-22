@@ -1,4 +1,10 @@
-# Defaults for phantom-mirage initscript
+# Settings for the phantom-mirage service (systemd unit and init script).
+# Easiest: run "sudo phantom-mirage-setup", which writes this file for you.
+#
+# Format: one KEY=VALUE per line; quote values with spaces as a whole
+# ("..."), no quotes spanning lines, comments only on their own lines.
+# Anything else is refused with a clear message. Check the file with:
+#   sudo /usr/lib/phantom-mirage/check-default /etc/default/phantom-mirage
 
 # Master system-wide phantom-mirage switch. The initscript
 # will not run if it is not set to yes.
@@ -27,17 +33,17 @@ NETWORK=""
 
 # You can set some other options here for example:
 # Notice that some of the options are already defined in the
-# init.d script and you shouldn't use them here
+# init.d script and must not be used here
 # This includes: -f, -l, -p, -x and -a.
 # Other options are available.
 # This is the default since the webserver uses
 # no authentication and could potentially disclose internal
-# information (and provide a remote user to edit phantom-mirage's
+# information (and provide a remote user to edit the phantom-mirage
 # configuration).
 OPTIONS="--disable-webserver"
 
-# Sandboxing (see docs/sandboxing.md) is on by default: the systemd
-# unit sets SANDBOX="--sandbox-daemon --sandbox-scripts". To turn it off,
+# Sandboxing (see docs/sandboxing.md) is on by default: the service
+# uses SANDBOX="--sandbox-daemon --sandbox-scripts". To turn it off,
 # set SANDBOX here AND set RestrictNamespaces=yes in a unit drop-in
 # (systemctl edit phantom-mirage); the unit only relaxes it for these.
 #SANDBOX=""

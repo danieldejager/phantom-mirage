@@ -1,0 +1,195 @@
+#!/bin/sh
+# phantom-mirage-setup: write a clean /etc/default/phantom-mirage and start
+# the service (#110). POSIX sh, run as root.
+#
+#   sudo phantom-mirage-setup [--interface IF] [--network CIDR] [--no-farpd] [--dry-run]
+#
+# Without --interface it uses the default-route interface; without
+# --network it picks a /29 near the top of that interface's IPv4 subnet
+# whose 8 addresses do not answer ping/arping and are not in the neighbour
+# table. The old file is kept as /etc/default/phantom-mirage.bak-<time>.
+# Unless --no-farpd, it also points farpd (if installed) at the same
+# INTERFACE/NETWORK so the decoys answer ARP: /etc/default/farpd is
+# rewritten (the original kept once as /etc/default/farpd.phantom-mirage-orig,
+# which phantom-mirage-uninstall restores) and farpd is enabled/restarted.
+set -eu
+
+DEFAULT=/etc/default/phantom-mirage
+LIBDIR=${PM_LIBDIR:-/usr/lib/phantom-mirage}
+IFACE= NET= DRY= FARPD=1
+FDEFAULT=/etc/default/farpd
+FMARK='# written by phantom-mirage-setup'
+
+usage() { sed -n '2,15s/^# \{0,1\}//p' "$0"; exit "${1:-0}"; }
+die() { echo "phantom-mirage-setup: $*" >&2; exit 1; }
+say() { echo "phantom-mirage-setup: $*"; }
+
+while [ $# -gt 0 ]; do
+	case $1 in
+		--interface|-i) [ $# -ge 2 ] || usage 2; IFACE=$2; shift 2 ;;
+		--interface=*) IFACE=${1#*=}; shift ;;
+		--network|-n) [ $# -ge 2 ] || usage 2; NET=$2; shift 2 ;;
+		--network=*) NET=${1#*=}; shift ;;
+		--dry-run) DRY=1; shift ;;
+		--no-farpd) FARPD=; shift ;;
+		-h|--help) usage 0 ;;
+		*) echo "unknown option: $1" >&2; usage 2 ;;
+	esac
+done
+
+[ -n "$DRY" ] || [ "$(id -u)" = 0 ] || die "must be run as root (or use --dry-run)"
+command -v ip >/dev/null || die "ip(8) not found (apt install iproute2)"
+
+ip2int() {
+	_o=$1 _r=0
+	for _i in 1 2 3 4; do
+		_p=${_o%%.*}; _o=${_o#*.}
+		case $_p in ''|*[!0-9]*) die "bad IPv4 address: $1" ;; esac
+		[ "$_p" -le 255 ] || die "bad IPv4 address: $1"
+		_r=$(( (_r << 8) | _p ))
+	done
+	echo "$_r"
+}
+int2ip() { echo "$(( ($1 >> 24) & 255 )).$(( ($1 >> 16) & 255 )).$(( ($1 >> 8) & 255 )).$(( $1 & 255 ))"; }
+
+if [ -z "$IFACE" ]; then
+	IFACE=$(ip -4 route show default 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit }}')
+	[ -n "$IFACE" ] || die "no default route; pass --interface (list them with: ip -br a)"
+fi
+[ -e "/sys/class/net/$IFACE" ] || die "interface $IFACE does not exist (list them with: ip -br a)"
+say "interface: $IFACE"
+
+# address in use on a LAN? ping, arping (if installed), neighbour table
+in_use() {
+	ping -c 1 -W 1 -I "$IFACE" "$1" >/dev/null 2>&1 && return 0
+	if command -v arping >/dev/null 2>&1; then
+		arping -c 1 -w 1 -I "$IFACE" "$1" >/dev/null 2>&1 && return 0
+	fi
+	ip neigh show to "$1" dev "$IFACE" 2>/dev/null | grep -q lladdr && return 0
+	return 1
+}
+
+if [ -z "$NET" ]; then
+	CIDR=$(ip -4 -o addr show dev "$IFACE" scope global | awk '{print $4; exit}')
+	[ -n "$CIDR" ] || die "$IFACE has no IPv4 address; pass --network"
+	GW=$(ip -4 route show default dev "$IFACE" 2>/dev/null | awk '{print $3; exit}')
+	say "subnet of $IFACE: $CIDR${GW:+, gateway $GW}"
+	self=$(ip2int "${CIDR%/*}") plen=${CIDR#*/}
+	[ "$plen" -le 28 ] || die "subnet $CIDR is too small for a /29 of decoys; pass --network"
+	mask=$(( (0xffffffff << (32 - plen)) & 0xffffffff ))
+	net=$(( self & mask )) bcast=$(( (self & mask) | (~mask & 0xffffffff) ))
+	gw=-1; [ -n "$GW" ] && gw=$(ip2int "$GW")
+	tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+	# skip the /29 holding the broadcast address, then walk down
+	base=$(( bcast + 1 - 16 )) tries=0
+	while [ "$base" -gt "$net" ] && [ $tries -lt 16 ]; do
+		tries=$((tries + 1))
+		end=$(( base + 7 ))
+		if { [ "$self" -ge "$base" ] && [ "$self" -le "$end" ]; } ||
+		   { [ "$gw" -ge "$base" ] && [ "$gw" -le "$end" ]; }; then
+			base=$(( base - 8 )); continue
+		fi
+		say "probing $(int2ip $base)/29 ..."
+		rm -f "$tmp"/busy.*
+		a=$base
+		while [ "$a" -le "$end" ]; do
+			( in_use "$(int2ip $a)" && : > "$tmp/busy.$a" ) &
+			a=$(( a + 1 ))
+		done
+		wait
+		if ! ls "$tmp"/busy.* >/dev/null 2>&1; then
+			NET="$(int2ip $base)/29"; break
+		fi
+		say "  in use: $(for f in "$tmp"/busy.*; do int2ip "${f##*.}"; done | tr '\n' ' ')"
+		base=$(( base - 8 ))
+	done
+	[ -n "$NET" ] || die "no free /29 found near the top of $CIDR; pass --network"
+fi
+say "network: $NET"
+
+NEW=$(cat <<EOT
+# /etc/default/phantom-mirage, written by phantom-mirage-setup on $(date -R)
+# One KEY=VALUE per line; quote values that contain spaces. Comments must be
+# on their own lines. Check with: /usr/lib/phantom-mirage/check-default
+RUN="yes"
+
+# Decoy interface (list: ip -br a)
+INTERFACE="$IFACE"
+
+# Small UNUSED block the decoys answer for (wider than /24 needs
+# ALLOW_WIDE_NETWORK=yes). Never include real hosts or the gateway.
+NETWORK="$NET"
+
+# Extra daemon options; the web server has no authentication.
+OPTIONS="--disable-webserver"
+EOT
+)
+
+# /etc/default/farpd in the farpd package's own format (farpd.service reads
+# it with EnvironmentFile=, the init script sources it): one line each.
+FNEW=$(cat <<EOT
+$FMARK on $(date -R) for phantom-mirage.
+# Original: $FDEFAULT.phantom-mirage-orig (restored by phantom-mirage-uninstall).
+# Interface where farpd will listen in
+INTERFACE="$IFACE"
+
+# Network for which fake arp daemon will answer to (the decoys)
+NETWORK="$NET"
+EOT
+)
+farpd_state=
+if [ -z "$FARPD" ]; then
+	farpd_state="skipped (--no-farpd): the decoys only get traffic routed to this host"
+elif [ ! -x /usr/sbin/farpd ]; then
+	farpd_state="NOT configured: farpd is not installed, so nothing answers ARP for $NET (sudo apt-get install -y farpd, then run phantom-mirage-setup again)"
+	FARPD=
+fi
+
+if [ -n "$DRY" ]; then
+	say "dry run: would back up $DEFAULT and write:"
+	printf '%s\n' "$NEW" | sed 's/^/    /'
+	t=$(mktemp); printf '%s\n' "$NEW" > "$t"
+	PM_LIBDIR=$LIBDIR "$LIBDIR/check-default" "$t" || { rm -f "$t"; exit 78; }
+	rm -f "$t"
+	if [ -n "$FARPD" ]; then
+		say "dry run: would back up $FDEFAULT (once, to $FDEFAULT.phantom-mirage-orig), write:"
+		printf '%s\n' "$FNEW" | sed 's/^/    /'
+		say "dry run: would run systemctl enable farpd and systemctl restart farpd"
+	fi
+	[ -n "$farpd_state" ] && say "farpd: $farpd_state"
+	say "dry run: would run $LIBDIR/check-default $DEFAULT, then systemctl enable phantom-mirage and systemctl restart phantom-mirage"
+	exit 0
+fi
+
+umask 022
+if [ -e "$DEFAULT" ]; then
+	bak="$DEFAULT.bak-$(date +%Y%m%d-%H%M%S)"
+	cp -p "$DEFAULT" "$bak"; say "old file kept as $bak"
+fi
+printf '%s\n' "$NEW" > "$DEFAULT.new" && mv "$DEFAULT.new" "$DEFAULT"
+say "wrote $DEFAULT"
+"$LIBDIR/check-default" "$DEFAULT"
+systemctl enable phantom-mirage
+systemctl restart phantom-mirage
+if [ -n "$FARPD" ]; then
+	if [ -e "$FDEFAULT" ] && ! grep -q "^$FMARK" "$FDEFAULT" && [ ! -e "$FDEFAULT.phantom-mirage-orig" ]; then
+		cp -p "$FDEFAULT" "$FDEFAULT.phantom-mirage-orig"
+		say "original farpd config kept as $FDEFAULT.phantom-mirage-orig"
+	fi
+	printf '%s\n' "$FNEW" > "$FDEFAULT.new" && mv "$FDEFAULT.new" "$FDEFAULT"
+	say "wrote $FDEFAULT (farpd answers ARP for $NET on $IFACE)"
+	systemctl enable farpd
+	systemctl restart farpd
+	farpd_state="answering ARP for $NET on $IFACE"
+fi
+sleep 2
+systemctl --no-pager --lines=10 status phantom-mirage || true
+systemctl --no-pager --lines=5 status farpd 2>/dev/null || true
+first=${NET%/*}
+say "farpd: $farpd_state"
+echo
+if grep -q '^[[:space:]]*set default default icmp action open' /etc/phantom-mirage/phantom-mirage.conf 2>/dev/null && [ -n "$FARPD" ]; then
+	echo "Test: from another machine on this LAN run 'ping -c3 $first' (logs: journalctl -u phantom-mirage -f)"
+else
+	echo "Test: from another machine on this LAN run 'nmap -Pn -p 22,80 $first' (logs: journalctl -u phantom-mirage -f)"
+fi

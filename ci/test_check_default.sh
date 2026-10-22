@@ -5,14 +5,14 @@ cd "$(dirname "$0")/.."
 chk=$PWD/debian/scripts/check-default
 t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
 mkdir "$t/net"; touch "$t/net/eth0"
-export PM_SYSFS_NET=$t/net
+export PM_SYSFS_NET=$t/net PM_LIBDIR=$PWD/debian/scripts
 unset INTERFACE NETWORK ALLOW_WIDE_NETWORK
 
 # expect RC PATTERN -- file contents
 expect() {
   local want=$1 pat=$2; shift 2
   printf '%s\n' "$@" > "$t/default"
-  local rc=0; env -i PM_SYSFS_NET="$PM_SYSFS_NET" ${SH:-/bin/sh} "$chk" "$t/default" 2>"$t/err" || rc=$?
+  local rc=0; env -i PM_SYSFS_NET="$PM_SYSFS_NET" PM_LIBDIR="$PM_LIBDIR" ${SH:-/bin/sh} "$chk" "$t/default" 2>"$t/err" || rc=$?
   local okmsg
   if [ -n "$pat" ]; then grep -q -- "$pat" "$t/err" && okmsg=1 || okmsg=
   else [ ! -s "$t/err" ] && okmsg=1 || okmsg=; fi
@@ -24,7 +24,7 @@ expect() {
 
 # the shipped file is refused
 cp debian/phantom-mirage.default "$t/default"
-rc=0; env -i PM_SYSFS_NET="$PM_SYSFS_NET" ${SH:-/bin/sh} "$chk" "$t/default" 2>"$t/err" || rc=$?
+rc=0; env -i PM_SYSFS_NET="$PM_SYSFS_NET" PM_LIBDIR="$PM_LIBDIR" ${SH:-/bin/sh} "$chk" "$t/default" 2>"$t/err" || rc=$?
 [ "$rc" = 78 ] && grep -q '^phantom-mirage: INTERFACE is not set in ' "$t/err" || { echo "FAIL: shipped default"; cat "$t/err"; exit 1; }
 echo "ok: shipped default -> 78 ($(cat "$t/err"))"
 

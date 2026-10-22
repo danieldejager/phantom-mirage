@@ -27,6 +27,11 @@ override_dh_auto_install:
 	  ln -s /etc/phantom-mirage/$$f $(D)/usr/share/phantom-mirage/$$f; \
 	done
 	mv $(D)/usr/share/phantom-mirage/config.sample $(D)/etc/phantom-mirage/phantom-mirage.conf
+	# Debian only (#110): unbound decoys (default template) answer ICMP echo
+	# so "ping <decoy>" works after phantom-mirage-setup; TCP/UDP stay filtered
+	sed -i 's/^set default default icmp action filtered$$/set default default icmp action open/' \
+	  $(D)/etc/phantom-mirage/phantom-mirage.conf
+	grep -q '^set default default icmp action open$$' $(D)/etc/phantom-mirage/phantom-mirage.conf
 	rm -f $(D)/usr/share/phantom-mirage/README.md
 	# graphs and honeyd_traffic.rrd go to a dedicated writable dir (#16)
 	mkdir -p $(D)/var/lib/phantom-mirage/graphs
@@ -36,6 +41,11 @@ override_dh_auto_install:
 	find $(D) -name '*.la' -delete
 	# /etc/default sanity check run before start (#110)
 	install -D -m 0755 debian/scripts/check-default $(D)/usr/lib/phantom-mirage/check-default
+	# strict /etc/default reader + start wrapper (#110), setup/uninstall helpers
+	install -D -m 0644 debian/scripts/default-lib.sh $(D)/usr/lib/phantom-mirage/default-lib.sh
+	install -D -m 0755 debian/scripts/pm-start $(D)/usr/lib/phantom-mirage/pm-start
+	install -D -m 0755 debian/scripts/phantom-mirage-setup $(D)/usr/sbin/phantom-mirage-setup
+	install -D -m 0755 debian/scripts/phantom-mirage-uninstall $(D)/usr/sbin/phantom-mirage-uninstall
 	# AppArmor: "userns" for the --sandbox-scripts launcher only (#16)
 	install -D -m 0644 debian/apparmor/usr.lib.phantom-mirage.pm-script-ns \
 	  $(D)/etc/apparmor.d/usr.lib.phantom-mirage.pm-script-ns
