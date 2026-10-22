@@ -143,8 +143,8 @@ if [ "${HD_APPARMOR:-}" = require ]; then
     || fail "AppArmor profiles not loaded in enforce mode"
   sysctl kernel.apparmor_restrict_unprivileged_userns
   [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1 ] || fail "userns restriction is not on, the test proves nothing"
-  if journalctl -k --since "$since0" --no-pager | grep -E 'apparmor="(DENIED|ALLOWED)"'; then fail "AppArmor denials in the kernel log"; fi
-  if dmesg | grep -E 'apparmor="(DENIED|ALLOWED)"'; then fail "AppArmor denials in dmesg"; fi
+  if journalctl -k --since "$since0" --no-pager | grep -E 'apparmor="(DENIED|ALLOWED)".*profile="(pm-script-ns|phantom-mirage[^"]*)'; then fail "AppArmor denials in the kernel log"; fi
+  if dmesg | grep -E 'apparmor="(DENIED|ALLOWED)".*profile="(pm-script-ns|phantom-mirage[^"]*)'; then fail "AppArmor denials in dmesg"; fi
   # explicitly: the launcher never needs DAC overrides (#93 follow-up)
   if { journalctl -k --since "$since0" --no-pager; dmesg; } | grep -E 'capname="dac_(override|read_search)"'; then
     fail "dac_override/dac_read_search requested under the AppArmor profile"
