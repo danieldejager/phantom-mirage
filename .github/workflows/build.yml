@@ -162,7 +162,7 @@ jobs:
           ci/test_check_default.sh
           ci/test_pm_start.sh
           SH=dash ci/test_pm_start.sh
-          sh -n install.sh debian/scripts/phantom-mirage-setup debian/scripts/phantom-mirage-uninstall
+          sh -n release/install.sh debian/scripts/phantom-mirage-setup debian/scripts/phantom-mirage-uninstall
           cd regress
           bad=0
           for t in general.py detect.py routing.py; do

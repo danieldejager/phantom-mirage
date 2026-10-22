@@ -1,5 +1,7 @@
 #!/bin/sh
 # Install Phantom Mirage from a folder holding the release .debs (#110).
+# Lives in release/ (automake rejects a top-level install.sh); attach it
+# to the release as install.sh next to the .debs and SHA256SUMS.
 #
 #   sudo sh install.sh [phantom-mirage-setup options, e.g. --network CIDR]
 #
