@@ -1,23 +1,68 @@
 name: build
 
+# CI minutes (private repo): PRs and master pushes run only the fast core
+# set (debian13: build, smoke, unit tests, regress/; deb: the package).
+# The heavy jobs (sanitizers, arm64, systemd, script namespaces, Docker,
+# fuzz) run nightly when master changed, on PRs labelled "full-ci", and
+# on workflow_dispatch.
 on:
   push:
     branches: [master]
+    paths-ignore: ['docs/**', '**.md']
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths-ignore: ['docs/**', '**.md']
+  schedule:
+    - cron: '30 16 * * *'   # 03:30 Australia/Melbourne (AEDT)
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # Decides whether the heavy jobs run (see the header).
+  gate:
+    name: Heavy jobs?
+    # adding any label other than full-ci runs nothing
+    if: github.event.action != 'labeled' || github.event.label.name == 'full-ci'
+    runs-on: ubuntu-slim
+    timeout-minutes: 3
+    outputs:
+      heavy: ${{ steps.g.outputs.heavy }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'schedule'
+        with:
+          fetch-depth: 1
+      - id: g
+        env:
+          EVENT: ${{ github.event_name }}
+          FULL: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+        run: |
+          heavy=false
+          case $EVENT in
+            workflow_dispatch) heavy=true ;;
+            pull_request) [ "$FULL" = true ] && heavy=true ;;
+            schedule)
+              # skip the nightly when master has no commit in the last 24 h
+              if [ -n "$(git log -1 --since='24 hours ago' --format=%H)" ]; then heavy=true; fi ;;
+          esac
+          echo "heavy=$heavy" | tee -a "$GITHUB_OUTPUT"
+
   debian13:
     name: Debian 13 / GCC 14
+    needs: gate
+    if: github.event_name != 'schedule' || needs.gate.outputs.heavy == 'true'
     runs-on: ubuntu-latest
-    container: debian:13
+    timeout-minutes: 12
+    container:
+      image: debian:13
+      # NET_ADMIN: the regress/ veth pair
+      options: --cap-add=NET_ADMIN
     steps:
       - uses: actions/checkout@v4
 
@@ -95,6 +140,25 @@ jobs:
           python3 -c 'import sys; sys.path.insert(0, "/usr/share/phantom-mirage/scripts/lib"); import names' \
             || echo "python3 not installed here; names.py import skipped"
 
+      - name: Unit tests + regress/ (core, no nmap)
+        # The fast subset of the sanitizers job: unit tests and one pass
+        # of the deterministic regress/ suite (nmap.py runs nightly).
+        shell: bash
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            python3 python3-dpkt diffutils iproute2 >/dev/null
+          python3 ci/test_webserver.py
+          ci/test_check_attestations.sh
+          python3 ci/test_scripts.py
+          cd regress
+          bad=0
+          for t in general.py detect.py routing.py; do
+            set +e; timeout -k 10 180 python3 "$t" > "../regress-$t.log" 2>&1; rc=$?; set -e
+            tail -3 "../regress-$t.log"
+            [ $rc = 0 ] || { echo "$t: rc=$rc" >&2; bad=1; }
+          done
+          exit $bad
+
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -105,11 +169,15 @@ jobs:
             config.log
             events.jsonl
             phantom-mirage.log
+            regress-*.log
           if-no-files-found: ignore
 
   sanitizers:
     name: Debian 13 / ASan + UBSan
+    needs: gate
+    if: needs.gate.outputs.heavy == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     container:
       image: debian:13
       # NET_ADMIN: the subsystem step routes a honeypot subnet over lo.
@@ -449,7 +517,10 @@ jobs:
 
   deb:
     name: Debian 13 / .deb package
+    needs: gate
+    if: github.event_name != 'schedule' || needs.gate.outputs.heavy == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     container: debian:13
     steps:
       - uses: actions/checkout@v4
@@ -522,6 +593,8 @@ jobs:
 
   systemd:
     name: Ubuntu 24.04 / ${{ matrix.arch }} .deb under systemd
+    needs: gate
+    if: needs.gate.outputs.heavy == 'true'
     # The packaged unit under real systemd (PID 1 on the runner), with its
     # defaults: --sandbox-daemon --sandbox-scripts, ProtectSystem=strict,
     # RestrictNamespaces=user mnt pid ipc uts net (#16).
@@ -534,7 +607,7 @@ jobs:
           - arch: arm64
             os: ubuntu-24.04-arm
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -602,11 +675,13 @@ jobs:
 
   arm64:
     name: Debian 13 / arm64 --sandbox-daemon
+    needs: gate
+    if: needs.gate.outputs.heavy == 'true'
     # Native arm64 runner: under QEMU user emulation (the Docker job)
     # the guest's seccomp filter is not supported (qemu-user refuses
     # PR_SET_SECCOMP), so --sandbox-daemon can only be checked natively.
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 40
+    timeout-minutes: 25
     container:
       image: debian:13
       # NET_ADMIN: routes/veth; SYS_ADMIN: regress/nmap.py namespace
@@ -686,6 +761,8 @@ jobs:
 
   script-ns:
     name: Ubuntu 24.04 / ${{ matrix.arch }} --sandbox-scripts namespaces
+    needs: gate
+    if: needs.gate.outputs.heavy == 'true'
     # Directly on the runner, not in a container: Docker's default
     # AppArmor profile refuses the mounts a private /tmp needs.
     strategy:
@@ -697,7 +774,7 @@ jobs:
           - arch: arm64
             os: ubuntu-24.04-arm
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
 
@@ -751,7 +828,10 @@ jobs:
 
   docker:
     name: Docker image (amd64 + arm64)
+    needs: gate
+    if: needs.gate.outputs.heavy == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -847,10 +927,12 @@ jobs:
 
   docker-arm64:
     name: Docker image / arm64 native sandbox checks
+    needs: gate
+    if: needs.gate.outputs.heavy == 'true'
     # Native arm64 runner: under QEMU (the docker job) the guest's seccomp
     # filters are not supported, so the arm64 image is checked here.
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -878,8 +960,10 @@ jobs:
 
   fuzz:
     name: Debian 13 / libFuzzer (smoke)
+    needs: gate
+    if: needs.gate.outputs.heavy == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 12
     container:
       image: debian:13
     env:

@@ -161,15 +161,16 @@ docker exec -it <container> phantom-mirage-ctl
 `.github/workflows/publish.yml` publishes
 `ghcr.io/danieldejager/phantom-mirage` as a **private** package.
 
-* **When it pushes:** on pushes to `master` and on `v*` tags only. On pull
-  requests it only builds, for both architectures, and never logs in or
-  pushes. Nothing is pushed from a developer machine.
+* **When it pushes:** on `v*` tags, and on a manual run (Actions ->
+  publish -> Run workflow) from `master` with `push` ticked. It no longer
+  runs on master pushes or pull requests (CI minutes); the nightly Docker
+  job checks the image builds. Nothing is pushed from a developer machine.
 * **Auth:** only the workflow's own `GITHUB_TOKEN`, with
   `packages: write`; no personal access token, and no `id-token`
   permission (it is only needed for keyless signing, which isn't used).
 * **Tags:**
   * `sha-<short>`: always.
-  * `edge`: on `master`.
+  * `edge`: manual run from `master`.
   * `X.Y.Z`, `X.Y` and `X` (no `0`): on `vX.Y.Z` tags.
 * **Labels:** `org.opencontainers.image.source` points to the repository,
   so the package links to the private repo and its permissions.
