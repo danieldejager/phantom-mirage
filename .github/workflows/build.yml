@@ -159,6 +159,7 @@ jobs:
           python3 ci/test_webserver.py
           ci/test_check_attestations.sh
           python3 ci/test_scripts.py
+          ci/test_check_default.sh
           cd regress
           bad=0
           for t in general.py detect.py routing.py; do
@@ -568,10 +569,14 @@ jobs:
           test -n "$want"
           phantom-mirage --version 2>&1 | tee version.txt
           grep -qx "Phantom Mirage I $want (based on Honeyd)" version.txt
-          test "$(dpkg-query -W -f='${Version}' phantom-mirage)" = "$want-2"
-          test "$(dpkg-query -W -f='${Version}' phantom-mirage-common)" = "$want-2"
+          test "$(dpkg-query -W -f='${Version}' phantom-mirage)" = "$want-3"
+          test "$(dpkg-query -W -f='${Version}' phantom-mirage-common)" = "$want-3"
           test "$want" = 1.7.0
           test -e /etc/phantom-mirage/phantom-mirage.conf
+          # shipped defaults must be refused with a clear message (#110)
+          rc=0; /usr/lib/phantom-mirage/check-default /etc/default/phantom-mirage 2>chk.txt || rc=$?
+          test $rc = 78 && grep -q 'INTERFACE is not set' chk.txt
+          grep -q '^RestartPreventExitStatus=78' /usr/lib/systemd/system/phantom-mirage.service
           test -e /usr/share/phantom-mirage/nmap-os-db
           getent passwd phantom-mirage
           # AppArmor profile shipped; this container has no AppArmor and the

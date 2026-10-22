@@ -34,6 +34,8 @@ override_dh_auto_install:
 	rm -rf $(D)/usr/share/phantom-mirage/webserver/htdocs/graphs
 	ln -s /var/lib/phantom-mirage/graphs $(D)/usr/share/phantom-mirage/webserver/htdocs/graphs
 	find $(D) -name '*.la' -delete
+	# /etc/default sanity check run before start (#110)
+	install -D -m 0755 debian/scripts/check-default $(D)/usr/lib/phantom-mirage/check-default
 	# AppArmor: "userns" for the --sandbox-scripts launcher only (#16)
 	install -D -m 0644 debian/apparmor/usr.lib.phantom-mirage.pm-script-ns \
 	  $(D)/etc/apparmor.d/usr.lib.phantom-mirage.pm-script-ns

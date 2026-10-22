@@ -1,3 +1,19 @@
+phantom-mirage (1.7.0-3) unstable; urgency=medium
+
+  * Refuse to start with an unusable /etc/default/phantom-mirage instead of
+    crash-looping with only "exit-code" in the journal (GitHub #110).
+    New /usr/lib/phantom-mirage/check-default, run by the systemd
+    unit (ExecStartPre) and the init script, logs one clear
+    "phantom-mirage: ..." line and exits 78 when INTERFACE is empty or does
+    not exist, or NETWORK is empty or wider than /24 (/120 for IPv6);
+    ALLOW_WIDE_NETWORK=yes overrides the NETWORK checks. The unit sets
+    RestartPreventExitStatus=78 so config errors are not retried.
+  * Ship NETWORK="" instead of 10.0.0.0/8 and document INTERFACE
+    (find it with "ip -br a") and NETWORK (a small unused block such as a
+    /29) in /etc/default/phantom-mirage. Install steps in README.Debian.
+
+ -- Daniel de Jager <ddejager@dandejager.com>  Thu, 22 Oct 2026 21:45:51 +1100
+
 phantom-mirage (1.7.0-2) unstable; urgency=medium
 
   * Rename to Phantom Mirage I, part of the Phantom deception range; based
