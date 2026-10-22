@@ -27,6 +27,11 @@ on:
         description: Push and sign the image (from master)
         type: boolean
         default: false
+      cleanup:
+        description: GHCR retention after a successful publish (dry-run only logs)
+        type: choice
+        options: [dry-run, delete, skip]
+        default: dry-run
 
 permissions:
   contents: read
@@ -219,3 +224,44 @@ jobs:
             echo "digest: \`${DIGEST:-none}\`"
             echo '```'; echo "$TAGS"; echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # GHCR retention (#20): keep edge, every release tag (v*, X.Y.Z, X.Y, X)
+  # and the 3 newest other tagged images (sha-*). Untagged per-platform
+  # manifests, cosign sha256-*.sig tags and attestation manifests of kept
+  # images are kept; only those of deleted images (orphans) are removed.
+  # Runs only after the image job (push, visibility, signature and
+  # attestation checks) succeeded. Dry run unless dispatched with
+  # cleanup=delete or the repo variable GHCR_CLEANUP is "delete".
+  cleanup:
+    name: GHCR retention
+    needs: image
+    if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push && github.ref == 'refs/heads/master')) && (github.event_name != 'workflow_dispatch' || inputs.cleanup != 'skip')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
+      - name: Mode
+        id: mode
+        env:
+          INPUT: ${{ inputs.cleanup }}
+          VAR: ${{ vars.GHCR_CLEANUP }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then m=$INPUT; else m=${VAR:-dry-run}; fi
+          [ "$m" = delete ] && dry=false || dry=true
+          echo "dry=$dry" >> "$GITHUB_OUTPUT"
+          echo "GHCR retention: dry-run=$dry" >> "$GITHUB_STEP_SUMMARY"
+      - uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          owner: danieldejager
+          package: phantom-mirage
+          use-regex: true
+          exclude-tags: '^(edge|v.*|[0-9]+(\.[0-9]+){0,2})$'
+          keep-n-tagged: 3
+          delete-untagged: true
+          delete-orphaned-images: true
+          delete-ghost-images: true
+          delete-partial-images: true
+          validate: true
+          dry-run: ${{ steps.mode.outputs.dry }}
