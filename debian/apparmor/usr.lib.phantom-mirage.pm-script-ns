@@ -66,6 +66,9 @@ profile pm-script-ns /usr/lib{,/*}/phantom-mirage/pm-script-ns flags=(attach_dis
 
   # Scripts: exec'd with phantom-mirage-script stacked (see above).
   /{usr/,}bin/* ix,
+  # Ubuntu 26.04: /usr/bin/{cat,ls,...} are symlinks to the Rust
+  # coreutils/findutils/diffutils multi-call binaries here
+  /usr/lib/cargo/bin/** ix,
   /etc/phantom-mirage/** ix,
   /usr/share/phantom-mirage/** ix,
 
@@ -80,6 +83,9 @@ profile phantom-mirage-script flags=(attach_disconnected) {
   include <abstractions/phantom-mirage-script>
 
   /{usr/,}bin/* ix,
+  # Ubuntu 26.04: /usr/bin/{cat,ls,...} are symlinks to the Rust
+  # coreutils/findutils/diffutils multi-call binaries here
+  /usr/lib/cargo/bin/** ix,
   /etc/phantom-mirage/** ix,
   /usr/share/phantom-mirage/** ix,
   deny capability dac_override,
