@@ -39,6 +39,7 @@ $("lf").addEventListener("submit", async e => {
   try {
     const j = await api("/api/login", {username: $("lu").value, password: $("lp").value, browser_time_ms: Date.now()});
     $("lp").value = "";
+    if (j.clock_warning) window.alert(j.clock_warning);
     CSRF = j.csrf;
     SESSION = await api("/api/session");
     CSRF = SESSION.csrf;
@@ -72,7 +73,16 @@ function drift() {
   const d = Math.round((Date.now() - s.server_time_ms) / 1000), lim = s.drift_warn_seconds || 60, w = [];
   if (Math.abs(d) > lim) w.push("Sensor clock differs from this browser by " + Math.abs(d) + " s" + (s.time_source === "browser" ? " (sign in again to set it from this browser)." : ". Check the NTP server " + (s.ntp_server || "") + "."));
   if (s.time_source === "ntp" && s.ntp_synced === false) w.push("Sensor clock is not synchronised with NTP server " + (s.ntp_server || "") + ".");
+  if (s.clock_refused) w.push(s.clock_refused);
+  if (s.retention_paused) w.push("Alert retention cleanup is paused (" + (s.retention_pause_reason || "clock jump") + "). Check the sensor clock, then confirm it.");
   el.textContent = w.join(" ");
+  if (s.retention_paused || s.clock_refused) {
+    const b = document.createElement("button");
+    b.textContent = "Sensor clock is correct";
+    b.addEventListener("click", async () => { try { await api("/api/retention/resume", {}); data.status = await api("/api/status"); drift(); } catch (e) { /* ignore */ } });
+    el.appendChild(document.createTextNode(" "));
+    el.appendChild(b);
+  }
   el.classList.toggle("hide", !w.length);
 }
 async function refresh() {

@@ -8,6 +8,8 @@
 # (NETWORK in /etc/default/phantom-mirage). Decoys are served from pcap,
 # so this does not stop the decoys answering. Run by
 # phantom-mirage-firewall.service; "print" writes the ruleset to stdout.
+# Decoys are IPv4 only (NETWORK is an IPv4 list), so there is no ip6
+# decoy rule; the console-port drop is in the inet table and covers IPv6.
 # Tests: PM_CONSOLE_STATE, PM_DEFAULT, PM_NFT.
 set -eu
 STATE=${PM_CONSOLE_STATE:-/var/lib/phantom-mirage/console}

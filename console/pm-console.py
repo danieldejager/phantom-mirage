@@ -31,6 +31,7 @@ TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
          ".svg": "image/svg+xml"}
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; "
        "connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+CLOCK_MAX_STEP = 86400       # browser may move the clock by at most 24 h (#120)
 HOST_RE = re.compile(r'^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$')
 
 
@@ -43,6 +44,7 @@ class App:
         self.alerts.preload_activity()
         self.pre = {}                 # pre-login CSRF tokens -> expiry
         self.lock = threading.Lock()
+        self.clock_refused = ""       # last refused browser clock set, for the UI
 
     def reload_cfg(self):
         self.cfg = pmstore.load_config()
@@ -214,6 +216,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "ntp_synced": pmstore.ntp_synced() if c.get("time_source") == "ntp" else None,
             "drift_warn_seconds": c.get("drift_warn_seconds", 60),
             "timezone": c.get("timezone"), "cert_sha256": fp, "version": VERSION,
+            "retention_paused": a.alerts.prune_paused,
+            "retention_pause_reason": a.alerts.pause_reason,
+            "clock_refused": a.clock_refused,
         }
 
     # ---- POST
@@ -264,6 +269,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             pmstore.save_config(c)
             pmstore.audit(user, path[5:], src)
             return self.send_json(200, {"ok": True})
+        if path == "/api/retention/resume":
+            ok = a.alerts.resume_pruning(user, "admin confirmed the sensor clock in the console")
+            a.clock_refused = ""
+            return self.send_json(200, {"ok": True, "resumed": ok})
         if path == "/api/settings":
             c = pmstore.load_config()
             changes = []
@@ -307,51 +316,82 @@ class Handler(http.server.BaseHTTPRequestHandler):
             valid = bool(pre and tok and pre == tok and a.pre.pop(tok, 0) > time.time())
         if not valid:
             return self.err(403, "bad CSRF token; reload the page")
-        if a.lockout.rate_limited():
-            pmstore.audit("-", "login-rate-limited", ok=False)
+        src = self.source()
+        if a.lockout.rate_limited(src):
+            pmstore.audit("-", "login-rate-limited", src, ok=False)
             return self.err(429, "too many sign-in attempts; wait a minute")
         user = str(data.get("username", ""))[:64]
         pw = data.get("password", "")
         adm = pmstore.load_admin()
         if not adm:
             return self.err(503, "no admin account; run phantom-mirage-setup on the sensor")
-        if a.lockout.locked_until(user):
-            pmstore.audit(user, "login", "locked out", ok=False)
-            return self.err(423, "account locked after repeated failures; try later or run "
-                                 "phantom-mirage-setup --reset-admin on the sensor")
+        until = a.lockout.locked_until(user, src)
+        if until:
+            pmstore.audit(user, "login", "backing off (%s)" % src, ok=False)
+            return self.err(423, "too many failed sign-ins from here; try again in %d s or run "
+                                 "phantom-mirage-setup --reset-admin on the sensor"
+                            % max(1, int(until - time.time())))
         if user != adm.get("username"):
             pmauth.dummy_verify(str(pw))
             ok = False
         else:
             ok = pmauth.verify_password(pw if isinstance(pw, str) else "", adm.get("hash", ""))
         if not ok:
-            until = a.lockout.failure(user)
-            pmstore.audit(user, "login", "failed" + (" (now locked)" if until else ""), ok=False)
+            until = a.lockout.failure(user, src)
+            pmstore.audit(user, "login", "failed (%s)%s" % (src, " (backing off)" if until else ""),
+                          ok=False)
             return self.err(401, "wrong username or password")
-        a.lockout.success(user)
+        a.lockout.success(user, src)
         sid = a.sessions.create(user)
         pmstore.audit(user, "login", "signed in")
-        self.clock_from_browser(user, data.get("browser_time_ms"))
+        warn = self.clock_from_browser(user, data.get("browser_time_ms"))
         s = a.sessions.get(sid)
-        return self.send_json(200, {"ok": True, "csrf": s["csrf"]}, cookies=[
+        return self.send_json(200, {"ok": True, "csrf": s["csrf"], "clock_warning": warn}, cookies=[
             "%s=%s; Path=/; Secure; HttpOnly; SameSite=Strict" % (COOKIE, sid),
             "%s=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0" % PRE])
 
-    def clock_from_browser(self, user, bt):
-        c = self.app.cfg
-        if c.get("time_source") != "browser" or not isinstance(bt, (int, float)):
-            return
-        drift = bt / 1000.0 - time.time()
-        if abs(drift) < 5:
-            return
-        if abs(drift) > 20 * 365 * 86400:
-            pmstore.audit(user, "clock-set", "browser time implausible; not applied", ok=False)
-            return
+    def source(self):
+        """Rate-limit / back-off bucket for this connection (#120): the UID
+        owning the client socket (all clients are loopback via SSH tunnels),
+        else the peer address."""
         try:
-            time.clock_settime(time.CLOCK_REALTIME, bt / 1000.0)
-            pmstore.audit(user, "clock-set", "sensor clock set from browser (was %+.0fs off)" % -drift)
+            peer, local = self.client_address, self.connection.getsockname()
+        except (OSError, AttributeError):
+            return "-"
+        uid = pmauth.peer_uid(peer, local)
+        return "uid:%d" % uid if uid is not None else "addr:%s" % peer[0]
+
+    def clock_from_browser(self, user, bt):
+        """Set the sensor clock from the browser at sign-in (time_source=browser).
+        Steps over CLOCK_MAX_STEP are refused. Returns a warning or None."""
+        c = self.app.cfg
+        if c.get("time_source") != "browser" or not isinstance(bt, (int, float)) \
+                or isinstance(bt, bool):
+            return None
+        old = time.time()
+        new = bt / 1000.0
+        delta = new - old
+        if abs(delta) < 5:
+            return None
+        fmt = lambda t: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t)) \
+            if 0 < t < 253402300800 else repr(t)
+        if abs(delta) > CLOCK_MAX_STEP:
+            msg = ("browser clock differs from the sensor by %+.0f s (more than 24 h); not applied. "
+                   "Check the browser's clock, or set the sensor clock on its terminal with "
+                   "phantom-mirage-setup." % delta)
+            self.app.clock_refused = msg
+            pmstore.audit(user, "clock-set", "refused: sensor %s, browser %s, delta %+.0fs"
+                          % (fmt(old), fmt(new), delta), ok=False)
+            return msg
+        try:
+            time.clock_settime(time.CLOCK_REALTIME, new)
         except (OSError, AttributeError) as e:
             pmstore.audit(user, "clock-set", "failed: %s" % e.__class__.__name__, ok=False)
+            return None
+        self.app.alerts.note_clock_set(delta)
+        pmstore.audit(user, "clock-set", "sensor clock set from browser: %s -> %s (delta %+.0fs)"
+                      % (fmt(old), fmt(new), delta))
+        return None
 
 
 class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):

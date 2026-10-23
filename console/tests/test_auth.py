@@ -63,8 +63,50 @@ class Lockouts(unittest.TestCase):
     def lk(self, **kw):
         return pmauth.Lockout(self.path, clock=self.c, **kw)
 
+    def test_per_source_buckets(self):
+        lk = self.lk(max_failures=2, lock_for=600)
+        lk.failure("admin", "uid:1001")
+        self.assertGreater(lk.failure("admin", "uid:1001"), 0)
+        self.assertTrue(lk.locked_until("admin", "uid:1001"))
+        self.assertFalse(lk.locked_until("admin", "uid:1000"), "other local user unaffected")
+
+    def test_exponential_backoff_capped(self):
+        lk = self.lk(max_failures=1, lock_for=600, lock_base=60)
+        waits = []
+        for _ in range(6):
+            until = lk.failure("admin", "s")
+            waits.append(until - self.c.t)
+            self.c.t = until + 1
+        self.assertEqual(waits, [60, 120, 240, 480, 600, 600])
+        lk.success("admin", "s")
+        self.assertEqual(lk.failure("admin", "s") - self.c.t, 60)
+
+    def test_rate_limit_per_source(self):
+        lk = self.lk(rate=2, rate_window=60)
+        self.assertEqual([lk.rate_limited("uid:1001") for _ in range(3)], [False, False, True])
+        self.assertFalse(lk.rate_limited("uid:1000"), "admin's bucket is separate")
+
+    def test_peer_uid_from_proc(self):
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "tcp"), "w") as f:
+            f.write("  sl  local_address rem_address   st tx:rx tr:tm retrnsmt   uid\n")
+            f.write("   0: 0100007F:20FB 0100007F:D431 01 0:0 0:0 0 998 0 1\n")
+            f.write("   1: 0100007F:D431 0100007F:20FB 01 0:0 0:0 0 1001 0 2\n")
+        self.assertEqual(pmauth.peer_uid(("127.0.0.1", 0xD431), ("127.0.0.1", 8443), d), 1001)
+        self.assertIsNone(pmauth.peer_uid(("127.0.0.1", 1), ("127.0.0.1", 8443), d))
+
+    def test_origin_requires_console_port(self):
+        ok = lambda o: pmauth.same_origin_ok({"Origin": o} if o else {}, 8443)
+        self.assertTrue(ok("https://localhost:8443"))
+        self.assertTrue(ok("https://[::1]:8443"))
+        self.assertFalse(ok("https://localhost:9999"))
+        self.assertFalse(ok("https://localhost"))
+        self.assertFalse(ok("http://localhost:8443"))
+        self.assertFalse(ok("https://evil.example:8443"))
+        self.assertFalse(ok(None))
+
     def test_locks_after_max_failures(self):
-        lk = self.lk(max_failures=3, lock_for=600)
+        lk = self.lk(max_failures=3, lock_for=600, lock_base=600)
         self.assertEqual(lk.failure("admin"), 0)
         self.assertEqual(lk.failure("admin"), 0)
         self.assertGreater(lk.failure("admin"), 0)
@@ -159,7 +201,7 @@ class SameOrigin(unittest.TestCase):
 
     def test_origin(self):
         self.assertTrue(self.ok(Origin="https://localhost:8443"))
-        self.assertTrue(self.ok(Origin="https://127.0.0.1:9443"))   # other tunnel port
+        self.assertFalse(self.ok(Origin="https://127.0.0.1:9443"))  # must be the console port (#120)
         self.assertFalse(self.ok())
         self.assertFalse(self.ok(Origin="https://evil.example"))
         self.assertFalse(self.ok(Origin="http://localhost:8443"))

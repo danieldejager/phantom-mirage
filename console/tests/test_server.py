@@ -22,6 +22,10 @@ sys.path.insert(0, ROOT)
 import pmauth  # noqa: E402
 import pmstore  # noqa: E402
 
+# another test module may have imported pmstore first: point it here
+pmstore.STATE_DIR, pmstore.SENSOR_DEFAULT = os.environ["PM_CONSOLE_STATE"], os.environ["PM_DEFAULT"]
+pmstore.SENSOR_CONF, pmstore.EVENT_LOG = os.environ["PM_SENSOR_CONF"], os.environ["PM_EVENT_LOG"]
+
 spec = importlib.util.spec_from_file_location("pmconsole", os.path.join(ROOT, "pm-console.py"))
 pmc = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pmc)
@@ -95,7 +99,7 @@ class Client:
 class Server(unittest.TestCase):
     def setUp(self):
         pmc.Handler.app.lockout.reset()
-        pmc.Handler.app.lockout._attempts = []
+        pmc.Handler.app.lockout._attempts = {}
 
     def test_binds_loopback_only(self):
         self.assertEqual(httpd.server_address[0], "127.0.0.1")
@@ -204,6 +208,11 @@ class Server(unittest.TestCase):
         _, d = c.req("GET", "/api/decoys")
         self.assertEqual(len(d["decoys"]), 8)
         self.assertTrue(any(x["last"] for x in d["decoys"] if x["ip"] == "10.9.0.9"))
+
+    def test_failed_login_keyed_by_local_uid(self):
+        self.assertEqual(Client().login(pw="wrong-password-1")[0], 401)
+        rec = [r for r in pmstore.read_audit() if r["action"] == "login"][0]
+        self.assertIn("uid:%d" % os.getuid(), rec["detail"])
 
     def test_static_traversal(self):
         for p in ("/static/../pmauth.py", "/static/.hidden", "/static/%2e%2e%2fpmauth.py", "/static/x.py"):

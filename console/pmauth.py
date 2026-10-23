@@ -105,21 +105,37 @@ def dummy_verify(pw):
 
 
 class Lockout:
-    """Per-username failure counter with lockout, plus a global rate limit.
+    """Failure counter and rate limit, keyed per (username, source) (#120).
 
-    State is persisted (path) so a restart does not reset a lockout.
+    The console listens on 127.0.0.1 only and is reached through an SSH
+    tunnel, so every client address is loopback. The source is therefore
+    the local UID owning the connecting socket (peer_uid(), from
+    /proc/net/tcp[6]) when it can be found, else the peer address. A local
+    user hammering the login only fills their own bucket.
+
+    There is no hard lockout: after max_failures in window, the bucket
+    backs off exponentially (lock_base, doubling, capped at lock_for), so
+    even an attacker sharing the admin's bucket cannot block the admin
+    for longer than lock_for at a time. phantom-mirage-setup --reset-admin
+    clears everything. State is persisted so a restart does not reset it.
     """
 
     def __init__(self, path=None, max_failures=5, window=900, lock_for=900,
-                 rate=10, rate_window=60, clock=time.time):
+                 rate=10, rate_window=60, clock=time.time, lock_base=60):
         self.path, self.max_failures, self.window = path, max_failures, window
         self.lock_for, self.rate, self.rate_window = lock_for, rate, rate_window
+        self.lock_base = min(lock_base, lock_for)
         self.clock = clock
         self._lock = threading.Lock()
-        self._attempts = []          # timestamps of all login attempts
-        self._fail = {}              # user -> [timestamps]
-        self._locked = {}            # user -> until
+        self._attempts = {}          # source -> [timestamps of attempts]
+        self._fail = {}              # "user|source" -> [timestamps]
+        self._locked = {}            # "user|source" -> until
+        self._strikes = {}           # "user|source" -> lockouts so far
         self._load()
+
+    @staticmethod
+    def key(user, source="-"):
+        return "%s|%s" % (user, source)
 
     def _load(self):
         if not self.path or not os.path.exists(self.path):
@@ -129,6 +145,7 @@ class Lockout:
                 d = json.load(f)
             self._fail = {k: list(v) for k, v in d.get("fail", {}).items()}
             self._locked = {k: float(v) for k, v in d.get("locked", {}).items()}
+            self._strikes = {k: int(v) for k, v in d.get("strikes", {}).items()}
         except Exception:
             pass
 
@@ -137,53 +154,102 @@ class Lockout:
             return
         tmp = self.path + ".tmp"
         with open(tmp, "w") as f:
-            json.dump({"fail": self._fail, "locked": self._locked}, f)
+            json.dump({"fail": self._fail, "locked": self._locked,
+                       "strikes": self._strikes}, f)
         os.replace(tmp, self.path)
 
-    def rate_limited(self):
-        """Record an attempt; True if over the global rate."""
+    def rate_limited(self, source="-"):
+        """Record an attempt from source; True if that source is over the rate."""
         now = self.clock()
         with self._lock:
-            self._attempts = [t for t in self._attempts if now - t < self.rate_window]
-            self._attempts.append(now)
-            return len(self._attempts) > self.rate
+            if len(self._attempts) > 1000:
+                self._attempts = {k: v for k, v in self._attempts.items()
+                                  if v and now - v[-1] < self.rate_window}
+            a = [t for t in self._attempts.get(source, []) if now - t < self.rate_window]
+            a.append(now)
+            self._attempts[source] = a
+            return len(a) > self.rate
 
-    def locked_until(self, user):
+    def locked_until(self, user, source="-"):
         now = self.clock()
         with self._lock:
-            u = self._locked.get(user, 0)
+            u = self._locked.get(self.key(user, source), 0)
             return u if u > now else 0
 
-    def failure(self, user):
-        """Record a failure; returns lock-until (0 if not locked)."""
+    def failure(self, user, source="-"):
+        """Record a failure; returns back-off-until (0 if not backing off)."""
         now = self.clock()
+        k = self.key(user, source)
         with self._lock:
-            f = [t for t in self._fail.get(user, []) if now - t < self.window]
+            f = [t for t in self._fail.get(k, []) if now - t < self.window]
             f.append(now)
-            self._fail[user] = f
-            if len(self._fail) > 1000:   # bound memory: drop stale names
-                self._fail = {k: v for k, v in self._fail.items()
-                              if k == user or (v and now - v[-1] < self.window)}
-                self._locked = {k: v for k, v in self._locked.items() if v > now}
+            self._fail[k] = f
+            if len(self._fail) > 1000:   # bound memory: drop stale buckets
+                self._fail = {x: v for x, v in self._fail.items()
+                              if x == k or (v and now - v[-1] < self.window)}
+                self._locked = {x: v for x, v in self._locked.items() if v > now}
+                self._strikes = {x: v for x, v in self._strikes.items()
+                                 if x in self._fail or x in self._locked}
             until = 0
             if len(f) >= self.max_failures:
-                until = now + self.lock_for
-                self._locked[user] = until
-                self._fail[user] = []
+                n = self._strikes.get(k, 0)
+                until = now + min(self.lock_for, self.lock_base * (2 ** min(n, 20)))
+                self._locked[k] = until
+                self._strikes[k] = n + 1
+                self._fail[k] = []
             self._save()
             return until
 
-    def success(self, user):
+    def success(self, user, source="-"):
+        k = self.key(user, source)
         with self._lock:
-            self._fail.pop(user, None)
-            self._locked.pop(user, None)
-            self._save()
+            for d in (self._fail, self._locked, self._strikes):
+                d.pop(k, None)
             self._save()
 
     def reset(self):
         with self._lock:
-            self._fail, self._locked = {}, {}
+            self._fail, self._locked, self._strikes = {}, {}, {}
+            self._attempts = {}
             self._save()
+
+
+def _hexaddr(ip, port):
+    """/proc/net/tcp[6] encoding of (ip, port)."""
+    import socket
+    import struct
+    if ":" in ip:
+        raw = socket.inet_pton(socket.AF_INET6, ip)
+        h = "".join("%08X" % struct.unpack("<I", raw[i:i + 4])[0] for i in range(0, 16, 4))
+    else:
+        h = "%08X" % struct.unpack("<I", socket.inet_aton(ip))[0]
+    return "%s:%04X" % (h, port)
+
+
+def peer_uid(peer, local, proc="/proc/net"):
+    """UID owning the client end of a loopback TCP connection, or None.
+
+    peer and local are (ip, port) as seen by the server. The client's
+    socket is the row whose local address is our peer and whose remote
+    address is our local address."""
+    try:
+        want_l, want_r = _hexaddr(peer[0], peer[1]), _hexaddr(local[0], local[1])
+    except (OSError, ValueError, TypeError, IndexError):
+        return None
+    for name in ("tcp", "tcp6"):
+        try:
+            with open(os.path.join(proc, name)) as f:
+                rows = f.read().splitlines()[1:]
+        except OSError:
+            continue
+        for r in rows:
+            c = r.split()
+            if len(c) > 7 and c[1].upper() == want_l and c[2].upper() == want_r:
+                try:
+                    return int(c[7])
+                except ValueError:
+                    return None
+    return None
 
 
 class Sessions:
@@ -247,11 +313,13 @@ def same_origin_ok(headers, port):
     origin = headers.get("Origin")
     if not origin:
         return False
-    if origin not in ("https://localhost:%d" % port,
-                                 "https://127.0.0.1:%d" % port):
-        # tunnels may use another local port: accept any loopback origin
-        import urllib.parse
+    # #120: the origin must be loopback on the configured console port.
+    # SSH tunnels must forward the same local port (ssh -L PORT:127.0.0.1:PORT).
+    import urllib.parse
+    try:
         u = urllib.parse.urlsplit(origin)
-        if u.scheme != "https" or u.hostname not in ("localhost", "127.0.0.1", "::1"):
-            return False
-    return True
+        oport = u.port
+    except ValueError:
+        return False
+    return (u.scheme == "https" and u.hostname in ("localhost", "127.0.0.1", "::1")
+            and oport == int(port) and not u.path.strip("/"))

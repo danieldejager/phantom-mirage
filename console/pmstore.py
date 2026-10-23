@@ -22,6 +22,9 @@ EVENT_LOG = os.environ.get("PM_EVENT_LOG", "/var/log/phantom-mirage/events.jsonl
 GROUP_WINDOW = 600          # same source within 10 minutes -> one alert
 MAX_ALERTS = 5000
 ACTIVITY_KEEP = 2000        # events kept in memory for the Activity page
+PRUNE_EVERY = 600           # retention cleanup at most every 10 minutes (#120)
+JUMP_LIMIT = 300            # wall vs monotonic disagreement that counts as a clock jump
+STABLE_RESUME = 86400       # cleanup resumes by itself after 24 h of stable clock
 DEFAULTS = {"sensor_name": "", "port": 8443, "time_source": "browser",
             "ntp_server": "", "timezone": "UTC", "alert_retention_days": 90,
             "drift_warn_seconds": 60, "ssh_ports": [22], "muted": []}
@@ -199,8 +202,15 @@ class AlertEngine:
     """Tails the sensor's JSON Lines event log and groups inbound touches
     on decoys into alerts (console only; nothing leaves the box)."""
 
-    def __init__(self, event_log=None):
+    def __init__(self, event_log=None, wall=time.time, mono=time.monotonic):
         self.event_log = event_log or EVENT_LOG
+        self.wall, self.mono = wall, mono
+        g = read_json("retention.json", {}) or {}
+        self.prune_paused = bool(g.get("paused"))
+        self.pause_reason = g.get("reason", "")
+        self._stable_since = mono()     # monotonic time of the last jump (or start)
+        self._last_wall, self._last_mono = wall(), mono()
+        self._last_prune = None         # monotonic time of the last cleanup
         self.lock = threading.Lock()
         d = read_json("alerts.json", {}) or {}
         self.alerts = d.get("alerts", [])
@@ -294,11 +304,73 @@ class AlertEngine:
                     changed = end > 0
             except OSError:
                 pass
-            keep = time.time() - int(cfg.get("alert_retention_days", 90)) * 86400
             n = len(self.alerts)
-            self.alerts = [a for a in self.alerts if a["last_t"] >= keep]
+            self._check_jump()
+            self._maybe_prune(cfg)
             if changed or n != len(self.alerts):
                 self.save()
+
+    # ---- retention cleanup with clock-jump guard (#120)
+    def _save_guard(self):
+        write_json("retention.json", {"paused": self.prune_paused,
+                                      "reason": self.pause_reason}, 0o640)
+
+    def pause_pruning(self, reason):
+        """Stop retention cleanup until an admin confirms or 24 h stable."""
+        self.prune_paused, self.pause_reason = True, reason
+        self._stable_since = self.mono()
+        self._save_guard()
+        audit("console", "retention-paused", reason)
+
+    def resume_pruning(self, actor="console", why="confirmed"):
+        if not self.prune_paused:
+            return False
+        self.prune_paused, self.pause_reason = False, ""
+        self._last_wall, self._last_mono = self.wall(), self.mono()
+        self._save_guard()
+        audit(actor, "retention-resumed", why)
+        return True
+
+    def note_clock_set(self, delta):
+        """Called after the console itself steps the clock by delta seconds."""
+        self._last_wall, self._last_mono = self.wall(), self.mono()
+        if abs(delta) > JUMP_LIMIT:
+            self.pause_pruning("sensor clock set by %+.0f s" % delta)
+
+    def _check_jump(self):
+        w, m = self.wall(), self.mono()
+        skew = (w - self._last_wall) - (m - self._last_mono)
+        self._last_wall, self._last_mono = w, m
+        if abs(skew) > JUMP_LIMIT:
+            self.pause_pruning("clock jump of %+.0f s detected" % skew)
+
+    def _maybe_prune(self, cfg):
+        m = self.mono()
+        if self.prune_paused:
+            if m - self._stable_since < STABLE_RESUME:
+                return 0
+            self.resume_pruning("console", "24 h of stable clock")
+        if self._last_prune is not None and m - self._last_prune < PRUNE_EVERY:
+            return 0
+        self._last_prune = m
+        return self.prune(cfg)
+
+    def prune(self, cfg):
+        """Drop alerts older than the retention period. The cutoff never
+        exceeds newest-alert-time minus retention, so a clock set far into
+        the future cannot wipe recent alerts (the newest alert always
+        survives); as a last sanity check, never empty the store."""
+        if not self.alerts:
+            return 0
+        ret = int(cfg.get("alert_retention_days", 90)) * 86400
+        newest = max(a["last_t"] for a in self.alerts)
+        now = self.wall()
+        keep = min(now, newest) - ret
+        drop = [a for a in self.alerts if a["last_t"] < keep]
+        if drop and len(drop) == len(self.alerts):   # never empty the store blindly
+            return 0
+        self.alerts = [a for a in self.alerts if a["last_t"] >= keep]
+        return len(drop)
 
     def snapshot(self):
         with self.lock:

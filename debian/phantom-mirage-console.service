@@ -22,7 +22,8 @@ IPAddressAllow=localhost
 IPAddressDeny=any
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 # CAP_SYS_TIME only: "set the sensor clock from the admin browser at
-# sign-in" (time_source=browser); unused with time_source=ntp.
+# sign-in" (time_source=browser, steps capped at 24 h, #120); unused with
+# time_source=ntp.
 CapabilityBoundingSet=CAP_SYS_TIME
 AmbientCapabilities=CAP_SYS_TIME
 NoNewPrivileges=yes
