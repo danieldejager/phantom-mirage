@@ -1,0 +1,12 @@
+# Nmap 7.992 scan initiated Fri Oct 23 16:15:51 2026 as: nmap -Pn -sT -p 22,80,443,8443,3389 -T4 -oA T2-sensor 192.168.1.112
+Nmap scan report for 192.168.1.112
+Host is up (0.0011s latency).
+
+PORT     STATE  SERVICE
+22/tcp   closed ssh
+80/tcp   closed http
+443/tcp  closed https
+3389/tcp closed ms-wbt-server
+8443/tcp closed https-alt
+
+# Nmap done at Fri Oct 23 16:15:51 2026 -- 1 IP address (1 host up) scanned in 0.56 seconds
