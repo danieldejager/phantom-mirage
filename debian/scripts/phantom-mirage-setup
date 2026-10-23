@@ -3,9 +3,18 @@
 # the service (#110). POSIX sh, run as root.
 #
 #   sudo phantom-mirage-setup [--interface IF] [--network CIDR] [--no-farpd] [--dry-run]
+#         [console options]
+#   sudo phantom-mirage-setup --console [console options]   (console only)
+#   sudo phantom-mirage-setup --reset-admin                 (terminal only)
 #
-# Without --interface it uses the default-route interface; without
-# --network it picks a /29 near the top of that interface's IPv4 subnet
+# Console options (#118): --sensor-name NAME, --admin-user USER,
+# --console-port PORT, --time-source ntp|browser, --ntp-server HOST,
+# --timezone TZ, --retention DAYS, --reconfigure-console. Anything not
+# given is asked; the admin password is only ever asked at a hidden prompt.
+#
+# Without --interface/--network it keeps those of an existing
+# /etc/default/phantom-mirage; otherwise it uses the default-route
+# interface and picks a /29 near the top of that interface's IPv4 subnet
 # whose 8 addresses do not answer ping/arping and are not in the neighbour
 # table. The old file is kept as /etc/default/phantom-mirage.bak-<time>.
 # Unless --no-farpd, it also points farpd (if installed) at the same
@@ -16,11 +25,11 @@ set -eu
 
 DEFAULT=/etc/default/phantom-mirage
 LIBDIR=${PM_LIBDIR:-/usr/lib/phantom-mirage}
-IFACE= NET= DRY= FARPD=1
+IFACE= NET= DRY= FARPD=1 CONLY= CON= CONSOLE=$LIBDIR/console/pm-console-setup.py
 FDEFAULT=/etc/default/farpd
 FMARK='# written by phantom-mirage-setup'
 
-usage() { sed -n '2,15s/^# \{0,1\}//p' "$0"; exit "${1:-0}"; }
+usage() { sed -n '2,25s/^# \{0,1\}//p' "$0"; exit "${1:-0}"; }
 die() { echo "phantom-mirage-setup: $*" >&2; exit 1; }
 say() { echo "phantom-mirage-setup: $*"; }
 
@@ -30,8 +39,29 @@ while [ $# -gt 0 ]; do
 		--interface=*) IFACE=${1#*=}; shift ;;
 		--network|-n) [ $# -ge 2 ] || usage 2; NET=$2; shift 2 ;;
 		--network=*) NET=${1#*=}; shift ;;
-		--dry-run) DRY=1; shift ;;
+		--dry-run) DRY=1; CON="$CON
+--dry-run"; shift ;;
 		--no-farpd) FARPD=; shift ;;
+		--pass*|-p|--pw|--pw=*|--secret*)
+			die "the admin password is never accepted as an option; you will be asked for it at a hidden prompt" ;;
+		--sensor-name|--admin-user|--console-port|--time-source|--ntp-server|--timezone|--retention)
+			[ $# -ge 2 ] || usage 2
+			case $2 in *"
+"*) die "bad value for $1" ;; esac
+			CON="$CON
+$1=$2"; shift 2 ;;
+		--sensor-name=*|--admin-user=*|--console-port=*|--time-source=*|--ntp-server=*|--timezone=*|--retention=*)
+			case $1 in *"
+"*) die "bad value" ;; esac
+			CON="$CON
+$1"; shift ;;
+		--reconfigure-console) CON="$CON
+--reconfigure"; shift ;;
+		--console) CONLY=1; shift ;;
+		--reset-admin)
+			shift
+			[ $# -eq 0 ] || die "--reset-admin takes no other options"
+			exec /usr/bin/python3 -I "$CONSOLE" reset-admin ;;
 		-h|--help) usage 0 ;;
 		*) echo "unknown option: $1" >&2; usage 2 ;;
 	esac
@@ -39,6 +69,74 @@ done
 
 [ -n "$DRY" ] || [ "$(id -u)" = 0 ] || die "must be run as root (or use --dry-run)"
 command -v ip >/dev/null || die "ip(8) not found (apt install iproute2)"
+
+# ---- web console (#118): admin account, certificate, time, firewall
+CONSOLE_OK=
+console_setup() {
+	[ -x /usr/bin/python3 ] && [ -e "$CONSOLE" ] || { say "console: not installed"; return 0; }
+	_old_ifs=$IFS
+	IFS='
+'
+	set -f
+	# shellcheck disable=SC2086
+	set -- $CON
+	set +f
+	IFS=$_old_ifs
+	_rc=0
+	/usr/bin/python3 -I "$CONSOLE" first-run "$@" || _rc=$?
+	case $_rc in
+		0) CONSOLE_OK=1 ;;
+		3) say "warning: the web console is NOT set up (no terminal for the password prompt)" ;;
+		*) exit "$_rc" ;;
+	esac
+}
+console_start() {
+	[ -n "$CONSOLE_OK" ] || return 0
+	pm_enable phantom-mirage-firewall
+	systemctl restart phantom-mirage-firewall
+	pm_enable phantom-mirage-console
+	systemctl restart phantom-mirage-console
+	_port=$(sed -n 's/.*"port":[[:space:]]*\([0-9][0-9]*\).*/\1/p' /var/lib/phantom-mirage/console/console.json 2>/dev/null | head -n 1)
+	_port=${_port:-8443}
+	say "console: https://127.0.0.1:$_port on this sensor only (firewalled on every other interface)."
+	say "console: from your PC run  ssh -L $_port:127.0.0.1:$_port <user>@<this sensor>  then open https://localhost:$_port"
+}
+sensor_name() {
+	sed -n 's/.*"sensor_name":[[:space:]]*"\([A-Za-z0-9._-]*\)".*/\1/p' /var/lib/phantom-mirage/console/console.json 2>/dev/null | head -n 1
+}
+# enable at boot; a failing "systemctl enable" (e.g. update-rc.d refusing an
+# init script with empty runlevels, as farpd 0.2 ships) only warns: the
+# native unit is then linked into multi-user.target.wants by hand (#110)
+pm_enable() {
+	systemctl enable "$1" && return 0
+	say "warning: systemctl enable $1 failed; linking its systemd unit directly"
+	unit=$(systemctl show -p FragmentPath --value "$1.service" 2>/dev/null || true)
+	if [ -n "$unit" ] && [ -e "$unit" ]; then
+		mkdir -p /etc/systemd/system/multi-user.target.wants
+		ln -sf "$unit" "/etc/systemd/system/multi-user.target.wants/$1.service"
+		systemctl daemon-reload || true
+	else
+		say "warning: $1 is not enabled at boot (start it with: sudo systemctl start $1)"
+	fi
+	return 0
+}
+
+console_setup
+if [ -n "$CONLY" ]; then
+	[ -n "$DRY" ] && exit 0
+	console_start
+	exit 0
+fi
+
+# keep the decoy interface/network of an existing setup (upgrades, re-runs)
+if [ -z "$IFACE$NET" ] && [ -r "$DEFAULT" ]; then
+	_i=$(sed -n 's/^INTERFACE="\{0,1\}\([A-Za-z0-9_.:@-]*\)"\{0,1\}[[:space:]]*$/\1/p' "$DEFAULT" | tail -n 1)
+	_n=$(sed -n 's/^NETWORK="\{0,1\}\([0-9./]*\)"\{0,1\}[[:space:]]*$/\1/p' "$DEFAULT" | tail -n 1)
+	if [ -n "$_i" ] && [ -n "$_n" ] && [ -e "/sys/class/net/$_i" ]; then
+		IFACE=$_i NET=$_n
+		say "keeping INTERFACE/NETWORK of the existing $DEFAULT (pass --interface/--network to change)"
+	fi
+fi
 
 ip2int() {
 	_o=$1 _r=0
@@ -107,6 +205,9 @@ if [ -z "$NET" ]; then
 fi
 say "network: $NET"
 
+SID=
+_sn=$(sensor_name)
+[ -n "$_sn" ] && SID=" --sensor-id=$_sn"
 NEW=$(cat <<EOT
 # /etc/default/phantom-mirage, written by phantom-mirage-setup on $(date -R)
 # One KEY=VALUE per line; quote values that contain spaces. Comments must be
@@ -120,8 +221,10 @@ INTERFACE="$IFACE"
 # ALLOW_WIDE_NETWORK=yes). Never include real hosts or the gateway.
 NETWORK="$NET"
 
-# Extra daemon options; the web server has no authentication.
-OPTIONS="--disable-webserver"
+# Extra daemon options; the built-in web server has no authentication (the
+# console, phantom-mirage-console, replaces it). The console reads the JSON
+# event log.
+OPTIONS="--disable-webserver --json-log=/var/log/phantom-mirage/events.jsonl$SID"
 EOT
 )
 
@@ -158,6 +261,7 @@ if [ -n "$DRY" ]; then
 	fi
 	[ -n "$farpd_state" ] && say "farpd: $farpd_state"
 	say "dry run: would run $LIBDIR/check-default $DEFAULT, then systemctl enable phantom-mirage and systemctl restart phantom-mirage"
+	say "dry run: would enable and restart phantom-mirage-firewall and phantom-mirage-console"
 	exit 0
 fi
 
@@ -169,22 +273,6 @@ fi
 printf '%s\n' "$NEW" > "$DEFAULT.new" && mv "$DEFAULT.new" "$DEFAULT"
 say "wrote $DEFAULT"
 "$LIBDIR/check-default" "$DEFAULT"
-# enable at boot; a failing "systemctl enable" (e.g. update-rc.d refusing an
-# init script with empty runlevels, as farpd 0.2 ships) only warns: the
-# native unit is then linked into multi-user.target.wants by hand (#110)
-pm_enable() {
-	systemctl enable "$1" && return 0
-	say "warning: systemctl enable $1 failed; linking its systemd unit directly"
-	unit=$(systemctl show -p FragmentPath --value "$1.service" 2>/dev/null || true)
-	if [ -n "$unit" ] && [ -e "$unit" ]; then
-		mkdir -p /etc/systemd/system/multi-user.target.wants
-		ln -sf "$unit" "/etc/systemd/system/multi-user.target.wants/$1.service"
-		systemctl daemon-reload || true
-	else
-		say "warning: $1 is not enabled at boot (start it with: sudo systemctl start $1)"
-	fi
-	return 0
-}
 pm_enable phantom-mirage
 systemctl restart phantom-mirage
 if [ -n "$FARPD" ]; then
@@ -198,6 +286,7 @@ if [ -n "$FARPD" ]; then
 	systemctl restart farpd
 	farpd_state="answering ARP for $NET on $IFACE"
 fi
+console_start
 sleep 2
 systemctl --no-pager --lines=10 status phantom-mirage || true
 systemctl --no-pager --lines=5 status farpd 2>/dev/null || true

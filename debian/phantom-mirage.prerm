@@ -11,6 +11,13 @@ if [ "$1" != "upgrade" ]; then
 	else
                 start-stop-daemon --stop --quiet --oknodo --exec /usr/bin/phantom-mirage
 	fi
+	# console (#118): stop it and remove its nftables table
+	if [ -d /run/systemd/system ]; then
+		systemctl stop phantom-mirage-console.service phantom-mirage-firewall.service >/dev/null 2>&1 || true
+	fi
+	if [ -x /usr/lib/phantom-mirage/pm-firewall ]; then
+		/usr/lib/phantom-mirage/pm-firewall remove || true
+	fi
 fi
 
 

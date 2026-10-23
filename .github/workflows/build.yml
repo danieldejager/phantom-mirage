@@ -198,7 +198,9 @@ jobs:
           shellcheck --version | head -2
           # SC1007 (a= b=), SC1090/SC2010/SC2034: intentional patterns
           shellcheck -s sh -S warning -e SC1007,SC1090,SC2010,SC2034 \
-            release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh
+            release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh console/pm-firewall
+      - name: Web console unit + server tests (#118)
+        run: python3 -W ignore -m unittest discover -v -s console/tests
       - name: ci/test_get_mirage.sh + ci/test_make_run.sh (sh and dash)
         run: |
           sh ci/test_get_mirage.sh && dash ci/test_get_mirage.sh
@@ -591,8 +593,8 @@ jobs:
           test -n "$want"
           phantom-mirage --version 2>&1 | tee version.txt
           grep -qx "Phantom Mirage I $want (based on Honeyd)" version.txt
-          test "$(dpkg-query -W -f='${Version}' phantom-mirage)" = "$want-4"
-          test "$(dpkg-query -W -f='${Version}' phantom-mirage-common)" = "$want-4"
+          test "$(dpkg-query -W -f='${Version}' phantom-mirage)" = "$want-5"
+          test "$(dpkg-query -W -f='${Version}' phantom-mirage-common)" = "$want-5"
           test "$want" = 1.7.0
           test -e /etc/phantom-mirage/phantom-mirage.conf
           # shipped defaults must be refused with a clear message (#110)
@@ -603,6 +605,16 @@ jobs:
           ! grep -q '^EnvironmentFile' /usr/lib/systemd/system/phantom-mirage.service
           test -x /usr/lib/phantom-mirage/pm-start && test -f /usr/lib/phantom-mirage/default-lib.sh
           test -x /usr/sbin/phantom-mirage-setup && test -x /usr/sbin/phantom-mirage-uninstall
+          # web console (#118): shipped, not enabled, own user, firewall rules
+          for f in pm-console.py pm-console-setup.py pmauth.py pmstore.py static/index.html static/console.js static/console.css static/phantom-mirage-mark.svg static/phantom-mirage-logo-light.png; do
+            test -f /usr/lib/phantom-mirage/console/$f
+          done
+          test -x /usr/lib/phantom-mirage/pm-firewall
+          getent passwd phantom-mirage-console
+          test "$(stat -c '%U:%G %a' /var/lib/phantom-mirage/console)" = "root:phantom-mirage-console 770"
+          PM_CONSOLE_STATE=/nonexistent PM_DEFAULT=/dev/null /usr/lib/phantom-mirage/pm-firewall print | tee fw.txt
+          grep -q 'tcp dport 8443 drop' fw.txt
+          ! phantom-mirage-setup --password=x 2>/dev/null
           phantom-mirage-uninstall --dry-run
           # Debian conf: default template answers ping; setup handles farpd
           grep -q '^set default default icmp action open$' /etc/phantom-mirage/phantom-mirage.conf
@@ -625,6 +637,10 @@ jobs:
           systemd-analyze verify /usr/lib/systemd/system/phantom-mirage.service
           systemd-analyze security --offline=yes /usr/lib/systemd/system/phantom-mirage.service | tail -n 1 || true
           test ! -e /etc/systemd/system/multi-user.target.wants/phantom-mirage.service
+          for u in phantom-mirage-console phantom-mirage-firewall; do
+            systemd-analyze verify /usr/lib/systemd/system/$u.service
+            test ! -e /etc/systemd/system/multi-user.target.wants/$u.service
+          done
           # #110: installed, not enabled, no start links; update-rc.d accepts
           # the init script's LSB runlevels and enable works
           if systemctl is-enabled phantom-mirage; then echo 'enabled after install' >&2; exit 1; fi
@@ -747,6 +763,20 @@ jobs:
           sudo systemctl stop phantom-mirage
           ! sudo journalctl -u phantom-mirage --since "$since" --no-pager | grep -E 'denied syscall|killed by SIGSYS|read-only root:|not running it'
           ! sudo journalctl -k --since "$since" --no-pager | grep -E 'apparmor="(DENIED|ALLOWED)"'
+
+      - name: Web console under systemd (#118)
+        run: |
+          printf '%s\n' ci-sensor admin 8443 browser UTC 30 'Ci-console-pass-1' 'Ci-console-pass-1' > ans.txt
+          sudo PM_TEST_STDIN=1 /usr/bin/python3 -I /usr/lib/phantom-mirage/console/pm-console-setup.py first-run < ans.txt
+          sudo systemctl start phantom-mirage-firewall phantom-mirage-console
+          sleep 2
+          systemctl is-active phantom-mirage-console
+          sudo nft list table inet phantom_mirage
+          curl -sfk https://127.0.0.1:8443/api/health
+          printf '%s\n' 'Ci-console-pass-1' | python3 src/phantom-mirage/ci/console_login.py 8443 admin
+          systemd-analyze security phantom-mirage-console.service | tail -n 1 || true
+          sudo systemctl stop phantom-mirage-console phantom-mirage-firewall
+          ! sudo nft list table inet phantom_mirage 2>/dev/null
 
       - name: Syscall audit of the launcher allowlist
         run: |

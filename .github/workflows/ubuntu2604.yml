@@ -157,6 +157,9 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: ci
       - uses: actions/download-artifact@v4
         with:
           name: phantom-mirage-run-ubuntu26.04-${{ matrix.arch }}
@@ -201,7 +204,11 @@ jobs:
           set -o pipefail
           run=$(ls run/*.run)
           (cd run && sha256sum -c SHA256SUMS)
-          sudo sh "$run" -i veth-h -n 10.77.0.248/29 2>&1 | tee new1.txt
+          # console answers (#118): name, user, port, time source, tz,
+          # retention, password twice; test-only stdin, never an option
+          printf '%s\n' e2e-sensor admin 8443 browser UTC 30 'E2e-console-pass-1' 'E2e-console-pass-1' > ans.txt
+          sudo PM_TEST_STDIN=1 sh "$run" -i veth-h -n 10.77.0.248/29 < ans.txt 2>&1 | tee new1.txt
+          grep -q 'SHA-256 fingerprint' new1.txt
           grep -E "install.sh: old version removed cleanly: .*phantom-mirage=$(echo '${{ matrix.from }}' | sed 's/\./\\./g')" new1.txt
           { echo '### e2e install over ${{ matrix.from }}'; echo '```'; grep -E 'removed cleanly|previous install|farpd|enable' new1.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
@@ -218,17 +225,36 @@ jobs:
           sudo ip netns exec client ip neigh show | tee -a ping.txt
           { echo '### ping 10.77.0.248'; echo '```'; cat ping.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Console on 127.0.0.1 only; login works (#118)
+        run: |
+          for s in phantom-mirage-console phantom-mirage-firewall; do
+            systemctl is-active --quiet $s; systemctl is-enabled --quiet $s
+          done
+          sudo nft list table inet phantom_mirage | tee nft.txt
+          grep -q 'tcp dport 8443 drop' nft.txt
+          grep -Eq '10.77.0.248/29 tcp dport (\{ )?22( \})? drop' nft.txt
+          curl -sfk --max-time 5 https://127.0.0.1:8443/api/health
+          # not on the LAN address nor a decoy address, from the client netns
+          ! sudo ip netns exec client curl -sk --max-time 5 https://10.77.0.1:8443/api/health
+          ! sudo ip netns exec client curl -sk --max-time 5 https://10.77.0.248:8443/api/health
+          printf '%s\n' 'E2e-console-pass-1' | python3 ci/console_login.py 8443 admin
+          printf '%s\n' 'wrong-password-xx' | python3 ci/console_login.py 8443 admin --expect-fail
+
       - name: Re-run the .run over the new install
         run: |
           set -o pipefail
-          sudo sh run/*.run -i veth-h -n 10.77.0.248/29 2>&1 | tee new2.txt
-          grep -E 'install.sh: old version removed cleanly: .*phantom-mirage=1\.7\.0-4' new2.txt
+          sudo sh run/*.run -i veth-h -n 10.77.0.248/29 < /dev/null 2>&1 | tee new2.txt
+          grep -E 'install.sh: old version removed cleanly: .*phantom-mirage=1\.7\.0-5' new2.txt
+          grep -q 'kept the web console admin account' new2.txt
           sleep 3
           for s in phantom-mirage farpd; do
             systemctl is-active --quiet $s
             systemctl is-enabled --quiet $s
           done
           sudo ip netns exec client ping -c3 -W3 10.77.0.248
+          # upgrade kept the admin account (same password still works)
+          systemctl is-active --quiet phantom-mirage-console
+          printf '%s\n' 'E2e-console-pass-1' | python3 ci/console_login.py 8443 admin
 
       - name: phantom-mirage-uninstall --yes
         run: |
@@ -237,12 +263,16 @@ jobs:
             st=$(dpkg-query -W -f='${db:Status-Abbrev}' $p 2>/dev/null || true)
             case $st in ''|un*|pn*) ;; *) echo "$p still installed: $st" >&2; exit 1 ;; esac
           done
-          for d in /etc/phantom-mirage /etc/default/phantom-mirage /etc/init.d/phantom-mirage /var/lib/phantom-mirage /var/log/phantom-mirage /etc/systemd/system/multi-user.target.wants/phantom-mirage.service; do
+          for d in /etc/phantom-mirage /etc/default/phantom-mirage /etc/init.d/phantom-mirage /var/lib/phantom-mirage /var/log/phantom-mirage /etc/systemd/system/multi-user.target.wants/phantom-mirage.service /etc/systemd/system/multi-user.target.wants/phantom-mirage-console.service /etc/systemd/system/multi-user.target.wants/phantom-mirage-firewall.service /var/backups/phantom-mirage.keep; do
             if [ -e "$d" ] || [ -L "$d" ]; then echo "left behind: $d" >&2; exit 1; fi
           done
           if systemctl cat phantom-mirage.service >/dev/null 2>&1; then echo 'unit still present' >&2; exit 1; fi
+          if systemctl cat phantom-mirage-console.service >/dev/null 2>&1; then echo 'console unit still present' >&2; exit 1; fi
+          if sudo nft list table inet phantom_mirage >/dev/null 2>&1; then echo 'nft table left' >&2; exit 1; fi
+          if getent passwd phantom-mirage-console; then echo 'console user left' >&2; exit 1; fi
+          ! curl -sk --max-time 3 https://127.0.0.1:8443/api/health
 
       - name: Journal
         if: always()
         run: |
-          sudo journalctl -u phantom-mirage -u farpd --no-pager | tail -n 100
+          sudo journalctl -u phantom-mirage -u farpd -u phantom-mirage-console -u phantom-mirage-firewall --no-pager | tail -n 100
