@@ -1,0 +1,53 @@
+#!/bin/sh
+# pm-firewall: nftables rules for the Phantom Mirage I console (#118).
+#
+#   pm-firewall apply|remove|show|print
+#
+# One table, "inet phantom_mirage": the console port is dropped on every
+# interface except loopback, and SSH is dropped on the decoy addresses
+# (NETWORK in /etc/default/phantom-mirage). Decoys are served from pcap,
+# so this does not stop the decoys answering. Run by
+# phantom-mirage-firewall.service; "print" writes the ruleset to stdout.
+# Tests: PM_CONSOLE_STATE, PM_DEFAULT, PM_NFT.
+set -eu
+STATE=${PM_CONSOLE_STATE:-/var/lib/phantom-mirage/console}
+DEFAULT=${PM_DEFAULT:-/etc/default/phantom-mirage}
+NFT=${PM_NFT:-nft}
+TABLE=phantom_mirage
+
+port=8443
+if [ -r "$STATE/console.json" ]; then
+	p=$(sed -n 's/.*"port":[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$STATE/console.json" | head -n 1)
+	[ -n "$p" ] && port=$p
+fi
+ssh_ports=22
+net=
+if [ -r "$DEFAULT" ]; then
+	net=$(sed -n "s/^[[:space:]]*NETWORK=[\"']\{0,1\}\([0-9./ ]*\).*/\1/p" "$DEFAULT" | tail -n 1)
+fi
+
+ruleset() {
+	echo "table inet $TABLE"
+	echo "delete table inet $TABLE"
+	echo "table inet $TABLE {"
+	echo "	chain input {"
+	echo "		type filter hook input priority filter - 10; policy accept;"
+	echo "		iif \"lo\" accept"
+	echo "		tcp dport $port drop"
+	for n in $net; do
+		case $n in
+			*[!0-9./]*|'') continue ;;
+		esac
+		echo "		ip daddr $n tcp dport { $ssh_ports } drop"
+	done
+	echo "	}"
+	echo "}"
+}
+
+case ${1:-} in
+	apply) ruleset | $NFT -f - ;;
+	remove) $NFT delete table inet $TABLE 2>/dev/null || true ;;
+	show) $NFT list table inet $TABLE ;;
+	print) ruleset ;;
+	*) echo "usage: $0 apply|remove|show|print" >&2; exit 2 ;;
+esac

@@ -1,0 +1,49 @@
+[Unit]
+Description=Phantom Mirage I web console (HTTPS on 127.0.0.1 only)
+Documentation=file:///usr/share/doc/phantom-mirage/README.md
+After=network.target phantom-mirage-firewall.service
+Requires=phantom-mirage-firewall.service
+
+[Service]
+Type=simple
+User=phantom-mirage-console
+Group=phantom-mirage-console
+# Python 3 standard library only, isolated from user site-packages/env.
+ExecStart=/usr/bin/python3 -I /usr/lib/phantom-mirage/console/pm-console.py
+Restart=on-failure
+RestartSec=3
+# 78 = not set up yet (run phantom-mirage-setup)
+RestartPreventExitStatus=78
+
+# The daemon binds 127.0.0.1 only (not configurable); in addition the
+# kernel refuses any traffic of this unit to or from non-loopback
+# addresses, so it can never make an outbound connection.
+IPAddressAllow=localhost
+IPAddressDeny=any
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# CAP_SYS_TIME only: "set the sensor clock from the admin browser at
+# sign-in" (time_source=browser); unused with time_source=ntp.
+CapabilityBoundingSet=CAP_SYS_TIME
+AmbientCapabilities=CAP_SYS_TIME
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/phantom-mirage/console
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @clock
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

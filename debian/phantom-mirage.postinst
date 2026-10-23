@@ -81,6 +81,34 @@ case "$1" in
 		chmod 0755 /var/lib/phantom-mirage/graphs
 	fi
 
+	# web console (#118): its own unprivileged account, so the
+	# attacker-facing daemon can never touch the admin account; it reads
+	# the logs through the group (setgid dir, new files inherit it)
+	CONUSER=phantom-mirage-console
+	if ! getent group "$CONUSER" >/dev/null; then
+		addgroup --quiet --system "$CONUSER"
+	fi
+	if ! getent passwd "$CONUSER" >/dev/null; then
+		adduser --quiet --system --home /var/lib/phantom-mirage/console \
+			--gecos "Phantom Mirage console" --disabled-login \
+			--disabled-password --no-create-home --ingroup "$CONUSER" \
+			--shell /usr/sbin/nologin "$CONUSER"
+	fi
+	if [ -d $HONEYHOME ]; then
+		chgrp -R "$CONUSER" $HONEYHOME
+		chmod 2750 $HONEYHOME
+	fi
+	# console state (admin account, certificate, alerts) survives upgrades
+	# and purge; only phantom-mirage-uninstall removes it
+	mkdir -p /var/lib/phantom-mirage/console
+	chown -R "$CONUSER:$CONUSER" /var/lib/phantom-mirage/console
+	chown root:"$CONUSER" /var/lib/phantom-mirage/console
+	chmod 0770 /var/lib/phantom-mirage/console
+	if [ -d /run/systemd/system ]; then
+		systemctl daemon-reload >/dev/null 2>&1 || true
+		systemctl try-restart phantom-mirage-firewall.service phantom-mirage-console.service >/dev/null 2>&1 || true
+	fi
+
     ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)

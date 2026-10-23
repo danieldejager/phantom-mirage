@@ -57,6 +57,14 @@ override_dh_auto_install:
 	install -D -m 0644 debian/apparmor/phantom-mirage-script.abstraction \
 	  $(D)/etc/apparmor.d/abstractions/phantom-mirage-script
 	dh_apparmor -pphantom-mirage --profile-name=usr.lib.phantom-mirage.pm-script-ns
+	# web console (#118): Python 3 standard library only, vendored UI, no CDN
+	install -d $(D)/usr/lib/phantom-mirage/console/static
+	install -m 0644 console/pmauth.py console/pmstore.py $(D)/usr/lib/phantom-mirage/console/
+	install -m 0755 console/pm-console.py console/pm-console-setup.py $(D)/usr/lib/phantom-mirage/console/
+	install -m 0644 console/static/index.html console/static/console.css console/static/console.js \
+	  docs/assets/phantom-mirage-logo-light.png docs/assets/phantom-mirage-mark.png \
+	  docs/assets/phantom-mirage-mark.svg $(D)/usr/lib/phantom-mirage/console/static/
+	install -D -m 0755 console/pm-firewall $(D)/usr/lib/phantom-mirage/pm-firewall
 
 override_dh_installdocs:
 	dh_installdocs -pphantom-mirage
@@ -78,3 +86,6 @@ override_dh_auto_test:
 
 override_dh_installsystemd:
 	dh_installsystemd -pphantom-mirage --no-enable --no-start --no-stop-on-upgrade
+	# console + its firewall (#118): enabled by phantom-mirage-setup
+	dh_installsystemd -pphantom-mirage --name=phantom-mirage-firewall --no-enable --no-start --no-stop-on-upgrade
+	dh_installsystemd -pphantom-mirage --name=phantom-mirage-console --no-enable --no-start --no-stop-on-upgrade

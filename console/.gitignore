@@ -1,0 +1,3 @@
+/static/*.png
+/static/*.svg
+__pycache__/

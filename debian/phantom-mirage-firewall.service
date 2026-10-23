@@ -1,0 +1,19 @@
+[Unit]
+Description=Phantom Mirage I console firewall (nftables, loopback-only console)
+Documentation=file:///usr/share/doc/phantom-mirage/README.md
+DefaultDependencies=no
+Before=network-pre.target phantom-mirage-console.service
+Wants=network-pre.target
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Drops the console port on every interface but lo, and SSH on the decoy
+# addresses. Re-run (systemctl restart) after changing NETWORK or the port.
+ExecStart=/usr/lib/phantom-mirage/pm-firewall apply
+ExecReload=/usr/lib/phantom-mirage/pm-firewall apply
+ExecStop=/usr/lib/phantom-mirage/pm-firewall remove
+
+[Install]
+WantedBy=multi-user.target

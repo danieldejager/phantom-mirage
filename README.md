@@ -29,6 +29,40 @@ Any type of service on the virtual machine can be simulated according
 to a simple configuration file.  Instead of simulating a service, it
 is also possible to proxy it to another machine.
 
+Web console:
+-------------
+
+The Debian packages ship a web console (`phantom-mirage-console`, #118)
+that shows sensor status, decoys, alerts and live activity. It listens
+on **127.0.0.1:8443 only** over HTTPS with a self-signed certificate, and
+an nftables table (`inet phantom_mirage`) drops the console port on every
+interface except `lo` and drops SSH to the decoy addresses. The sensor
+makes no outbound connections for it; alerts are shown in the console only.
+
+`sudo phantom-mirage-setup` asks for the sensor name, admin user, port,
+time source (local NTP or browser time, with drift warnings), time zone
+and alert retention, then for the admin password at a hidden prompt (never
+as an option). It prints the certificate's SHA-256 fingerprint: compare
+it with what your browser shows on first visit.
+
+To open it from your PC, tunnel the port over SSH:
+
+```sh
+ssh -L 8443:127.0.0.1:8443 user@sensor
+```
+
+and browse to <https://localhost:8443>. Other commands:
+
+```sh
+sudo phantom-mirage-setup --console              # (re)run only the console step
+sudo phantom-mirage-setup --reconfigure-console  # change console settings
+sudo phantom-mirage-setup --reset-admin          # new admin password (terminal only)
+```
+
+Upgrades (package or `install.sh`) keep the console config, admin
+account, certificate and alerts; only `phantom-mirage-uninstall` removes
+them (it asks first; `--yes` skips the question).
+
 Installation:
 -------------
 

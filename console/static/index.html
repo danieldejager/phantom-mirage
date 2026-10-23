@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" type="image/svg+xml" href="/static/phantom-mirage-mark.svg">
+<link rel="stylesheet" href="/static/console.css">
+<title>Phantom Mirage I console</title>
+</head>
+<body>
+<div id="login"><div class="card">
+ <div class="logo"><img src="/static/phantom-mirage-logo-light.png" alt="Phantom Mirage I logo"></div>
+ <form id="lf" autocomplete="on">
+  <p class="note">Sensor console sign-in<span id="lsensor"></span></p>
+  <label class="note" for="lu">Username</label>
+  <input id="lu" name="username" autocomplete="username" required class="u-mb8">
+  <label class="note" for="lp">Password</label>
+  <input id="lp" name="password" type="password" autocomplete="current-password" required class="u-mb12">
+  <div class="err" id="lerr" role="alert"></div>
+  <button class="u-w100 pri" type="submit">Sign in</button>
+ </form>
+ <p class="note">Forgot the password or locked out? On the sensor run <code>sudo phantom-mirage-setup --reset-admin</code>.</p>
+</div></div>
+<header><span class="brand"><span class="chip"><img src="/static/phantom-mirage-mark.png" width="26" height="26" alt=""></span><span class="wm">PHANTOM <span>MIRAGE I</span></span></span><span class="u-mla note" id="hsensor"></span><button id="logout" data-act="logout">Sign out</button></header>
+<div id="drift" class="drift hide" role="status"></div>
+<div class="wrap"><nav id="dock" aria-label="Sidebar menu"><div class="nbrand brand"><span class="chip"><img src="/static/phantom-mirage-mark.png" width="22" height="22" alt=""></span><span class="u-fs13 wm">MIRAGE I</span></div><div class="dockbar"><span class="dh" id="dh" tabindex="0" role="button" aria-label="Drag handle: drag to move menu, double-click or Enter to dock" title="Drag to move; double-click to dock">&#10303;</span><button class="dbtn dret" id="dret" aria-label="Dock menu back">Dock</button><button class="dbtn" id="dbtn" aria-haspopup="menu" aria-expanded="false" aria-controls="dmenu" aria-label="Menu position options" title="Menu position">&#128204;</button><div class="dmenu hide" id="dmenu" role="menu" aria-label="Menu position"><button role="menuitemradio" aria-checked="false" data-dock="left">Dock left</button><button role="menuitemradio" aria-checked="false" data-dock="right">Dock right</button><button role="menuitemradio" aria-checked="false" data-dock="top">Dock top</button><button role="menuitemradio" aria-checked="false" data-dock="col">Collapse</button><button role="menuitemradio" aria-checked="false" data-dock="float">Float</button></div></div><div id="nav" role="navigation" aria-label="Main"></div></nav><main id="main"></main></div>
+<div class="dz" id="dzl"></div><div class="dz" id="dzr"></div><div class="dz" id="dzt"></div><div class="modal" id="modal"><div id="mbox"></div></div>
+<script src="/static/console.js"></script>
+</body>
+</html>
