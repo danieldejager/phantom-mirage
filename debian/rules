@@ -26,17 +26,11 @@ override_dh_auto_install:
 	  mv $(D)/usr/share/phantom-mirage/$$f $(D)/etc/phantom-mirage/$$f; \
 	  ln -s /etc/phantom-mirage/$$f $(D)/usr/share/phantom-mirage/$$f; \
 	done
-	mv $(D)/usr/share/phantom-mirage/config.sample $(D)/etc/phantom-mirage/phantom-mirage.conf
-	# Debian only (#110): unbound decoys (default template) answer ICMP echo
-	# so "ping <decoy>" works after phantom-mirage-setup; TCP/UDP stay filtered
-	sed -i 's/^set default default icmp action filtered$$/set default default icmp action open/' \
+	# Debian only (#110, #123): default template answers ping and has open
+	# TCP ports (the sample's only bind is commented out); see debian/mkconf.sh
+	sh debian/mkconf.sh $(D)/usr/share/phantom-mirage/config.sample \
 	  $(D)/etc/phantom-mirage/phantom-mirage.conf
-	grep -q '^set default default icmp action open$$' $(D)/etc/phantom-mirage/phantom-mirage.conf
-	# Debian only (#110): the sample's "bind 192.168.3.137 windows" has an
-	# ethernet address, so the config is refused on any host whose
-	# INTERFACE cannot reach 192.168.3.137 and the service never starts
-	sed -i 's/^bind 192\.168\.3\.137 windows/# &/' $(D)/etc/phantom-mirage/phantom-mirage.conf
-	! grep -q '^bind 192\.168\.3\.137' $(D)/etc/phantom-mirage/phantom-mirage.conf
+	rm -f $(D)/usr/share/phantom-mirage/config.sample
 	rm -f $(D)/usr/share/phantom-mirage/README.md
 	# graphs and honeyd_traffic.rrd go to a dedicated writable dir (#16)
 	mkdir -p $(D)/var/lib/phantom-mirage/graphs
