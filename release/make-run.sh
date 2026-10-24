@@ -62,7 +62,7 @@ main() {
 	(cd "$tmp" && sha256sum -c --quiet SHA256SUMS) || die "inner SHA256SUMS mismatch"
 	echo "phantom-mirage $PM_VER ($PM_DISTRO/$PM_ARCH): payload verified, running install.sh"
 	rc=0
-	(cd "$tmp" && sh install.sh "$@") || rc=$?
+	(cd "$tmp" && PM_FROM_RUN=1 sh install.sh "$@") || rc=$?
 	return $rc
 }
 main "$@"

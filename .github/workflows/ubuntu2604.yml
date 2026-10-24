@@ -106,6 +106,29 @@ jobs:
           sh src/phantom-mirage/release/make-run.sh out ubuntu26.04 ${{ matrix.arch }} run
           (cd run && sha256sum *.run | tee SHA256SUMS)
 
+      # Optional SHA256SUMS signature (#121, docs/release-signing.md):
+      # only when the SHA256SUMS_COSIGN_KEY secret exists; otherwise skip.
+      - name: Sign SHA256SUMS (only if a signing secret exists)
+        env:
+          SHA256SUMS_COSIGN_KEY: ${{ secrets.SHA256SUMS_COSIGN_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.SHA256SUMS_COSIGN_PASSWORD }}
+        run: |
+          if [ -z "$SHA256SUMS_COSIGN_KEY" ]; then
+            echo "::notice title=SHA256SUMS unsigned::secret SHA256SUMS_COSIGN_KEY is not set; skipping the signature"
+            exit 0
+          fi
+          curl -fsSL -o /tmp/cosign "https://github.com/sigstore/cosign/releases/download/v2.6.5/cosign-linux-${{ matrix.arch }}"
+          sudo install -m 0755 /tmp/cosign /usr/local/bin/cosign
+          cd run
+          cosign sign-blob --yes --key env://SHA256SUMS_COSIGN_KEY --tlog-upload=false \
+            --output-signature SHA256SUMS.sig SHA256SUMS
+          cosign public-key --key env://SHA256SUMS_COSIGN_KEY > /tmp/SHA256SUMS.pub
+          cosign verify-blob --key /tmp/SHA256SUMS.pub --signature SHA256SUMS.sig \
+            --insecure-ignore-tlog=true SHA256SUMS
+          if [ -f ../src/phantom-mirage/release/SHA256SUMS.pub ] && ! cmp -s /tmp/SHA256SUMS.pub ../src/phantom-mirage/release/SHA256SUMS.pub; then
+            echo "::error::the signing secret does not match release/SHA256SUMS.pub"; exit 1
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: phantom-mirage-run-ubuntu26.04-${{ matrix.arch }}

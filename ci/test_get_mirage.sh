@@ -17,6 +17,8 @@ cat > "$t/bin/gh" <<'G'
 echo "gh $*" >> "$MOCK/gh.log"
 case "$1 $2" in
 "auth status") [ -e "$MOCK/authok" ] ;;
+"api -H") [ "$4" = repos/danieldejager/phantom-mirage/contents/release/SHA256SUMS.pub ] || exit 9
+	[ -e "$MOCK/pub" ] || { echo '{"message":"Not Found"}'; exit 1; }; cat "$MOCK/pub" ;;
 "api repos/danieldejager/phantom-mirage/releases")
 	[ "$3" = --jq ] || exit 9; jq -r "$4" "$MOCK/releases.json" ;;
 "api repos/danieldejager/phantom-mirage/releases/tags/"*)
@@ -27,6 +29,14 @@ case "$1 $2" in
 *) echo "unexpected gh $*" >&2; exit 9 ;;
 esac
 G
+# cosign mock: the signature "verifies" when it reads "good <sha256 of SHA256SUMS>"
+cat > "$t/bin/cosign" <<'C'
+#!/bin/sh
+echo "cosign $*" >> "$MOCK/cosign.log"
+[ "$1 $2 $4" = "verify-blob --key --signature" ] || exit 9
+sig=$5; blob=$7
+[ "$(cat "$sig")" = "good $(sha256sum < "$blob" | cut -d' ' -f1)" ]
+C
 chmod +x "$t/bin/"*
 mkrel() {	# mkrel TAG [corrupt]
 	d=$t/rel/$1; mkdir -p "$d"
@@ -78,4 +88,34 @@ gm --tag v1.7.0-7
 # 6. piped through sh works too
 rm -f "$t/sudo.log"; rc=0; sh < "$src/release/get-mirage.sh" > "$t/o" 2>&1 || rc=$?
 [ $rc = 0 ] && grep -q '1.7.0-4_ubuntu26.04_arm64.run$' "$t/sudo.log" || fail "| sh"
+grep -q 'warning: SHA256SUMS is unsigned' "$t/o" || fail "no unsigned warning"
+
+# 7. --stable skips prereleases; --prerelease is the default
+mkrel v1.7.0
+gm --stable -i eth0
+[ $rc = 0 ] && grep -q 'phantom-mirage_1.7.0_ubuntu26.04_arm64.run -i eth0$' "$t/sudo.log" || fail "--stable"
+gm --prerelease
+[ $rc = 0 ] && grep -q '1.7.0-4_ubuntu26.04_arm64.run$' "$t/sudo.log" || fail "--prerelease"
+echo '[{"tag_name":"v2.0.0-1","draft":false,"prerelease":true,"published_at":"2026-10-22T05:59:53Z"}]' > "$t/rel.json"
+cp "$t/releases.json" "$t/releases.bak"; cp "$t/rel.json" "$t/releases.json"
+gm --stable
+[ $rc != 0 ] && grep -q 'no published stable release found' "$t/o" || fail "--stable without stable release"
+cp "$t/releases.bak" "$t/releases.json"
+
+# 8. signing key published: good signature installs, bad/missing refuses
+echo "fake public key" > "$t/pub"
+gm --tag v1.7.0-3
+[ $rc != 0 ] && grep -q 'has no SHA256SUMS.sig but a signing key is published' "$t/o" || fail "unsigned release accepted with a key"
+[ ! -e "$t/sudo.log" ] || fail "sudo called for an unsigned release"
+echo "good $(sha256sum < "$t/rel/v1.7.0-3/SHA256SUMS" | cut -d' ' -f1)" > "$t/rel/v1.7.0-3/SHA256SUMS.sig"
+gm --tag v1.7.0-3
+[ $rc = 0 ] && grep -q 'SHA256SUMS signature OK' "$t/o" && grep -q '1.7.0-3_ubuntu26.04_arm64.run$' "$t/sudo.log" || fail "good signature"
+! grep -q 'unsigned' "$t/o" || fail "unsigned warning with a good signature"
+echo "good 0000" > "$t/rel/v1.7.0-3/SHA256SUMS.sig"
+gm --tag v1.7.0-3
+[ $rc != 0 ] && grep -q 'signature does not verify' "$t/o" || fail "bad signature accepted"
+[ ! -e "$t/sudo.log" ] || fail "sudo called after a bad signature"
+rm "$t/pub"; echo "good $(sha256sum < "$t/rel/v1.7.0-3/SHA256SUMS" | cut -d' ' -f1)" > "$t/rel/v1.7.0-3/SHA256SUMS.sig"
+echo k > "$t/local.pub"; PM_SIGNING_PUBKEY=$t/local.pub gm --tag v1.7.0-3
+[ $rc = 0 ] && grep -q 'SHA256SUMS signature OK' "$t/o" || fail "PM_SIGNING_PUBKEY"
 echo "test_get_mirage: all passed"
