@@ -77,5 +77,10 @@ sudo apt-get install -y --allow-downgrades /var/backups/phantom-mirage.keep/debs
 sudo tar -C / -xpf /var/backups/phantom-mirage.keep/state.tar
 ```
 
+install.sh installs dpkg-repack with apt-get first if it is missing (the
+package also Recommends it). Without a mirror it warns and the rollback
+restores config and data only; reinstall the old version with
+`get-mirage.sh --tag`.
+
 After a successful install the backup is removed. `ci/test_install_rollback.sh`
 forces failed installs with mocked dpkg/apt-get and checks the rollback.

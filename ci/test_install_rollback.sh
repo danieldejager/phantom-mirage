@@ -28,7 +28,7 @@ case $1 in
 --purge) shift; for p in "$@"; do case $p in -*) ;; *) rm -f "$MOCK/db/$p" ;; esac; done ;;
 esac
 M
-cat > "$t/bin/dpkg-repack" <<'M'
+mkdir -p "$t/opt"; cat > "$t/opt/dpkg-repack" <<'M'
 #!/bin/sh
 echo "$1 $(cat "$MOCK/db/$1")" > "${1}_$(cat "$MOCK/db/$1")_arm64.deb"
 M
@@ -36,7 +36,9 @@ M
 cat > "$t/bin/apt-get" <<'M'
 #!/bin/sh
 echo "apt-get $*" >> "$MOCK/apt.log"
+[ "$1" = download ] && exit 100
 [ "$1" = install ] || exit 0
+case " $* " in *" dpkg-repack "*) [ -e "$MOCK/nomirror" ] && exit 100; cp "$MOCK/opt/dpkg-repack" "$MOCK/bin/"; exit 0 ;; esac
 for a in "$@"; do case $a in *.deb)
 	case $a in ./*) [ -e "$MOCK/failnew" ] && { echo "E: dpkg error" >&2; exit 100; } ;; esac
 	set -- $(cat "$a"); echo "$2" > "$MOCK/db/$1"
@@ -45,10 +47,10 @@ esac; done
 M
 printf '#!/bin/sh\necho 0\n' > "$t/bin/id"
 printf '#!/bin/sh\nexit 0\n' > "$t/bin/chown"
-chmod +x "$t/bin/"*
+chmod +x "$t/bin/"* "$t/opt/dpkg-repack"
 
 setup_old() {	# a 1.7.0-4 install with config, console state and an event log
-	rm -rf "$R" "$t/db" "$t/apt.log" "$t/failnew"; mkdir -p "$t/db"
+	rm -rf "$R" "$t/db" "$t/apt.log" "$t/failnew" "$t/nomirror" "$t/bin/dpkg-repack"; mkdir -p "$t/db"
 	echo 1.7.0-4 > "$t/db/phantom-mirage"; echo 1.7.0-4 > "$t/db/phantom-mirage-common"; echo 1.0 > "$t/db/farpd"
 	mkdir -p "$R/etc/default" "$R/etc/phantom-mirage" "$R/var/lib/phantom-mirage/console" "$R/var/log/phantom-mirage" "$R/usr/sbin"
 	printf 'ID=ubuntu\nVERSION_ID=26.04\nPRETTY_NAME=test\n' > "$R/etc/os-release"
@@ -82,6 +84,7 @@ rc=0; sh "$t/pkg/install.sh" -n 10.0.0.0/29 > "$t/o" 2>&1 || rc=$?
 [ "$(cat "$R/var/log/phantom-mirage/events.jsonl")" = '{"e":1}' ] || fail "event log not restored"
 grep -q 'rolled back to the previous install (phantom-mirage=1.7.0-4' "$t/o" || fail "no rollback message"
 grep -q "backup kept in $R/var/backups/phantom-mirage.keep" "$t/o" || fail "backup location not printed"
+grep -q 'apt-get install -y dpkg-repack' "$t/apt.log" || fail "dpkg-repack not auto-installed"
 grep -q 'tar -C .*/ -xpf .*state.tar' "$t/o" && grep -q 'apt-get install -y .*debs/\*.deb' "$t/o" || fail "manual restore steps not printed"
 [ -e "$R/var/backups/phantom-mirage.keep/state.tar" ] || fail "backup removed after failure"
 [ ! -e "$t/setup.log" ] || fail "setup ran after a failed install"
@@ -116,4 +119,12 @@ rm -rf "$R/etc/default/phantom-mirage" "$R/etc/phantom-mirage" "$R/var/lib/phant
 touch "$t/failnew"
 rc=0; sh "$t/pkg/install.sh" > "$t/o" 2>&1 || rc=$?
 [ $rc = 100 ] && grep -q 'no previous install to restore' "$t/o" || fail "fresh failure (rc=$rc)"
+# 5. dpkg-repack cannot be installed (no mirror): warn, roll back config and data only
+setup_old; touch "$t/failnew" "$t/nomirror"
+rc=0; sh "$t/pkg/install.sh" > "$t/o" 2>&1 || rc=$?
+[ $rc = 100 ] || fail "no-mirror rc=$rc"
+grep -q 'warning: could not install dpkg-repack' "$t/o" || fail "no dpkg-repack warning"
+grep -q 'could not save the .debs of: phantom-mirage=1.7.0-4' "$t/o" && grep -q 'rollback incomplete' "$t/o" || fail "no config-only notice"
+[ "$(cat "$R/etc/phantom-mirage/phantom-mirage.conf")" = 'old conf' ] && [ "$(cat "$R/var/lib/phantom-mirage/console/users")" = 'admin:hash' ] || fail "config/data not restored without dpkg-repack"
+grep -q 'get-mirage.sh --tag' "$t/o" || fail "no reinstall hint"
 echo "test_install_rollback: all passed"

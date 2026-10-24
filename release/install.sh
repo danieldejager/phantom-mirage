@@ -72,6 +72,12 @@ chmod 0700 "$KEEP"
 rm -rf "$KEEP/debs" "$KEEP/state.tar"
 mkdir -p "$KEEP/debs"
 debs_missing=
+if [ -n "$old" ] && ! command -v dpkg-repack >/dev/null 2>&1; then
+	say "installing dpkg-repack (rebuilds the installed .debs for rollback)"
+	DEBIAN_FRONTEND=noninteractive apt-get install -y dpkg-repack </dev/null >/dev/null 2>&1 || {
+		apt-get update </dev/null >/dev/null 2>&1 && DEBIAN_FRONTEND=noninteractive apt-get install -y dpkg-repack </dev/null >/dev/null 2>&1
+	} || say "warning: could not install dpkg-repack (no mirror?); trying the apt cache instead"
+fi
 for pv in $old; do
 	p=${pv%%=*} v=${pv#*=} vf=$(echo "${pv#*=}" | sed 's/:/%3a/')
 	if command -v dpkg-repack >/dev/null 2>&1 && (cd "$KEEP/debs" && dpkg-repack "$p" >/dev/null 2>&1); then :
