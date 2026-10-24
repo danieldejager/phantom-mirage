@@ -16,39 +16,41 @@ that file, `SHA256SUMS.sig`, proves who made the release:
   `SHA256SUMS.pub` and `SHA256SUMS.sig` sit next to it. Inside a `.run` it
   relies on get-mirage.sh having verified the signed outer `SHA256SUMS`.
 
-Signatures are made with a private key, with no transparency log
-(`--tlog-upload=false`), and verified with `--insecure-ignore-tlog=true`,
-the same as the container images (docs/docker.md).
+Signing is done **offline only**: the private key never leaves the repo
+owner's trusted machine, and no workflow or Actions secret holds it, so
+being able to run workflows here is not enough to sign a release.
+Signatures use no transparency log (`--tlog-upload=false`) and are
+verified with `--insecure-ignore-tlog=true`.
 
 ### Adding the key (one-off, by the repo owner)
 
-Do this on a trusted machine. Never commit the private key.
+On your own trusted machine (never in CI, never committed):
 
 ```sh
 cosign generate-key-pair            # asks for a password; writes cosign.key + cosign.pub
-gh secret set SHA256SUMS_COSIGN_KEY      -R danieldejager/phantom-mirage < cosign.key
-gh secret set SHA256SUMS_COSIGN_PASSWORD -R danieldejager/phantom-mirage   # paste the password
-cp cosign.pub release/SHA256SUMS.pub     # commit this public key in a PR
-# keep cosign.key offline (password manager / encrypted backup), then shred the working copy
+cp cosign.pub release/SHA256SUMS.pub     # commit only the public key, in a PR
+# keep cosign.key offline (encrypted backup / password manager)
 ```
 
-Order matters: set the secrets and publish one signed release **before**
-merging `release/SHA256SUMS.pub`, because once the public key is on the
-default branch get-mirage.sh refuses releases without a signature.
+### Signing each release
 
-### Release workflow
-
-The ubuntu-26.04 workflow signs `run/SHA256SUMS` into `run/SHA256SUMS.sig`
-only when the `SHA256SUMS_COSIGN_KEY` secret exists, and otherwise skips
-with a notice. It fails if the secret does not match a committed
-`release/SHA256SUMS.pub`. If you combine several SHA256SUMS into one
-release file by hand, sign the final file locally and upload the signature
-with it:
+Download the release's final `SHA256SUMS` (after all .run/.deb assets are
+uploaded), check it, sign it locally and upload the signature:
 
 ```sh
+gh release download TAG -R danieldejager/phantom-mirage -p SHA256SUMS
 cosign sign-blob --key cosign.key --tlog-upload=false --output-signature SHA256SUMS.sig SHA256SUMS
-gh release upload TAG SHA256SUMS SHA256SUMS.sig --clobber -R danieldejager/phantom-mirage
+cosign verify-blob --key release/SHA256SUMS.pub --signature SHA256SUMS.sig --insecure-ignore-tlog=true SHA256SUMS
+gh release upload TAG SHA256SUMS.sig -R danieldejager/phantom-mirage
 ```
+
+Order matters: sign at least the newest release (and any you still want
+installable with `--tag`) **before** merging `release/SHA256SUMS.pub`,
+because once the public key is on the default branch get-mirage.sh refuses
+releases without a valid signature. Re-sign if SHA256SUMS is ever replaced.
+
+Until the public key is committed and releases are signed, #121 M1 is only
+partly closed: the checksums prove integrity, not who made the release.
 
 ## Choosing the release channel
 
