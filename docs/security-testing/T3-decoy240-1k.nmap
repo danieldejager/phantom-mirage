@@ -1,0 +1,2 @@
+# Nmap 7.992 scan initiated Fri Oct 23 16:15:52 2026 as: nmap -Pn -sT -p 1-1024 -T4 --open -oA T3-decoy240-1k 192.168.1.240
+# Nmap done at Fri Oct 23 16:19:19 2026 -- 1 IP address (1 host up) scanned in 207.76 seconds

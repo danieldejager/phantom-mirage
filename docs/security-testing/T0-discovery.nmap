@@ -1,0 +1,26 @@
+# Nmap 7.992 scan initiated Fri Oct 23 16:14:57 2026 as: nmap -sn -PE -PS22,80,443 -oA T0-discovery 192.168.1.240/29
+Nmap scan report for 192.168.1.240
+Host is up (0.028s latency).
+MAC Address: 00:1C:42:E8:27:0C (Parallels)
+Nmap scan report for 192.168.1.241
+Host is up (0.028s latency).
+MAC Address: 00:1C:42:E8:27:0C (Parallels)
+Nmap scan report for 192.168.1.242
+Host is up (0.028s latency).
+MAC Address: 00:1C:42:E8:27:0C (Parallels)
+Nmap scan report for 192.168.1.243
+Host is up (0.028s latency).
+MAC Address: 00:1C:42:E8:27:0C (Parallels)
+Nmap scan report for 192.168.1.244
+Host is up (0.028s latency).
+MAC Address: 00:1C:42:E8:27:0C (Parallels)
+Nmap scan report for 192.168.1.245
+Host is up (0.028s latency).
+MAC Address: 00:1C:42:E8:27:0C (Parallels)
+Nmap scan report for 192.168.1.246
+Host is up (0.028s latency).
+MAC Address: 00:1C:42:E8:27:0C (Parallels)
+Nmap scan report for 192.168.1.247
+Host is up (0.028s latency).
+MAC Address: 00:1C:42:E8:27:0C (Parallels)
+# Nmap done at Fri Oct 23 16:14:58 2026 -- 8 IP addresses (8 hosts up) scanned in 0.63 seconds
