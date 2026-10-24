@@ -596,8 +596,13 @@ jobs:
           test -n "$want"
           phantom-mirage --version 2>&1 | tee version.txt
           grep -qx "Phantom Mirage I $want (based on Honeyd)" version.txt
-          test "$(dpkg-query -W -f='${Version}' phantom-mirage)" = "$want-5"
-          test "$(dpkg-query -W -f='${Version}' phantom-mirage-common)" = "$want-5"
+          # Debian revision comes from debian/changelog (no hard-coded -N)
+          deb=$(cd phantom-mirage && dpkg-parsechangelog -S Version 2>/dev/null) ||
+            deb=$(sed -n '1s/^[^ ]* (\([^)]*\)).*/\1/p' phantom-mirage/debian/changelog)
+          test -n "$deb"
+          case $deb in "$want"-*) ;; *) echo "changelog $deb does not match AC_INIT $want"; exit 1;; esac
+          test "$(dpkg-query -W -f='${Version}' phantom-mirage)" = "$deb"
+          test "$(dpkg-query -W -f='${Version}' phantom-mirage-common)" = "$deb"
           test "$want" = 1.7.0
           test -e /etc/phantom-mirage/phantom-mirage.conf
           # shipped defaults must be refused with a clear message (#110)

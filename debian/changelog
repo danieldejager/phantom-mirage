@@ -1,3 +1,14 @@
+phantom-mirage (1.7.0-6) unstable; urgency=medium
+
+  * Default decoy template now opens TCP ports, so decoys answer SYNs
+    (GitHub #123).
+  * install.sh rolls back to the previous package set if an install or
+    upgrade fails; SHA256SUMS can be signed offline, and get-mirage.sh warns
+    when the checksums are unsigned. get-mirage.sh gains --stable and
+    --prerelease to choose the release channel (GitHub #121).
+
+ -- Daniel de Jager <ddejager@dandejager.com>  Sat, 24 Oct 2026 12:55:00 +1100
+
 phantom-mirage (1.7.0-5) unstable; urgency=medium
 
   * Web console MVP (GitHub #118): new phantom-mirage-console service, HTTPS
