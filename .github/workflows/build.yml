@@ -8,10 +8,10 @@ name: build
 on:
   push:
     branches: [master]
-    paths-ignore: ['docs/**', '**.md']
+    paths-ignore: ['docs/**', '**.md', 'tools/fingerprint-lab/**']
   pull_request:
     types: [opened, synchronize, reopened, labeled]
-    paths-ignore: ['docs/**', '**.md']
+    paths-ignore: ['docs/**', '**.md', 'tools/fingerprint-lab/**']
   schedule:
     - cron: '30 16 * * *'   # 03:30 Australia/Melbourne (AEDT)
   workflow_dispatch:
