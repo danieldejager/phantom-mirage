@@ -603,7 +603,6 @@ jobs:
           case $deb in "$want"-*) ;; *) echo "changelog $deb does not match AC_INIT $want"; exit 1;; esac
           test "$(dpkg-query -W -f='${Version}' phantom-mirage)" = "$deb"
           test "$(dpkg-query -W -f='${Version}' phantom-mirage-common)" = "$deb"
-          test "$want" = 1.7.0
           test -e /etc/phantom-mirage/phantom-mirage.conf
           # shipped defaults must be refused with a clear message (#110)
           rc=0; /usr/lib/phantom-mirage/check-default /etc/default/phantom-mirage 2>chk.txt || rc=$?

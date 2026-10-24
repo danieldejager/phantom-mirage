@@ -244,7 +244,10 @@ jobs:
         run: |
           set -o pipefail
           sudo sh run/*.run -i veth-h -n 10.77.0.248/29 < /dev/null 2>&1 | tee new2.txt
-          grep -E 'install.sh: old version removed cleanly: .*phantom-mirage=1\.7\.0-5' new2.txt
+          # expected version comes from debian/changelog (no hard-coded -N)
+          v=$(sed -n '1s/^[^ ]* (\([^)]*\)).*/\1/p' debian/changelog | sed 's/\./\\./g')
+          test -n "$v"
+          grep -E "install.sh: old version removed cleanly: .*phantom-mirage=$v" new2.txt
           grep -q 'kept the web console admin account' new2.txt
           sleep 3
           for s in phantom-mirage farpd; do
