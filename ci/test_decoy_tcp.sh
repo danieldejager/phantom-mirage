@@ -71,9 +71,9 @@ for p in (22, 8080):
     except ConnectionRefusedError: print("REFUSED", end=" ")
     except OSError: print("TIMEOUT", end=" ")
 if sys.argv[2] == "1":
-    want = {21: b"220 (vsFTPd 3.0.3)\r\n",
-            22: b"SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3\r\n",
-            23: b"\xff\xfd\x18", 80: b"HTTP/1.1 200 OK\r\nServer: Apache/2.4.62 (Debian)\r\n"}
+    want = {21: b"220 (vsFTPd 3.0.5)\r\n",
+            22: b"SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.20\r\n",
+            23: b"\xff\xfd\x18", 80: b"HTTP/1.1 200 OK\r\nServer: Apache/2.4.58 (Ubuntu)\r\n"}
     for p, w in sorted(want.items()):
         got = b""
         try:
