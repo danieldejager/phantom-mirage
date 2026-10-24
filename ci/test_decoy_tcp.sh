@@ -7,7 +7,7 @@
 # must get a SYN-ACK (connect succeeds), a closed port must get RST, and
 # with the pre-#123 config (TCP filtered) nothing answers. If nft is
 # present, pm-firewall's ruleset is applied too, to show it does not
-# drop decoy TCP. Needs root, NET_ADMIN and SYS_ADMIN (veth, unshare --net;
+# drop decoy TCP. #129: 21/22/23/80 must send their banner. Needs root, NET_ADMIN and SYS_ADMIN (veth, unshare --net;
 # no "ip netns add", which a container refuses). Run from the build tree.
 set -eu
 D=$(cd "$(dirname "$0")/.." && pwd)
@@ -52,9 +52,12 @@ if command -v nft >/dev/null 2>&1; then
 	PM_DEFAULT=$T/default PM_CONSOLE_STATE=$T sh "$D/console/pm-firewall" apply && fw=1 && echo "ok pm-firewall ruleset applied for $NET"
 fi
 
-# probe CONF EXPECT_OPEN EXPECT_CLOSED: EXPECT_* = OPEN|REFUSED|TIMEOUT
+# probe CONF EXPECT_OPEN EXPECT_CLOSED [BANNERS]: EXPECT_* =
+# OPEN|REFUSED|TIMEOUT for 22/8080; BANNERS=1 also checks that 21/22/23/80
+# send the #129 banner (port 80 after a GET)
 probe() {
-	"$D/phantom-mirage" -d -f "$1" -i $HV --disable-webserver \
+	# shellcheck disable=SC2086 # $SB is a list of flags
+	"$D/phantom-mirage" -d -f "$1" -i $HV --disable-webserver $SB \
 	  -p "$D/nmap-os-db" -x "$D/xprobe2.conf" -a "$D/nmap.assoc" \
 	  -0 "$D/pf.os" -m "$D/nmap-mac-prefixes" $NET > "$T/log" 2>&1 &
 	pid=$!
@@ -67,19 +70,48 @@ for p in (22, 8080):
         s.connect((sys.argv[1], p)); print("OPEN", end=" ")
     except ConnectionRefusedError: print("REFUSED", end=" ")
     except OSError: print("TIMEOUT", end=" ")
-' $DECOY)
+if sys.argv[2] == "1":
+    want = {21: b"220 (vsFTPd 3.0.3)\r\n",
+            22: b"SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3\r\n",
+            23: b"\xff\xfd\x18", 80: b"HTTP/1.1 200 OK\r\nServer: Apache/2.4.62 (Debian)\r\n"}
+    for p, w in sorted(want.items()):
+        got = b""
+        try:
+            s = socket.create_connection((sys.argv[1], p), 5); s.settimeout(5)
+            if p == 80: s.sendall(b"GET / HTTP/1.0\r\n\r\n")
+            while len(got) < len(w):
+                d = s.recv(256)
+                if not d: break
+                got += d
+        except OSError as e: got += repr(e).encode()
+        print("BANNER%d" % p if got.startswith(w) else "NOBANNER%d=%r" % (p, got[:60]), end=" ")
+' $DECOY "${4:-0}")
 	kill $pid; wait $pid 2>/dev/null || true; pid=
-	if [ "$r" != "$2 $3 " ]; then
-		echo "FAIL $1: port 22/8080 got '$r', want '$2 $3'"; cat "$T/log"; exit 1
+	want="$2 $3 "
+	[ "${4:-0}" = 1 ] && want="${want}BANNER21 BANNER22 BANNER23 BANNER80 "
+	if [ "$r" != "$want" ]; then
+		echo "FAIL $1${SB:+ $SB}: got '$r', want '$want'"; cat "$T/log"; exit 1
 	fi
-	echo "ok $(basename "$1"): 22 $2, 8080 $3"
+	echo "ok $(basename "$1")${SB:+ $SB}: 22 $2, 8080 $3${4:+, banners on 21/22/23/80}"
 }
 
-sh "$D/debian/mkconf.sh" "$D/config.sample" "$T/new.conf"
-probe "$T/new.conf" OPEN REFUSED
+SB=
+# scripts from this tree, not /usr/share (the installed path is checked by mkconf.sh)
+PM_DECOY=banners PM_SCRIPTS=$D/scripts sh "$D/debian/mkconf.sh" "$D/config.sample" "$T/new.conf"
+probe "$T/new.conf" OPEN REFUSED 1
+# HD_SANDBOX="--sandbox-scripts": same, with the scripts in their namespaces
+if [ -n "${HD_SANDBOX:-}" ]; then
+	SB=$HD_SANDBOX
+	probe "$T/new.conf" OPEN REFUSED 1
+	SB=
+fi
+
+# shipped default (PM_DECOY=tripwire): same ports open, but silent
+sh "$D/debian/mkconf.sh" "$D/config.sample" "$T/trip.conf"
+probe "$T/trip.conf" OPEN REFUSED
 
 # negative control: the pre-#123 Debian config (TCP filtered)
 sed -e 's/^set default default icmp action filtered$/set default default icmp action open/' \
     -e 's/^bind 192\.168\.3\.137 windows/# &/' "$D/config.sample" > "$T/old.conf"
 probe "$T/old.conf" TIMEOUT TIMEOUT
-echo "PASS: decoy TCP SYN to an open port gets SYN-ACK (#123)"
+echo "PASS: decoy TCP SYN to an open port gets SYN-ACK (#123), 21/22/23/80 send banners (#129)"
