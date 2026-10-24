@@ -159,7 +159,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: ci
+          # debian/changelog: the re-run step reads the expected version
+          sparse-checkout: |
+            /ci/
+            /debian/changelog
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@v4
         with:
           name: phantom-mirage-run-ubuntu26.04-${{ matrix.arch }}
