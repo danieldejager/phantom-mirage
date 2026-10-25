@@ -8,6 +8,7 @@ import http.server
 import json
 import os
 import re
+import html
 import socketserver
 import ssl
 import sys
@@ -16,6 +17,7 @@ import time
 import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import branding  # noqa: E402
 import pmauth  # noqa: E402
 import pmstore  # noqa: E402
 
@@ -32,7 +34,17 @@ TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; "
        "connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 CLOCK_MAX_STEP = 86400       # browser may move the clock by at most 24 h (#120)
+# index.html placeholders, filled from branding.conf (#141, single source)
+BRAND = {"{{PRODUCT}}": branding.PRODUCT, "{{LEGAL_NAME}}": branding.LEGAL_NAME,
+         "{{COPYRIGHT}}": branding.COPYRIGHT}
 HOST_RE = re.compile(r'^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$')
+
+
+def brand_html(data):
+    t = data.decode("utf-8")
+    for k, v in BRAND.items():
+        t = t.replace(k, html.escape(v))
+    return t.encode("utf-8")
 
 
 class App:
@@ -167,6 +179,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.err(404, "not found")
         with open(fp, "rb") as f:
             data = f.read()
+        if ext == ".html":
+            data = brand_html(data)
         self.send_response(200)
         self.headers_common(TYPES[ext], len(data), api=(ext == ".html"))
         self.end_headers()

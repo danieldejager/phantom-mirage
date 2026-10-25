@@ -53,7 +53,7 @@ override_dh_auto_install:
 	dh_apparmor -pphantom-mirage --profile-name=usr.lib.phantom-mirage.pm-script-ns
 	# web console (#118): Python 3 standard library only, vendored UI, no CDN
 	install -d $(D)/usr/lib/phantom-mirage/console/static
-	install -m 0644 console/pmauth.py console/pmstore.py $(D)/usr/lib/phantom-mirage/console/
+	install -m 0644 console/pmauth.py console/pmstore.py console/branding.py console/branding.conf $(D)/usr/lib/phantom-mirage/console/
 	install -m 0755 console/pm-console.py console/pm-console-setup.py $(D)/usr/lib/phantom-mirage/console/
 	install -m 0644 console/static/index.html console/static/console.css console/static/console.js \
 	  docs/assets/phantom-mirage-logo-light.png docs/assets/phantom-mirage-mark.png \
