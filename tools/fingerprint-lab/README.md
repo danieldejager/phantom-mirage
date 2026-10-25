@@ -101,6 +101,9 @@ references come from the Azure lab.
 
 - `probe.py` writes `run-<uuid>.json` with run id, timestamp, tool version,
   exact command line, and every probe/reply (raw hex + parsed fields).
+  From tool_version 0.2.0, each parsed TCP packet also carries `flags_bits`
+  (the raw flag byte, including ECE 0x40 and CWR 0x80). The field is
+  additive: older runs without it still derive, from the flag letters.
 - `derive.py` prints a draft `Fingerprint …` block in honeyd syntax, with a
   comment header recording run ids and the operator-supplied OS name/build,
   and flags fields that vary across runs.

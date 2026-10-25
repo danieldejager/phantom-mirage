@@ -53,8 +53,9 @@ python3 check_db.py ../../fingerprints/phantom-mirage-os.db \
     -p fingerprints/phantom-mirage-os.db -x xprobe2.conf -a nmap.assoc \
     -0 pf.os -m nmap-mac-prefixes
 
-# list shipped references to the bundled file (report only)
-python3 check_config_refs.py            # add --strict to exit 1 on findings
+# list shipped references to the bundled file; fails only for personas
+# listed in moved-personas.txt (empty today), reports everything else
+python3 check_config_refs.py            # add --strict to exit 1 on any finding
 ```
 
 `passed.txt` has one persona per line. Lines starting with `#` are comments.
@@ -149,17 +150,33 @@ The tests show this against the real binary. Configs therefore move over
 as a whole, not one template at a time. `check_config_refs.py` lists what
 would need to move.
 
+### Moved-persona list
+
+When a bundled persona is replaced by one of ours, add a line
+`<bundled name> => <our persona>` to `moved-personas.txt`. From then on,
+`check_config_refs.py` **fails** (exit 1, `FAIL: MOVED_PERSONA_DRIFT`) if any
+shipped config still uses the old name. Every other use is printed as
+`report:` and does not fail. The list is empty today, so the 29 current
+bundled-name uses do not fail the check. A malformed list (bad syntax, an
+unknown persona, a duplicate) exits 2.
+
 ## Known limits
 
-- `derive.py` writes an ECN line with `S A F RD`, which `parse_ecn` rejects.
-  `build_db.py` rewrites ECN to the accepted field set and leaves `derive.py`
-  unchanged. The probe does not record the CWR/ECE reply bits in a way that
-  separates the `CC` values, so `CC` is `Y` when the reply flags contain `E`
-  and `N` otherwise. `CC=S`/`O` are never produced.
+- ECN `CC` (scoring gate F13) follows nmap's definition for the reply to the
+  ECN probe (SYN with ECE+CWR): `Y` = ECE only, `N` = neither, `S` = ECE and
+  CWR, `O` = any other combination (CWR without ECE; `personality.c` maps `O`
+  to CWR only). From tool_version 0.2.0, `probe.py` records the raw TCP flag
+  bits as `flags_bits` in each TCP `reply_parsed`. Runs from 0.1.0 lack it.
+  For those, `derive.py` falls back to scapy's flag letters (`E` = ECE,
+  `C` = CWR), which 0.1.0 already recorded. `derive.py` renders the ECN line
+  directly in the `parse_ecn` field set, and `build_db.py` only verifies that
+  the field set is right; it no longer rewrites the line.
 - The fields come from `derive.py`'s heuristics. The generator adds nothing
   to them beyond the range rule.
-- `win11` is a Parallels guest and is missing from `capture/targets.sh`, so
-  its ip/ports cross-check relies on `tool-versions.txt` alone.
+- `win11` is a Parallels guest (Daniel's VM is its control). The fixed target
+  table `capture/targets.sh` lives in the separate lab repository, not in this
+  one, so win11 is not added here. Until it is, the generator's ip and ports
+  cross-check for win11 relies on `tool-versions.txt` alone.
 - Loading by `personality.c` is checked only when a built binary is present.
   Set `PHANTOM_MIRAGE_BIN`, or build at the repo root. Otherwise those tests
   are skipped and only the independent syntax check in `check_db.py` runs.

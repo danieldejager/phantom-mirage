@@ -1,5 +1,5 @@
 {
-  "block_sha256": "f2bf566f6a7f2b2f39bc3be962031d961a3c12543f6954c01a7f0abbad4e7079",
+  "block_sha256": "e1f7126ca27397aa886690385f57811fd62c2fbba89f709820a98fe587f73e0d",
   "derive_report": {
     "fields": {
       "ECN.A": {
@@ -13,6 +13,19 @@
           "S+",
           "S+",
           "S+"
+        ]
+      },
+      "ECN.CC": {
+        "sources": [
+          "synthetic-ubuntu2404-0001",
+          "synthetic-ubuntu2404-0002",
+          "synthetic-ubuntu2404-0003"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N"
         ]
       },
       "ECN.DF": {
@@ -1215,7 +1228,7 @@
   },
   "generator": {
     "name": "fingerprint-lab/build_db.py",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "inputs": {
     "runs": [
