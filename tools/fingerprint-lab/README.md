@@ -10,10 +10,11 @@ copied from any third-party OS fingerprint database.
   without it `probe.py` exits before building any packet.
 - Exactly one target IP per invocation (positional argument). The tool opens
   sockets only to that IP.
-- Targets must be private: RFC1918 IPv4, RFC4193 ULA IPv6, or loopback.
-  Anything else is refused. (Note: the check uses Python's `is_private`, so a
-  few other non-global reserved IPv4 ranges such as link-local are also
-  accepted; do not rely on that.)
+- Targets must be private, exactly: IPv4 `10.0.0.0/8`, `172.16.0.0/12`,
+  `192.168.0.0/16` or loopback `127.0.0.0/8`; IPv6 ULA `fc00::/7` or `::1`.
+  Everything else (link-local, `0.0.0.0/8`, documentation and benchmark
+  ranges, CGNAT, multicast, unspecified, public, IPv4-mapped IPv6) is
+  refused. Literal IPs only: hostnames are refused without any DNS lookup.
 - `*_proxy` environment variables are dropped at start-up.
 
 Operating rules (not enforced by code):
