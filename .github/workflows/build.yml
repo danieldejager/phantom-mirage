@@ -8,10 +8,10 @@ name: build
 on:
   push:
     branches: [master]
-    paths-ignore: ['docs/**', '**.md', 'tools/fingerprint-lab/**']
+    paths-ignore: ['docs/**', '**.md']
   pull_request:
     types: [opened, synchronize, reopened, labeled]
-    paths-ignore: ['docs/**', '**.md', 'tools/fingerprint-lab/**']
+    paths-ignore: ['docs/**', '**.md']
   schedule:
     - cron: '30 16 * * *'   # 03:30 Australia/Melbourne (AEDT)
   workflow_dispatch:
@@ -173,6 +173,16 @@ jobs:
             [ $rc = 0 ] || { echo "$t: rc=$rc" >&2; bad=1; }
           done
           exit $bad
+
+      - name: fingerprint-lab tests (offline, synthetic fixtures)
+        # Fingerprint DB builder/checker tests (#150). Offline: no probes, no
+        # network. They use ./phantom-mirage from the Build step, so the
+        # --verify-config loader tests run here too.
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            python3 python3-pytest python3-scapy >/dev/null
+          cd tools/fingerprint-lab
+          PHANTOM_MIRAGE_BIN=$GITHUB_WORKSPACE/phantom-mirage python3 -m pytest -q -p no:cacheprovider
 
       - name: Upload build log
         if: always()
