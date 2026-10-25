@@ -363,3 +363,39 @@ def test_config_refs_real_repo_reports_known_findings():
     assert ("docker/phantom-mirage.conf", "PERSONA_NOT_OURS") in kinds
     assert ("docker/entrypoint.sh", "DEFAULT_PERS_FILE") in kinds
     assert ("Makefile.am", "NMAP_OS_DB_REF") in kinds
+
+
+# ---- moved-persona drift (fails only for moved personas) ----------------
+
+def _tree(tmp_path):
+    (tmp_path / "docker").mkdir(parents=True)
+    (tmp_path / "docker" / "x.conf").write_text('set a personality "Old OS A"\nset b personality "Old OS B"\n')
+    return tmp_path
+
+
+def test_moved_list_shipped_empty_and_today_repo_passes():
+    assert check_config_refs.read_moved(check_config_refs.MOVED_DEFAULT) == {}
+    if (REPO / "docker" / "phantom-mirage.conf").exists():
+        found = check_config_refs.scan(REPO, {})
+        assert sum(1 for f in found if f[2] == "PERSONA_NOT_OURS") >= 29
+        assert check_config_refs.main(["--root", str(REPO)]) == 0
+
+
+def test_moved_persona_use_fails_others_only_reported(tmp_path, capsys):
+    root = _tree(tmp_path / "r")
+    moved = tmp_path / "moved.txt"
+    moved.write_text("# example\nOld OS A => ws2022-fwon\n")
+    rc = check_config_refs.main(["--root", str(root), "--moved", str(moved)])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "FAIL: MOVED_PERSONA_DRIFT: Old OS A (moved to ws2022-fwon)" in out
+    assert "report: PERSONA_NOT_OURS: Old OS B" in out
+    moved.write_text("")
+    assert check_config_refs.main(["--root", str(root), "--moved", str(moved)]) == 0
+
+
+@pytest.mark.parametrize("bad", ["Old OS A\n", "Old OS A => not-ours\n", "A => ws2022-fwon\nA => ubuntu2404\n"])
+def test_bad_moved_list_exit_2(tmp_path, bad):
+    moved = tmp_path / "m"
+    moved.write_text(bad)
+    assert check_config_refs.main(["--root", str(_tree(tmp_path / "r")), "--moved", str(moved)]) == 2

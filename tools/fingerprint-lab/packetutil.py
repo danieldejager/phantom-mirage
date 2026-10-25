@@ -104,6 +104,13 @@ def _flag_string(tcp: Any) -> str:
         return ""
 
 
+def _flag_bits(tcp: Any) -> int | None:
+    try:
+        return int(tcp.flags) & 0xFF
+    except Exception:
+        return None
+
+
 def _options_string(tcp: Any) -> str:
     """Encode TCP options in a compact letter form used by personality OPS/O*."""
     letters: list[str] = []
@@ -171,6 +178,11 @@ def parse_reply(pkt: Any) -> dict[str, Any] | None:
                 "ack": int(tcp.ack),
                 "window": int(tcp.window),
                 "flags": _flag_string(tcp),
+                # Raw TCP flag bits (FIN=0x01 ... ECE=0x40, CWR=0x80). Added in
+                # tool_version 0.2.0 so ECN CC does not depend on scapy's
+                # flag-letter rendering. Older runs lack it; derive.py falls
+                # back to the letters (E=ECE, C=CWR).
+                "flags_bits": _flag_bits(tcp),
                 "options": _options_string(tcp),
                 "options_raw": [_jsonable_opt(o) for o in (tcp.options or [])],
                 "reserved": int(getattr(tcp, "reserved", 0) or 0),

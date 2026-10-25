@@ -307,8 +307,37 @@ def _record_tcp_test(
     obs[f"{prefix}.A"].add(_ack_relation(p, sent), rid)
     obs[f"{prefix}.F"].add(_flags_letters(p.get("flags") or ""), rid)
     obs[f"{prefix}.O"].add(p.get("options") or "", rid)
+    if prefix == "ECN":
+        obs["ECN.CC"].add(ecn_cc(p), rid)
     # RD (RST data checksum quirk) left unset unless payload present
     obs[f"{prefix}.Q"].add("", rid)
+
+
+TH_ECE = 0x40
+TH_CWR = 0x80
+
+
+def ecn_cc(p: dict[str, Any]) -> str:
+    """nmap ECN CC for the reply to the ECN probe (scoring gate F13).
+
+    Y = ECE only, N = neither, S = ECE and CWR, O = any other combination
+    (that is, CWR without ECE; personality.c maps O to CWR only).
+    Uses the raw ``flags_bits`` (tool_version >= 0.2.0) when present, else
+    scapy's flag letters (E = ECE, C = CWR) from older runs.
+    """
+    bits = p.get("flags_bits")
+    if isinstance(bits, int) and not isinstance(bits, bool):
+        ece, cwr = bool(bits & TH_ECE), bool(bits & TH_CWR)
+    else:
+        letters = str(p.get("flags") or "")
+        ece, cwr = "E" in letters, "C" in letters
+    if ece and cwr:
+        return "S"
+    if ece:
+        return "Y"
+    if cwr:
+        return "O"
+    return "N"
 
 
 def _flags_letters(flags: str) -> str:
@@ -434,7 +463,16 @@ def render_personality(result: dict[str, Any]) -> str:
         ]
         return f"{prefix}(" + "%".join(parts) + ")"
 
-    lines.append(tcp_line("ECN"))
+    # ECN uses its own field set: personality.c's parse_ecn accepts only
+    # R, DF, T, TG, W, O, CC, Q (not the T-line S/A/F/RD).
+    if g("ECN.R", "N") == "N":
+        lines.append("ECN(R=N)")
+    else:
+        ecn = ["R=Y", f"DF={g('ECN.DF','N')}", f"T={g('ECN.T')}", f"TG={g('ECN.TG')}"]
+        if g("ECN.W"):
+            ecn.append(f"W={g('ECN.W')}")
+        ecn += [f"O={g('ECN.O')}", f"CC={g('ECN.CC','N')}", f"Q={g('ECN.Q')}"]
+        lines.append("ECN(" + "%".join(ecn) + ")")
     for t in ("T1", "T2", "T3", "T4", "T5", "T6", "T7"):
         lines.append(tcp_line(t))
 

@@ -1,0 +1,4 @@
+# Bundled nmap-os-db personas that have MOVED to fingerprints/phantom-mirage-os.db.
+# One per line:  <bundled name> => <our persona>
+# check_config_refs.py FAILS if a shipped config still uses a name listed here,
+# and only reports every other bundled name. Empty until a persona moves.

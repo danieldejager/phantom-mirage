@@ -1,5 +1,5 @@
 {
-  "block_sha256": "c0506b1123b0f9a63fa2df62058e3df9c10ded26fdc768f6e0fb7a76e9f87a13",
+  "block_sha256": "df58ee08a64d4cad0dfc84b2d6aa62452d49eabae944c522036eff5b26f4853e",
   "derive_report": {
     "fields": {
       "ECN.A": {
@@ -13,6 +13,19 @@
           "S+",
           "S+",
           "S+"
+        ]
+      },
+      "ECN.CC": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N"
         ]
       },
       "ECN.DF": {
@@ -1215,7 +1228,7 @@
   },
   "generator": {
     "name": "fingerprint-lab/build_db.py",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "inputs": {
     "runs": [

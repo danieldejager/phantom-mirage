@@ -219,27 +219,19 @@ def _resolve_fields(obs: dict[str, FieldObs]) -> dict[str, str]:
     return applied
 
 
-def _ecn_line(obs: dict[str, FieldObs]) -> str:
-    """ECN line in the field set personality.c's parse_ecn accepts.
+ECN_FIELDS = ("R", "DF", "T", "TG", "W", "O", "CC", "Q")
 
-    derive.py renders ECN like a T-line (S=, A=, F=, RD=), which parse_ecn
-    rejects. parse_ecn takes R, DF, T, TG, W, O, CC, Q. CC is set from the
-    ECE flag in the reply (derive.py's F letters keep E but drop CWR, so only
-    Y/N can be expressed; see FINGERPRINT-DB.md known limits).
-    """
-    def v(key: str, default: str = "") -> str:
-        fo = obs.get(key)
-        val = fo.values[0] if fo and fo.values else None
-        return default if val in (None, "") else str(val)
 
-    if v("ECN.R", "N") == "N":
-        return "ECN(R=N)"
-    cc = "Y" if "E" in v("ECN.F") else "N"
-    parts = ["R=Y", f"DF={v('ECN.DF', 'N')}", f"T={v('ECN.T')}", f"TG={v('ECN.TG')}"]
-    if v("ECN.W"):
-        parts.append(f"W={v('ECN.W')}")
-    parts += [f"O={v('ECN.O')}", f"CC={cc}", f"Q={v('ECN.Q')}"]
-    return "ECN(" + "%".join(parts) + ")"
+def _check_ecn_line(body: str) -> None:
+    """Verified pass-through: derive.py renders ECN; refuse if it ever emits a
+    field personality.c's parse_ecn would reject."""
+    m = re.search(r"^ECN\((.*)\)$", body, flags=re.M)
+    if not m:
+        raise BuildError("internal: no ECN line in render output")
+    names = {f.split("=", 1)[0] for f in m[1].split("%")}
+    bad = sorted(names - set(ECN_FIELDS))
+    if bad:
+        raise BuildError(f"internal: ECN line has fields parse_ecn rejects: {bad}")
 
 
 def build_block(inp: dict[str, Any]) -> tuple[str, str, str]:
@@ -256,7 +248,7 @@ def build_block(inp: dict[str, Any]) -> tuple[str, str, str]:
 
     body = render_personality(result)
     body = body[body.index("\nFingerprint ") + 1:]
-    body = re.sub(r"^ECN\(.*\)$", _ecn_line(result["obs"]), body, count=1, flags=re.M)
+    _check_ecn_line(body)
     if not body.startswith(f"Fingerprint {persona}\n"):
         raise BuildError("internal: unexpected render output")
 

@@ -7,7 +7,7 @@
 #@ captured-utc: 2000-01-01T00:00:00Z
 #@ tool-source-commit: 0000000000000000000000000000000000000000
 #@ tool-versions-sha256: fcbd9e4f23635ed1f3b9930f3861600f74e08a01b96bcd8766c4cf192ce3fd4a
-#@ generator: fingerprint-lab/build_db.py 0.1.0
+#@ generator: fingerprint-lab/build_db.py 0.2.0
 #@ ranges: none
 Fingerprint ubuntu2404
 SEQ(SP=4A%GCD=3E8%ISR=92%TI=I%CI=Z%II=I%SS=O%TS=1)
