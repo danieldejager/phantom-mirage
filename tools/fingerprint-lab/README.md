@@ -112,11 +112,19 @@ Field groups parsed by `personality.c`: `SEQ`, `OPS`, `WIN`, `ECN`, `T1`–`T7`,
 behaviours (TTL, window sizes, TCP option order, ISN class/GCD, IP-ID
 behaviour, DF bits, ICMP quirks, etc.).
 
+## Fingerprint database
+
+To turn scored runs into `fingerprints/phantom-mirage-os.db` (selected with
+`-p`), see [FINGERPRINT-DB.md](FINGERPRINT-DB.md) (`build_db.py`,
+`check_db.py`, `check_config_refs.py`).
+
 ## Tests
 
 ```
 cd tools/fingerprint-lab
 python3 -m pytest -q
+# also run the personality.c loader tests against a built binary:
+PHANTOM_MIRAGE_BIN=/path/to/phantom-mirage python3 -m pytest -q
 ```
 
 Tests use synthetic scapy packets and offline helpers only — they never send
