@@ -271,6 +271,41 @@ class TestSetupBanner(unittest.TestCase):
         self.assertIn("(c) 2026 Phantom Technologies", out)
         self.assertTrue(all(ord(ch) < 128 for ch in out), out)
 
+    RETIRED = ("123;97;255", "255;122;47", "176;79;214")   # violet, ember, haze
+
+    def test_banner_uses_grey_256_colour_by_default(self):
+        out = run_setup({"COLORTERM": ""}, tty=True)
+        for r in self.RETIRED:
+            self.assertNotIn(r, out)
+        self.assertIn("\x1b[1;38;5;255m", out)
+        self.assertIn("\x1b[38;5;245m", out)
+        self.assertNotIn("38;2;", out)
+
+    def test_banner_uses_grey_truecolor_when_advertised(self):
+        out = run_setup({"COLORTERM": "truecolor"}, tty=True)
+        for r in self.RETIRED:
+            self.assertNotIn(r, out)
+        self.assertIn("\x1b[1;38;2;238;240;243m", out)   # #EEF0F3
+        self.assertIn("\x1b[38;2;138;144;154m", out)     # #8A909A
+
+    def test_no_escape_with_dumb_term_or_no_color(self):
+        for env in ({"TERM": "dumb"}, {"NO_COLOR": "1"}, {"NO_COLOR": "1", "COLORTERM": "truecolor"}):
+            out = run_setup(env, tty=True)
+            self.assertIn("Mirage I", out)
+            self.assertNotIn(ESC, out, env)
+
+    def test_ascii_fallback_in_colour_is_grey(self):
+        out = run_setup({"LC_ALL": "C"}, tty=True)
+        self.assertIn("(c) 2026 Phantom Technologies", out)
+        self.assertIn("\x1b[38;5;245m", out)
+        self.assertTrue(all(ord(ch) < 128 for ch in out), out)
+
+    def test_script_has_no_retired_palette(self):
+        with open(SETUP, encoding="utf-8") as f:
+            t = f.read()
+        for h in ("7B61FF", "FF7A2F", "B04FD6") + self.RETIRED:
+            self.assertNotIn(h, t)
+
 
 class TestNoCompanySuffix(unittest.TestCase):
     """The company is not registered yet (#141): the suffix must not ship.

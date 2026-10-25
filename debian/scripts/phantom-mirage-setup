@@ -111,9 +111,16 @@ banner() {
 	load_branding || { echo "phantom-mirage-setup: ignoring malformed $BRANDING" >&2; return 0; }
 	_v= _e= _o=
 	if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
-		# Afterburner (option 2): Violet #7B61FF, Ember #FF7A2F, Haze #B04FD6
-		_v=$(printf '\033[1;38;2;123;97;255m') _e=$(printf '\033[38;2;255;122;47m')
-		_h=$(printf '\033[38;2;176;79;214m') _o=$(printf '\033[0m')
+		# Grey two-tone logo: front P #EEF0F3 (_v), back P and the MIRAGE I
+		# lettering #8A909A (_e, _h). 24-bit only when COLORTERM says so,
+		# otherwise the 256-colour greys 255 (#EEEEEE) and 245 (#8A8A8A).
+		case "${COLORTERM:-}" in
+			truecolor|24bit)
+				_v=$(printf '\033[1;38;2;238;240;243m') _e=$(printf '\033[38;2;138;144;154m') ;;
+			*)
+				_v=$(printf '\033[1;38;5;255m') _e=$(printf '\033[38;5;245m') ;;
+		esac
+		_h=$_e _o=$(printf '\033[0m')
 	else
 		_h=
 	fi
@@ -121,14 +128,14 @@ banner() {
 		*UTF-8*|*utf-8*|*UTF8*|*utf8*)
 			printf '%s\n' \
 				"$_v    ▄██████▄$_o" \
-				"$_v   ██▀   ▄█▀$_o   $_v$PM_PRODUCT$_o" \
+				"$_v   ██▀   ▄█▀$_o   $_h$PM_PRODUCT$_o" \
 				"$_v  ██████▀▀$_o     $_h$PM_LEGAL_NAME$_o" \
 				"${_e} ▄▄$_v██$_o           $PM_COPYRIGHT" ;;
 		*)
 			_c=$(printf '%s' "$PM_COPYRIGHT" | sed 's/©/(c)/g')
 			printf '%s\n' \
 				"$_v    ______$_o" \
-				"$_v   / __  /$_o   $_v$PM_PRODUCT$_o" \
+				"$_v   / __  /$_o   $_h$PM_PRODUCT$_o" \
 				"$_v  / ____/$_o    $_h$PM_LEGAL_NAME$_o" \
 				"${_e}_$_v/_/$_o         $_c" ;;
 	esac
