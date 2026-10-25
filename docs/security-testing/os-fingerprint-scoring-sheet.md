@@ -110,8 +110,12 @@ Order set by Jarvis: Windows Server 2022, Ubuntu 24.04, Windows Server 2019, Win
 - Decoy probes: only `192.168.1.240/29`, only after Daniel approves a test, each command posted as run. Control probes: only the lab network.
 - No third-party fingerprint database content is imported or shipped. Personalities come from our own run files.
 
-## 8. Open points for Daniel and Jarvis
+## 8. Decisions recorded (Jarvis, 25 Oct 2026)
 
-1. Confirm that "same label as the real VM" is the accepted meaning of "top match and p0f agree" where the tool databases are older than the operating system.
-2. Confirm who builds the probe host (Linux, root) for the decoy range. The Windows attacker VM cannot run raw scans without admin rights.
-3. Confirm the three-run, 10-minute spacing and the post-restart run are acceptable on cost and time.
+1. "Top match and p0f agree" means the same label and the same Gate field values as the real VM. Winning a newer name that the tool databases lack is not required, and no persona claims a name the real VM does not get.
+2. Lab probe host is `pm-probe` (Ubuntu, root). For the real decoy range on the LAN, a small Linux probe VM image with the same fixed scripts is used. The Windows VM never runs raw scans.
+3. Three runs plus one post-restart run, 10 minutes apart, are accepted.
+
+## 9. Azure sensor VM caveat
+
+Azure gives every secondary IP on a NIC the same MAC address, and its virtual switch may alter some stack fields. So the Azure sensor VM validates stack fields (F1 to F16) over the same path as the real targets, but it cannot test per-persona MAC identity (C1 and C2 in the acceptance criteria). Those checks stay on the real `192.168.1.240/29` range after the owner approves a test.
