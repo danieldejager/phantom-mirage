@@ -1,4 +1,4 @@
-# OS fingerprint scoring sheet (draft v0.1, for #146)
+# OS fingerprint scoring sheet (v0.2, for #146)
 
 Status: design only. Nothing here is run until Daniel approves a test. Decoy probes stay inside `192.168.1.240/29`. Probes of the real reference VMs stay inside the lab network. Every command is posted in the project room as it is run.
 
@@ -20,6 +20,7 @@ For each persona we scan two targets with the same tools, from the same probe ho
 |------|-------------|
 | Probe host | Linux, root, same host for control and decoy. Record kernel, `nmap --version`, `p0f -h` version and the nmap database revision |
 | Ports | One open TCP port and one closed TCP port, the same numbers on the control and the decoy. One closed UDP port. Record them |
+| Windows firewall | Each Windows persona has two separate controls: firewall on and firewall off. The decoy is scored against the control it claims, and each variant needs its own three runs plus a post-restart run. The firewall setting is recorded in the run output. A persona that claims a firewall-off host must not be scored against a firewall-on control, or the reverse |
 | Network path | In the Azure lab the control and the decoy are probed over the same Azure path, from `pm-probe`, with the decoy hosted on the lab sensor VM. A field changed by Azure's virtual switch then affects both targets equally and does not count against the decoy. Probing a decoy from a different path than the control is not a valid comparison |
 | Path | Record hop count to each target. Compare initial TTL (observed TTL plus hops, rounded up to 32, 64, 128 or 255), never the observed TTL |
 | Control | The real VM at the same patch level the persona claims. Rebuild or snapshot it so the three control runs are comparable |
@@ -30,7 +31,7 @@ For each persona we scan two targets with the same tools, from the same probe ho
 
 ## 4. Field-by-field scoring
 
-Scoring per field: **2** matches the control exactly (deterministic fields) or sits inside the control's own run-to-run range (random fields), **1** differs but is explained and agreed as an engine limit in a linked issue, **0** differs without an explanation, **N** not measurable in this set-up. Fields marked **Gate** must score 2 for the persona to pass.
+Scoring per field: **2** matches the control exactly (deterministic fields) or sits inside the control's own run-to-run range (random fields), **1** differs but is explained and agreed as an engine limit in a linked issue, **0** differs without an explanation, **N** not measurable in this set-up. Fields marked **Gate** must score 2 for the persona to pass. F9 is a Gate only where the control sends TCP timestamps, so 12 or 13 Gate fields apply depending on the persona.
 
 | # | Field | What is compared (control vs decoy) | How measured | Rule | Gate |
 |---|-------|--------------------------------------|--------------|------|------|
