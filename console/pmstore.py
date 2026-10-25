@@ -13,6 +13,7 @@ import shlex
 import subprocess
 import threading
 import time
+from collections import OrderedDict
 
 STATE_DIR = os.environ.get("PM_CONSOLE_STATE", "/var/lib/phantom-mirage/console")
 SENSOR_CONF = os.environ.get("PM_SENSOR_CONF", "/etc/phantom-mirage/phantom-mirage.conf")
@@ -25,6 +26,10 @@ ACTIVITY_KEEP = 2000        # events kept in memory for the Activity page
 PRUNE_EVERY = 600           # retention cleanup at most every 10 minutes (#120)
 JUMP_LIMIT = 300            # wall vs monotonic disagreement that counts as a clock jump
 STABLE_RESUME = 86400       # cleanup resumes by itself after 24 h of stable clock
+FLOW_WINDOW = 300           # a decoy-sent packet makes matching replies "expected" for 5 minutes (#139)
+FLOW_MAX = 4096             # cap on remembered decoy-sent flows; oldest dropped first
+ANSWER_WINDOW = 10          # decoy packets within 10 s of an inbound one on the same flow are answers
+INBOUND_MAX = 4096          # cap on remembered recent inbound flows; oldest dropped first
 DEFAULTS = {"sensor_name": "", "port": 8443, "time_source": "browser",
             "ntp_server": "", "timezone": "UTC", "alert_retention_days": 90,
             "drift_warn_seconds": 60, "ssh_ports": [22], "muted": []}
@@ -218,6 +223,10 @@ class AlertEngine:
         st = read_json("ingest.json", {}) or {}
         self.ino, self.off = st.get("ino"), st.get("off", 0)
         self.activity = []
+        # decoy-sent flows (#139), in memory only: key -> last event time
+        self.flows = OrderedDict()
+        # recent inbound flows, to tell decoy answers from decoy-started traffic
+        self.inbound = OrderedDict()
         self.last_touch = {}
         self.last_event_ts = None
 
@@ -245,10 +254,86 @@ class AlertEngine:
         write_json("alerts.json", {"alerts": self.alerts, "next_id": self.next_id}, 0o640)
         write_json("ingest.json", {"ino": self.ino, "off": self.off}, 0o640)
 
+    @staticmethod
+    def _flow_key(decoy, peer, e, decoy_port, peer_port):
+        proto = (e.get("proto") or "").lower()
+        if proto not in ("tcp", "udp"):
+            decoy_port = peer_port = None   # ICMP and others: match on hosts only
+        return (decoy, peer, proto, decoy_port, peer_port)
+
+    def _note_outbound(self, e, t):
+        """Remember that a decoy sent something to a peer (bounded, expiring)."""
+        decoy = e.get("honeypot_ip") or e.get("src_ip")
+        peer = e.get("dst_ip") if decoy == e.get("src_ip") else e.get("src_ip")
+        if not decoy or not peer:
+            return
+        if decoy == e.get("src_ip"):
+            dp, pp = e.get("src_port"), e.get("dst_port")
+        else:
+            dp, pp = e.get("dst_port"), e.get("src_port")
+        k = self._flow_key(decoy, peer, e, dp, pp)
+        self._expire_flows(t)
+        if k not in self.flows:
+            # only a decoy-started flow is remembered: for TCP its first
+            # packet must be a bare SYN; and an answer to a recent inbound
+            # packet (SYN-ACK, RST, UDP reply, ICMP error) never starts one
+            fl = e.get("tcp_flags")
+            if k[2] == "tcp" and not (isinstance(fl, str) and "S" in fl and "A" not in fl):
+                return
+            if self._answers_inbound(k, t):
+                return
+        self.flows[k] = t
+        self.flows.move_to_end(k)
+        self._expire_flows(t)
+
+    def _note_inbound(self, k, t):
+        for key in (k, k[:2] + ("*",)):
+            self.inbound[key] = t
+            self.inbound.move_to_end(key)
+        self._expire_inbound(t)
+
+    def _expire_inbound(self, t):
+        while self.inbound:
+            k, seen = next(iter(self.inbound.items()))
+            if t - seen > ANSWER_WINDOW or len(self.inbound) > INBOUND_MAX:
+                del self.inbound[k]
+            else:
+                break
+
+    def _answers_inbound(self, k, t):
+        """True if the peer sent to this decoy on the same flow within
+        ANSWER_WINDOW. ICMP and other port-less packets (for example port
+        unreachable for a UDP probe) count as answers to any recent inbound
+        packet from that peer."""
+        self._expire_inbound(t)
+        keys = [k] if k[3] is not None else [k, k[:2] + ("*",)]
+        return any(key in self.inbound and t - self.inbound[key] <= ANSWER_WINDOW
+                   for key in keys)
+
+    def _expire_flows(self, t):
+        while self.flows:
+            k, seen = next(iter(self.flows.items()))
+            if t - seen > FLOW_WINDOW or len(self.flows) > FLOW_MAX:
+                del self.flows[k]
+            else:
+                break
+
+    def _is_reply(self, e, decoy, src, t):
+        """True only if this decoy recently sent to src on the same flow.
+        TCP flags alone never make a packet a reply, so ACK/FIN/NULL/Xmas
+        scans with no earlier decoy-sent packet still alert."""
+        self._expire_flows(t)
+        k = self._flow_key(decoy, src, e, e.get("dst_port"), e.get("src_port"))
+        self._note_inbound(k, t)
+        seen = self.flows.get(k)
+        return seen is not None and t - seen <= FLOW_WINDOW
+
     def handle(self, e, muted):
         if e.get("event") not in ("connection.start", "packet"):
             return
+        t = _parse_ts(e.get("ts", ""))
         if e.get("direction") == "outbound":
+            self._note_outbound(e, t)
             return
         decoy = e.get("honeypot_ip") or e.get("dst_ip")
         src = e.get("src_ip")
@@ -256,15 +341,21 @@ class AlertEngine:
             return
         ts = e.get("ts", "")
         self.last_event_ts = ts
-        self.last_touch[decoy] = ts
-        self.activity.append({"ts": ts, "src": src, "decoy": decoy,
-                              "port": e.get("dst_port"), "proto": (e.get("proto") or "").upper(),
-                              "event": e.get("event"), "os": e.get("os_guess", "")})
+        reply = self._is_reply(e, decoy, src, t)
+        row = {"ts": ts, "src": src, "decoy": decoy,
+               "port": e.get("dst_port"), "proto": (e.get("proto") or "").upper(),
+               "event": e.get("event"), "os": e.get("os_guess", "")}
+        if reply:
+            row["reply"] = True     # shown in Activity, never alerts (#139)
+        else:
+            self.last_touch[decoy] = ts
+        self.activity.append(row)
         if len(self.activity) > ACTIVITY_KEEP:
             del self.activity[:len(self.activity) - ACTIVITY_KEEP]
+        if reply:
+            return
         if src in muted:
             return
-        t = _parse_ts(ts)
         for a in reversed(self.alerts):
             if a["src"] == src and a["status"] != "Closed" and t - a["last_t"] <= GROUP_WINDOW:
                 a["count"] += 1
