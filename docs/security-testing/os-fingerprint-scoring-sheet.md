@@ -20,6 +20,7 @@ For each persona we scan two targets with the same tools, from the same probe ho
 |------|-------------|
 | Probe host | Linux, root, same host for control and decoy. Record kernel, `nmap --version`, `p0f -h` version and the nmap database revision |
 | Ports | One open TCP port and one closed TCP port, the same numbers on the control and the decoy. One closed UDP port. Record them |
+| Network path | In the Azure lab the control and the decoy are probed over the same Azure path, from `pm-probe`, with the decoy hosted on the lab sensor VM. A field changed by Azure's virtual switch then affects both targets equally and does not count against the decoy. Probing a decoy from a different path than the control is not a valid comparison |
 | Path | Record hop count to each target. Compare initial TTL (observed TTL plus hops, rounded up to 32, 64, 128 or 255), never the observed TTL |
 | Control | The real VM at the same patch level the persona claims. Rebuild or snapshot it so the three control runs are comparable |
 | Repeats | 3 runs for the control and 3 runs for the decoy, at least 10 minutes apart. The decoy runs also include one run after a decoy restart (to catch a field that resets or changes) |
@@ -105,7 +106,7 @@ Persona verdict: pass or fail, with the failing rule numbers.
 
 Order set by Jarvis: Windows Server 2022, Ubuntu 24.04, Windows Server 2019, Windows Server 2025, Windows 11, then optional Rocky 9 and FreeBSD 14.
 
-- Captures from UTM-emulated VMs are drafts. Timing and timestamp fields (F5, F8, F9, F14) from emulated hosts do not count toward a pass.
+- Controls and decoys are captured in the Azure lab (the rejected local UTM set-up is not used). Because captures pass through Azure's virtual switch, the control and the decoy must be compared over the same path (see section 3). Timing and timestamp fields (F5, F8, F9, F14) from any emulated host do not count toward a pass.
 - Windows 11 ARM and Linux ARM controls run a different CPU architecture from the sensor. Report the difference. Do not use an ARM control for F9 and F14 without saying so.
 - Decoy probes: only `192.168.1.240/29`, only after Daniel approves a test, each command posted as run. Control probes: only the lab network.
 - No third-party fingerprint database content is imported or shipped. Personalities come from our own run files.
