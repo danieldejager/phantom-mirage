@@ -69,12 +69,46 @@ done
 
 # ---- splash banner (#141): names from the single branding file; colour
 # only on a terminal and without NO_COLOR; block art only in a UTF-8 locale
-BRANDING=${PM_BRANDING:-$LIBDIR/console/branding.conf}
+BRANDING=$LIBDIR/console/branding.conf
+# PM_BRANDING is a test-only override, honoured only with PM_TESTING=1
+[ "${PM_TESTING:-}" = 1 ] && [ -n "${PM_BRANDING:-}" ] && BRANDING=$PM_BRANDING
+# strip C0 controls, DEL and UTF-8 encoded C1 controls (ESC included)
+_bclean() {
+	printf '%s' "$1" | LC_ALL=C tr -d '\000-\037\177' | LC_ALL=C sed "s/$(printf '\302')[$(printf '\200')-$(printf '\237')]//g"
+}
+# parse branding.conf as data (it is never sourced: this runs as root).
+# Only the three known KEY="value" lines; no $ ` \ " in values except the
+# one literal ${PM_LEGAL_NAME} in PM_COPYRIGHT, expanded here.
+load_branding() {
+	PM_PRODUCT= PM_LEGAL_NAME= PM_COPYRIGHT= _seen=
+	while IFS= read -r _l || [ -n "$_l" ]; do
+		case $_l in ''|'#'*) continue ;; esac
+		case $_l in *=*) ;; *) return 1 ;; esac
+		_k=${_l%%=*} _r=${_l#*=}
+		case $_r in \"*\") _r=${_r#\"} _r=${_r%\"} ;; *) return 1 ;; esac
+		case " $_seen " in *" $_k "*) return 1 ;; esac
+		_pre=$_r _post=
+		if [ "$_k" = PM_COPYRIGHT ]; then
+			case $_r in *'${PM_LEGAL_NAME}'*)
+				_pre=${_r%%'${PM_LEGAL_NAME}'*} _post=${_r#*'${PM_LEGAL_NAME}'} ;;
+			esac
+		fi
+		case $_pre$_post in *[\"\$\`\\]*) return 1 ;; esac
+		case $_k in
+			PM_PRODUCT) PM_PRODUCT=$(_bclean "$_r") ;;
+			PM_LEGAL_NAME) PM_LEGAL_NAME=$(_bclean "$_r") ;;
+			PM_COPYRIGHT)
+				if [ "$_pre" = "$_r" ]; then PM_COPYRIGHT=$(_bclean "$_r")
+				else PM_COPYRIGHT=$(_bclean "$_pre")$PM_LEGAL_NAME$(_bclean "$_post"); fi ;;
+			*) return 1 ;;
+		esac
+		_seen="$_seen $_k"
+	done < "$BRANDING"
+	[ -n "$PM_PRODUCT" ] && [ -n "$PM_LEGAL_NAME" ] && [ -n "$PM_COPYRIGHT" ]
+}
 banner() {
 	[ -z "${PM_NO_BANNER:-}" ] && [ -r "$BRANDING" ] || return 0
-	PM_PRODUCT= PM_LEGAL_NAME= PM_COPYRIGHT=
-	# shellcheck disable=SC1090
-	. "$BRANDING"
+	load_branding || { echo "phantom-mirage-setup: ignoring malformed $BRANDING" >&2; return 0; }
 	_v= _e= _o=
 	if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
 		# Afterburner (option 2): Violet #7B61FF, Ember #FF7A2F, Haze #B04FD6

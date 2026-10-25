@@ -6,9 +6,9 @@
    Indigo #2A2270, Violet #5B45D6, Crimson #D6283E, Flame #FF8A2A, Ink #14102E;
    button gradient #6C56E0 to #2A2270). Borders/hover are mixes of those.
    --g (ok green) has no palette equivalent and is unchanged. */
-:root{color-scheme:dark;--bg:#07061A;--p:#15123A;--t:#F3F0FF;--m:#B04FD6;--a:#7B61FF;--a2:#5B3FE0;--g:#2ea043;--y:#FFC857;--r:#FF7A2F;--b1:#A58BFF;--b2:#5B3FE0;--tile:#F5F4FB;
+:root{color-scheme:dark;--bg:#07061A;--p:#15123A;--t:#F3F0FF;--m:#B04FD6;--a:#7B61FF;--a2:#5B3FE0;--g:#2ea043;--y:#FFC857;--r:#FF7A2F;--b1:#A58BFF;--b2:#5B3FE0;--tile:#F5F4FB;--sbg:#0B0C0F;
 --b:color-mix(in srgb,var(--a) 28%,var(--p));--h:color-mix(in srgb,var(--a) 16%,var(--p))}
-@media(prefers-color-scheme:light){:root{color-scheme:light;--bg:#F5F4FB;--p:#FFFFFF;--t:#14102E;--m:#5B45D6;--a:#5B45D6;--a2:#2A2270;--y:#FF8A2A;--r:#D6283E;--b1:#6C56E0;--b2:#2A2270;--tile:transparent;
+@media(prefers-color-scheme:light){:root{color-scheme:light;--bg:#F5F4FB;--p:#FFFFFF;--t:#14102E;--m:#5B45D6;--a:#5B45D6;--a2:#2A2270;--y:#FF8A2A;--r:#D6283E;--b1:#6C56E0;--b2:#2A2270;--tile:transparent;--sbg:var(--bg);
 --b:color-mix(in srgb,var(--a) 22%,var(--p));--h:color-mix(in srgb,var(--a) 9%,var(--p))}}
 *{box-sizing:border-box}body{margin:0;font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--t)}
 header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--b);background:var(--p)}
@@ -61,11 +61,17 @@ td.wr{white-space:normal;max-width:420px;word-break:break-word}
 .sev-High{background:#f85149}.sev-Medium{background:#d29922}.sev-Low{background:#58a6ff}
 .u-fs13{font-size:13px}.u-wide{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}.u-mb12{margin-bottom:12px}.u-mb8{margin-bottom:8px}.u-mla{margin-left:auto}.u-mt10{margin-top:10px}.u-mt18{margin-top:18px}.u-ul{margin:6px 0 0 18px;padding:0}.u-w100{width:100%}.u-w90{width:90px}
 
-/* branded splash (#141): P mark, product name, legal name, copyright */
+/* branded splash (#141): Daniel's logo (dark: lightened tones on #0B0C0F,
+   generated from the traced masks; light: the original grey two-tone logo),
+   legal name and copyright in Aldrich (SIL OFL 1.1, bundled, same-origin) */
+@font-face{font-family:Aldrich;src:url(/static/fonts/Aldrich-Regular.woff2) format("woff2");font-weight:400;font-style:normal;font-display:swap}
+#login{background:var(--sbg)}
+.slogo img{display:block;max-width:80vw;height:auto}.slogo .lg-light{display:none}
+@media(prefers-color-scheme:light){.slogo .lg-dark{display:none}.slogo .lg-light{display:block}}
+.sname{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.slegal,.sfoot,.hlegal,.wm{font-family:Aldrich,system-ui,sans-serif}
 .splash{display:flex;flex-direction:column;align-items:center;text-align:center;padding:24px 12px;margin:auto}
-.smark{background:var(--tile);border-radius:18px;padding:8px;display:inline-flex}.smark img{display:block}
-.sname{margin:14px 0 2px;font-size:40px;line-height:1.1;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--t)}
-.slegal{margin:0 0 18px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--m)}
+.slegal{margin:14px 0 18px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--m)}
 .sfoot{margin-top:18px;font-size:12px;color:var(--m)}.sfoot p{margin:2px 0}
 .hlegal{margin-left:4px}.wm{color:var(--t)}
 .afoot{padding:8px 16px;border-top:1px solid var(--b);background:var(--p);text-align:center}
