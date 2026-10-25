@@ -128,7 +128,7 @@ ${d.decoys.map(x => `<tr><td>${esc(x.ip)}</td><td>${esc(x.template)}</td><td>${e
 }
 function Alerts() {
   const A = data.alerts, muted = A.muted || [];
-  return `<h2>Alerts</h2><div class="u-mb12 card"><div class="k">Rules (shown in this console only; no email, nothing leaves the sensor)</div><ul class="u-ul"><li>Any touch on any decoy raises an alert (Medium)</li><li>One source touching 2+ decoys (multi-decoy scan) is raised to High</li><li>The same source within 10 minutes is grouped into one alert</li></ul>${muted.length ? `<p class="note">Muted sources: ${muted.map(m => `${esc(m)} <button data-act="unmute" data-src="${esc(m)}">Unmute</button>`).join(" ")}</p>` : ""}</div>
+  return `<h2>Alerts</h2><div class="u-mb12 card"><div class="k">Rules (shown in this console only; no email, nothing leaves the sensor)</div><ul class="u-ul"><li>Any touch on any decoy raises an alert (Medium), including ACK, FIN, NULL and Xmas probes</li><li>Replies to traffic a decoy sent in the last 5 minutes (same address and ports) are shown in Activity as replies and do not raise an alert</li><li>One source touching 2+ decoys (multi-decoy scan) is raised to High</li><li>The same source within 10 minutes is grouped into one alert</li></ul>${muted.length ? `<p class="note">Muted sources: ${muted.map(m => `${esc(m)} <button data-act="unmute" data-src="${esc(m)}">Unmute</button>`).join(" ")}</p>` : ""}</div>
 <div class="tw"><table><tr><th>Severity</th><th>Decoys</th><th>Source</th><th>First seen</th><th>Last seen</th><th>Count</th><th>Status</th><th></th></tr>${A.alerts.map(a => `<tr><td><span class="sev sev-${esc(a.severity)}">${esc(a.severity)}</span> <span class="note">${esc(a.why)}</span></td><td class="wr">${esc(a.decoys.join(", "))}</td><td>${esc(a.src)}${muted.includes(a.src) ? ' <span class="note">(muted)</span>' : ""}</td><td>${tm(a.first)}</td><td>${tm(a.last)}</td><td>${a.count}</td><td>${esc(a.status)}${a.note ? `<div class="note">${esc(a.note)}</div>` : ""}</td>
 <td>${a.status === "Open" ? `<button data-act="ack" data-id="${a.id}">Acknowledge</button> ` : ""}${a.status !== "Closed" ? `<button data-act="close" data-id="${a.id}">Close</button> ` : `<button data-act="reopen" data-id="${a.id}">Reopen</button> `}${muted.includes(a.src) ? "" : `<button data-act="mute" data-src="${esc(a.src)}">Mute source</button>`}</td></tr>`).join("") || '<tr><td colspan="8" class="note">No alerts</td></tr>'}</table></div>`;
 }
@@ -139,7 +139,7 @@ function Activity() {
 }
 function rt() {
   const t = $("ft");
-  if (t) t.innerHTML = "<tr><th>Time</th><th>Source</th><th>Decoy</th><th>Port</th><th>Protocol</th><th>Event</th><th>Source OS</th></tr>" + rows().slice(0, 200).map(e => `<tr><td>${tm(e.ts)}</td><td>${esc(e.src)}</td><td>${esc(e.decoy)}</td><td>${esc(e.port == null ? "" : e.port)}</td><td>${esc(e.proto)}</td><td>${esc(e.event)}</td><td>${esc(e.os)}</td></tr>`).join("");
+  if (t) t.innerHTML = "<tr><th>Time</th><th>Source</th><th>Decoy</th><th>Port</th><th>Protocol</th><th>Event</th><th>Source OS</th></tr>" + rows().slice(0, 200).map(e => `<tr><td>${tm(e.ts)}</td><td>${esc(e.src)}</td><td>${esc(e.decoy)}</td><td>${esc(e.port == null ? "" : e.port)}</td><td>${esc(e.proto)}</td><td>${esc(e.event)}${e.reply ? " (reply, no alert)" : ""}</td><td>${esc(e.os)}</td></tr>`).join("");
 }
 function csvCell(v) { v = String(v == null ? "" : v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
 function csv() {
