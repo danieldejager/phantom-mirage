@@ -277,7 +277,8 @@ class TestSetupBanner(unittest.TestCase):
         out = run_setup({"COLORTERM": ""}, tty=True)
         for r in self.RETIRED:
             self.assertNotIn(r, out)
-        self.assertIn("\x1b[1;38;5;255m", out)
+        self.assertIn("\x1b[1m", out)             # front P: bold, default fg
+        self.assertNotIn("38;5;255", out)
         self.assertIn("\x1b[38;5;245m", out)
         self.assertNotIn("38;2;", out)
 
@@ -285,7 +286,9 @@ class TestSetupBanner(unittest.TestCase):
         out = run_setup({"COLORTERM": "truecolor"}, tty=True)
         for r in self.RETIRED:
             self.assertNotIn(r, out)
-        self.assertIn("\x1b[1;38;2;238;240;243m", out)   # #EEF0F3
+        self.assertIn("\x1b[1m", out)             # front P: bold, default fg
+        self.assertNotIn("238;240;243", out)
+        self.assertNotIn("38;5;", out)
         self.assertIn("\x1b[38;2;138;144;154m", out)     # #8A909A
 
     def test_no_escape_with_dumb_term_or_no_color(self):
@@ -303,7 +306,7 @@ class TestSetupBanner(unittest.TestCase):
     def test_script_has_no_retired_palette(self):
         with open(SETUP, encoding="utf-8") as f:
             t = f.read()
-        for h in ("7B61FF", "FF7A2F", "B04FD6") + self.RETIRED:
+        for h in ("7B61FF", "FF7A2F", "B04FD6", "EEF0F3", "38;5;255", "238;240;243") + self.RETIRED:
             self.assertNotIn(h, t)
 
 
