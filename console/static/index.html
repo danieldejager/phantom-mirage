@@ -7,11 +7,14 @@
 <meta name="referrer" content="no-referrer">
 <link rel="icon" type="image/svg+xml" href="/static/phantom-mirage-mark.svg">
 <link rel="stylesheet" href="/static/console.css">
-<title>Phantom Mirage I console</title>
+<title>{{PRODUCT}} console</title>
 </head>
 <body>
-<div id="login"><div class="card">
- <div class="logo"><img src="/static/phantom-mirage-logo-light.png" alt="Phantom Mirage I logo"></div>
+<div id="login"><div class="splash">
+ <div class="slogo"><img class="lg-dark" src="/static/phantom-mirage-logo-dark.png" width="280" height="114" alt=""><img class="lg-light" src="/static/phantom-mirage-logo-light.png" width="280" height="123" alt=""></div>
+ <h1 class="sname">{{PRODUCT}}</h1>
+ <p class="slegal">{{LEGAL_NAME}}</p>
+ <div class="card">
  <form id="lf" autocomplete="on">
   <p class="note">Sensor console sign-in<span id="lsensor"></span></p>
   <label class="note" for="lu">Username</label>
@@ -22,10 +25,13 @@
   <button class="u-w100 pri" type="submit">Sign in</button>
  </form>
  <p class="note">Forgot the password or locked out? On the sensor run <code>sudo phantom-mirage-setup --reset-admin</code>.</p>
+ </div>
+ <footer class="sfoot"><p>{{PRODUCT}} | {{LEGAL_NAME}}</p><p class="copy">{{COPYRIGHT}}</p></footer>
 </div></div>
-<header><span class="brand"><span class="chip"><img src="/static/phantom-mirage-mark.png" width="26" height="26" alt=""></span><span class="wm">PHANTOM <span>MIRAGE I</span></span></span><span class="u-mla note" id="hsensor"></span><button id="logout" data-act="logout">Sign out</button></header>
+<header><span class="brand"><span class="chip"><img src="/static/phantom-mirage-mark.png" width="26" height="26" alt=""></span><span class="wm">{{PRODUCT}}</span><span class="hlegal note">{{LEGAL_NAME}}</span></span><span class="u-mla note" id="hsensor"></span><button id="logout" data-act="logout">Sign out</button></header>
 <div id="drift" class="drift hide" role="status"></div>
-<div class="wrap"><nav id="dock" aria-label="Sidebar menu"><div class="nbrand brand"><span class="chip"><img src="/static/phantom-mirage-mark.png" width="22" height="22" alt=""></span><span class="u-fs13 wm">MIRAGE I</span></div><div class="dockbar"><span class="dh" id="dh" tabindex="0" role="button" aria-label="Drag handle: drag to move menu, double-click or Enter to dock" title="Drag to move; double-click to dock">&#10303;</span><button class="dbtn dret" id="dret" aria-label="Dock menu back">Dock</button><button class="dbtn" id="dbtn" aria-haspopup="menu" aria-expanded="false" aria-controls="dmenu" aria-label="Menu position options" title="Menu position">&#128204;</button><div class="dmenu hide" id="dmenu" role="menu" aria-label="Menu position"><button role="menuitemradio" aria-checked="false" data-dock="left">Dock left</button><button role="menuitemradio" aria-checked="false" data-dock="right">Dock right</button><button role="menuitemradio" aria-checked="false" data-dock="top">Dock top</button><button role="menuitemradio" aria-checked="false" data-dock="col">Collapse</button><button role="menuitemradio" aria-checked="false" data-dock="float">Float</button></div></div><div id="nav" role="navigation" aria-label="Main"></div></nav><main id="main"></main></div>
+<div class="wrap"><nav id="dock" aria-label="Sidebar menu"><div class="nbrand brand"><span class="chip"><img src="/static/phantom-mirage-mark.png" width="22" height="22" alt=""></span><span class="u-fs13 wm">{{PRODUCT}}</span></div><div class="dockbar"><span class="dh" id="dh" tabindex="0" role="button" aria-label="Drag handle: drag to move menu, double-click or Enter to dock" title="Drag to move; double-click to dock">&#10303;</span><button class="dbtn dret" id="dret" aria-label="Dock menu back">Dock</button><button class="dbtn" id="dbtn" aria-haspopup="menu" aria-expanded="false" aria-controls="dmenu" aria-label="Menu position options" title="Menu position">&#128204;</button><div class="dmenu hide" id="dmenu" role="menu" aria-label="Menu position"><button role="menuitemradio" aria-checked="false" data-dock="left">Dock left</button><button role="menuitemradio" aria-checked="false" data-dock="right">Dock right</button><button role="menuitemradio" aria-checked="false" data-dock="top">Dock top</button><button role="menuitemradio" aria-checked="false" data-dock="col">Collapse</button><button role="menuitemradio" aria-checked="false" data-dock="float">Float</button></div></div><div id="nav" role="navigation" aria-label="Main"></div></nav><main id="main"></main></div>
+<footer class="afoot note">{{PRODUCT}} | <span class="copy">{{COPYRIGHT}}</span></footer>
 <div class="dz" id="dzl"></div><div class="dz" id="dzr"></div><div class="dz" id="dzt"></div><div class="modal" id="modal"><div id="mbox"></div></div>
 <script src="/static/console.js"></script>
 </body>

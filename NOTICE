@@ -58,3 +58,13 @@ The Phantom Mirage name and logo files (docs/assets/phantom-mirage-*,
 webserver/htdocs/images/phantom-mirage-logo.png, favicon.svg, favicon-32.png)
 are brand assets of Daniel de Jager. They are not part of the GPL-licensed
 code and are not licensed under the GPL; all rights reserved.
+
+Aldrich font
+------------
+
+The web console bundles the Aldrich typeface (Copyright (c) 2011, Matthew
+Desmond, with Reserved Font Name Aldrich), licensed under the SIL Open Font
+License, Version 1.1; see console/static/fonts/Aldrich-OFL.txt. Taken from
+the google/fonts repository (ofl/aldrich) and converted to WOFF2 without
+changes to the glyphs. It is served from the console itself; no font is
+loaded from any external site.

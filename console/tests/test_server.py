@@ -218,6 +218,36 @@ class Server(unittest.TestCase):
         for p in ("/static/../pmauth.py", "/static/.hidden", "/static/%2e%2e%2fpmauth.py", "/static/x.py"):
             self.assertEqual(Client().req("GET", p)[0], 404, p)
 
+    def raw(self, path):
+        c = http.client.HTTPSConnection("127.0.0.1", PORT, context=ssl._create_unverified_context(), timeout=10)
+        c.request("GET", path, headers={"Host": "localhost:%d" % PORT})
+        r = c.getresponse()
+        body = r.read()
+        c.close()
+        return r.status, r, body
+
+    def test_font_and_licence_served_from_allowlist(self):
+        for path, ctype in (("/static/fonts/Aldrich-Regular.woff2", "font/woff2"),
+                            ("/static/fonts/Aldrich-OFL.txt", "text/plain; charset=utf-8")):
+            st, r, body = self.raw(path)
+            self.assertEqual(st, 200, path)
+            self.assertEqual(r.getheader("Content-Type"), ctype)
+            self.assertEqual(r.getheader("X-Content-Type-Options"), "nosniff")
+            self.assertIn("font-src 'self'", r.getheader("Content-Security-Policy"))
+            self.assertTrue(body)
+        self.assertEqual(self.raw("/static/fonts/Aldrich-Regular.woff2")[2][:4], b"wOF2")
+
+    def test_static_only_exact_names(self):
+        for p in ("/static/fonts/../pmauth.py", "/static/fonts/", "/static/fonts", "/static/fonts/x.woff2",
+                  "/static/fonts/%2e%2e/console.css", "/static/fonts//Aldrich-OFL.txt",
+                  "/static/./console.css", "/static/fonts/Aldrich-OFL.TXT", "/static/Aldrich-OFL.txt",
+                  "/static//etc/passwd", "/static/README.md"):
+            self.assertEqual(self.raw(p)[0], 404, p)
+        self.assertEqual(sorted(pmc.STATIC_FILES), sorted([
+            "index.html", "console.css", "console.js", "phantom-mirage-mark.svg", "phantom-mirage-mark.png",
+            "phantom-mirage-logo-light.png", "phantom-mirage-logo-dark.png",
+            "fonts/Aldrich-Regular.woff2", "fonts/Aldrich-OFL.txt"]))
+
 
 if __name__ == "__main__":
     unittest.main()

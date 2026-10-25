@@ -613,7 +613,7 @@ jobs:
           test -x /usr/lib/phantom-mirage/pm-start && test -f /usr/lib/phantom-mirage/default-lib.sh
           test -x /usr/sbin/phantom-mirage-setup && test -x /usr/sbin/phantom-mirage-uninstall
           # web console (#118): shipped, not enabled, own user, firewall rules
-          for f in pm-console.py pm-console-setup.py pmauth.py pmstore.py static/index.html static/console.js static/console.css static/phantom-mirage-mark.svg static/phantom-mirage-logo-light.png; do
+          for f in pm-console.py pm-console-setup.py pmauth.py pmstore.py branding.py branding.conf static/index.html static/console.js static/console.css static/phantom-mirage-mark.svg static/phantom-mirage-logo-light.png static/phantom-mirage-logo-dark.png static/fonts/Aldrich-Regular.woff2 static/fonts/Aldrich-OFL.txt; do
             test -f /usr/lib/phantom-mirage/console/$f
           done
           test -x /usr/lib/phantom-mirage/pm-firewall
@@ -627,6 +627,8 @@ jobs:
           grep -q '^set default default icmp action open$' /etc/phantom-mirage/phantom-mirage.conf
           phantom-mirage-setup --dry-run -i lo -n 10.9.9.0/29 > setup.txt
           grep -q 'farpd' setup.txt
+          # splash banner (#141): names from branding.conf, no ANSI codes off a tty
+          grep -q 'Mirage I' setup.txt && ! grep -q "$(printf '\033')" setup.txt
           phantom-mirage-setup --dry-run -i lo -n 10.9.9.0/29 --no-farpd | grep -q 'skipped (--no-farpd)'
           test -e /usr/share/phantom-mirage/nmap-os-db
           getent passwd phantom-mirage

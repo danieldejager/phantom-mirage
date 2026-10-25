@@ -43,3 +43,12 @@ Copyright:
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+
+Aldrich font (console/static/fonts/Aldrich-Regular.woff2), bundled for the
+web console and served locally only (never fetched at runtime):
+
+ Copyright (c) 2011, Matthew Desmond, with Reserved Font Name Aldrich.
+ Licensed under the SIL Open Font License, Version 1.1. The full licence
+ text is installed as /usr/lib/phantom-mirage/console/static/fonts/Aldrich-OFL.txt
+ Source: the google/fonts repository, ofl/aldrich (Aldrich-Regular.ttf,
+ converted unmodified to WOFF2).
