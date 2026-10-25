@@ -1,0 +1,415 @@
+{
+  "run_id": "synthetic-ubuntu2404-0001",
+  "run_index": 0,
+  "tool": "fingerprint-lab/probe.py",
+  "tool_version": "0.1.0",
+  "timestamp": "2000-01-01T00:00:00Z (SYNTHETIC)",
+  "cmdline": [
+    "SYNTHETIC",
+    "example",
+    "no packets sent"
+  ],
+  "target": "10.0.0.21",
+  "ports": {
+    "open_tcp": 22,
+    "closed_tcp": 1,
+    "closed_udp": 40000
+  },
+  "dry_run": false,
+  "probe_plan": "SYNTHETIC",
+  "exchanges": [
+    {
+      "name": "SEQ1",
+      "kind": "syn_seq",
+      "gap_before_sec": 0.0,
+      "timeout": false,
+      "sent_parsed": {
+        "seq": 1001,
+        "ack": 0
+      },
+      "reply_parsed": {
+        "l4": "tcp",
+        "seq": 536870912,
+        "ack": 1002,
+        "window": 64240,
+        "flags": "SA",
+        "options": "M5B4ST11NW7",
+        "options_raw": [
+          [
+            "MSS",
+            1460
+          ],
+          [
+            "Timestamp",
+            [
+              7,
+              0
+            ]
+          ]
+        ],
+        "ip_id": 101,
+        "ip_ttl": 64,
+        "ip_df": true
+      }
+    },
+    {
+      "name": "SEQ2",
+      "kind": "syn_seq",
+      "gap_before_sec": 0.1,
+      "timeout": false,
+      "sent_parsed": {
+        "seq": 1002,
+        "ack": 0
+      },
+      "reply_parsed": {
+        "l4": "tcp",
+        "seq": 536900912,
+        "ack": 1003,
+        "window": 64240,
+        "flags": "SA",
+        "options": "M5B4ST11NW7",
+        "options_raw": [
+          [
+            "MSS",
+            1460
+          ],
+          [
+            "Timestamp",
+            [
+              7,
+              0
+            ]
+          ]
+        ],
+        "ip_id": 102,
+        "ip_ttl": 64,
+        "ip_df": true
+      }
+    },
+    {
+      "name": "SEQ3",
+      "kind": "syn_seq",
+      "gap_before_sec": 0.1,
+      "timeout": false,
+      "sent_parsed": {
+        "seq": 1003,
+        "ack": 0
+      },
+      "reply_parsed": {
+        "l4": "tcp",
+        "seq": 536931912,
+        "ack": 1004,
+        "window": 64240,
+        "flags": "SA",
+        "options": "M5B4ST11NW7",
+        "options_raw": [
+          [
+            "MSS",
+            1460
+          ],
+          [
+            "Timestamp",
+            [
+              7,
+              0
+            ]
+          ]
+        ],
+        "ip_id": 103,
+        "ip_ttl": 64,
+        "ip_df": true
+      }
+    },
+    {
+      "name": "SEQ4",
+      "kind": "syn_seq",
+      "gap_before_sec": 0.1,
+      "timeout": false,
+      "sent_parsed": {
+        "seq": 1004,
+        "ack": 0
+      },
+      "reply_parsed": {
+        "l4": "tcp",
+        "seq": 536960912,
+        "ack": 1005,
+        "window": 64240,
+        "flags": "SA",
+        "options": "M5B4ST11NW7",
+        "options_raw": [
+          [
+            "MSS",
+            1460
+          ],
+          [
+            "Timestamp",
+            [
+              7,
+              0
+            ]
+          ]
+        ],
+        "ip_id": 104,
+        "ip_ttl": 64,
+        "ip_df": true
+      }
+    },
+    {
+      "name": "SEQ5",
+      "kind": "syn_seq",
+      "gap_before_sec": 0.1,
+      "timeout": false,
+      "sent_parsed": {
+        "seq": 1005,
+        "ack": 0
+      },
+      "reply_parsed": {
+        "l4": "tcp",
+        "seq": 536990912,
+        "ack": 1006,
+        "window": 64240,
+        "flags": "SA",
+        "options": "M5B4ST11NW7",
+        "options_raw": [
+          [
+            "MSS",
+            1460
+          ],
+          [
+            "Timestamp",
+            [
+              7,
+              0
+            ]
+          ]
+        ],
+        "ip_id": 105,
+        "ip_ttl": 64,
+        "ip_df": true
+      }
+    },
+    {
+      "name": "SEQ6",
+      "kind": "syn_seq",
+      "gap_before_sec": 0.1,
+      "timeout": false,
+      "sent_parsed": {
+        "seq": 1006,
+        "ack": 0
+      },
+      "reply_parsed": {
+        "l4": "tcp",
+        "seq": 537020912,
+        "ack": 1007,
+        "window": 64240,
+        "flags": "SA",
+        "options": "M5B4ST11NW7",
+        "options_raw": [
+          [
+            "MSS",
+            1460
+          ],
+          [
+            "Timestamp",
+            [
+              7,
+              0
+            ]
+          ]
+        ],
+        "ip_id": 106,
+        "ip_ttl": 64,
+        "ip_df": true
+      }
+    },
+    {
+      "name": "ECN",
+      "kind": "ecn",
+      "gap_before_sec": 0.2,
+      "timeout": false,
+      "sent_parsed": {
+        "seq": 2000,
+        "ack": 0
+      },
+      "reply_parsed": {
+        "l4": "tcp",
+        "seq": 536870912,
+        "ack": 2001,
+        "window": 64240,
+        "flags": "SA",
+        "options": "M5B4ST11NW7",
+        "options_raw": [
+          [
+            "MSS",
+            1460
+          ],
+          [
+            "Timestamp",
+            [
+              7,
+              0
+            ]
+          ]
+        ],
+        "ip_id": 120,
+        "ip_ttl": 64,
+        "ip_df": true
+      }
+    },
+    {
+      "name": "T2",
+      "kind": "tcp_unusual",
+      "gap_before_sec": 0.2,
+      "timeout": true,
+      "sent_parsed": {
+        "seq": 3000,
+        "ack": 4000
+      },
+      "reply_parsed": null
+    },
+    {
+      "name": "T3",
+      "kind": "tcp_unusual",
+      "gap_before_sec": 0.2,
+      "timeout": true,
+      "sent_parsed": {
+        "seq": 3000,
+        "ack": 4000
+      },
+      "reply_parsed": null
+    },
+    {
+      "name": "T4",
+      "kind": "tcp_unusual",
+      "gap_before_sec": 0.2,
+      "timeout": false,
+      "sent_parsed": {
+        "seq": 3000,
+        "ack": 4000
+      },
+      "reply_parsed": {
+        "l4": "tcp",
+        "seq": 4000,
+        "ack": 0,
+        "window": 0,
+        "flags": "R",
+        "options": "",
+        "options_raw": [],
+        "ip_id": 0,
+        "ip_ttl": 64,
+        "ip_df": false
+      }
+    },
+    {
+      "name": "T5",
+      "kind": "tcp_unusual",
+      "gap_before_sec": 0.2,
+      "timeout": false,
+      "sent_parsed": {
+        "seq": 3000,
+        "ack": 4000
+      },
+      "reply_parsed": {
+        "l4": "tcp",
+        "seq": 0,
+        "ack": 3001,
+        "window": 0,
+        "flags": "RA",
+        "options": "",
+        "options_raw": [],
+        "ip_id": 0,
+        "ip_ttl": 64,
+        "ip_df": false
+      }
+    },
+    {
+      "name": "T6",
+      "kind": "tcp_unusual",
+      "gap_before_sec": 0.2,
+      "timeout": false,
+      "sent_parsed": {
+        "seq": 3000,
+        "ack": 4000
+      },
+      "reply_parsed": {
+        "l4": "tcp",
+        "seq": 4000,
+        "ack": 0,
+        "window": 0,
+        "flags": "R",
+        "options": "",
+        "options_raw": [],
+        "ip_id": 0,
+        "ip_ttl": 64,
+        "ip_df": false
+      }
+    },
+    {
+      "name": "T7",
+      "kind": "tcp_unusual",
+      "gap_before_sec": 0.2,
+      "timeout": false,
+      "sent_parsed": {
+        "seq": 3000,
+        "ack": 4000
+      },
+      "reply_parsed": {
+        "l4": "tcp",
+        "seq": 0,
+        "ack": 3001,
+        "window": 0,
+        "flags": "RA",
+        "options": "",
+        "options_raw": [],
+        "ip_id": 0,
+        "ip_ttl": 64,
+        "ip_df": false
+      }
+    },
+    {
+      "name": "IE1",
+      "kind": "icmp",
+      "gap_before_sec": 0.2,
+      "timeout": false,
+      "reply_parsed": {
+        "l4": "icmp",
+        "icmp_type": 0,
+        "icmp_code": 0,
+        "ip_id": 201,
+        "ip_ttl": 64,
+        "ip_df": false
+      }
+    },
+    {
+      "name": "IE2",
+      "kind": "icmp",
+      "gap_before_sec": 0.2,
+      "timeout": false,
+      "reply_parsed": {
+        "l4": "icmp",
+        "icmp_type": 0,
+        "icmp_code": 0,
+        "ip_id": 202,
+        "ip_ttl": 64,
+        "ip_df": false
+      }
+    },
+    {
+      "name": "U1",
+      "kind": "udp",
+      "gap_before_sec": 0.2,
+      "timeout": false,
+      "reply_parsed": {
+        "l4": "icmp",
+        "icmp_type": 3,
+        "icmp_code": 3,
+        "ip_id": 300,
+        "ip_ttl": 64,
+        "ip_df": false,
+        "ip_len": 356,
+        "embedded_ip_id": 42,
+        "embedded_ip_len": 328
+      }
+    }
+  ]
+}

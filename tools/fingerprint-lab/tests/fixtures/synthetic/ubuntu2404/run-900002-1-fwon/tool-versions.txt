@@ -1,0 +1,11 @@
+captured_utc=2000-01-01T00:00:00Z
+target=ubuntu2404 vm=SYNTHETIC-ubuntu2404 ip=10.0.0.21 open_tcp=22 closed_tcp=1 closed_udp=40000 runs=3 firewall=on
+probe_host=SYNTHETIC-EXAMPLE
+kernel=0.0.0-synthetic
+os_release=SYNTHETIC example data
+nmap_version=Nmap version 0.0 (synthetic)
+nmap_os_db=SYNTHETIC-MARKER-NMAPOSDB-MUST-NOT-APPEAR
+python_version=Python 3.0.0 (synthetic)
+scapy_version=0.0.0-synthetic
+tool_source_commit=0000000000000000000000000000000000000000
+pcap_bytes=0

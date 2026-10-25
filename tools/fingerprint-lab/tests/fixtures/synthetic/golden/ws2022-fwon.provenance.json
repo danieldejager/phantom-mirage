@@ -1,0 +1,1275 @@
+{
+  "block_sha256": "c0506b1123b0f9a63fa2df62058e3df9c10ded26fdc768f6e0fb7a76e9f87a13",
+  "derive_report": {
+    "fields": {
+      "ECN.A": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "S+",
+          "S+",
+          "S+"
+        ]
+      },
+      "ECN.DF": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "ECN.F": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "AS",
+          "AS",
+          "AS"
+        ]
+      },
+      "ECN.O": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "M5B4NW8NNS",
+          "M5B4NW8NNS",
+          "M5B4NW8NNS"
+        ]
+      },
+      "ECN.Q": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "ECN.R": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "ECN.S": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "O",
+          "O",
+          "O"
+        ]
+      },
+      "ECN.T": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "ECN.TG": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "ECN.W": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "FFFF",
+          "FFFF",
+          "FFFF"
+        ]
+      },
+      "IE.CD": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "IE.DFI": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N"
+        ]
+      },
+      "IE.R": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "IE.T": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "IE.TG": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "OPS.O1": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "M5B4NW8NNS",
+          "M5B4NW8NNS",
+          "M5B4NW8NNS"
+        ]
+      },
+      "OPS.O2": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "M5B4NW8NNS",
+          "M5B4NW8NNS",
+          "M5B4NW8NNS"
+        ]
+      },
+      "OPS.O3": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "M5B4NW8NNS",
+          "M5B4NW8NNS",
+          "M5B4NW8NNS"
+        ]
+      },
+      "OPS.O4": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "M5B4NW8NNS",
+          "M5B4NW8NNS",
+          "M5B4NW8NNS"
+        ]
+      },
+      "OPS.O5": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "M5B4NW8NNS",
+          "M5B4NW8NNS",
+          "M5B4NW8NNS"
+        ]
+      },
+      "OPS.O6": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "M5B4NW8NNS",
+          "M5B4NW8NNS",
+          "M5B4NW8NNS"
+        ]
+      },
+      "SEQ.CI": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "SEQ.GCD": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          1000,
+          1000,
+          1000
+        ]
+      },
+      "SEQ.II": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "I",
+          "I",
+          "I"
+        ]
+      },
+      "SEQ.ISR": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": false,
+        "values": [
+          149,
+          151,
+          149
+        ]
+      },
+      "SEQ.SP": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": false,
+        "values": [
+          80,
+          86,
+          85
+        ]
+      },
+      "SEQ.SS": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "O",
+          "O",
+          "O"
+        ]
+      },
+      "SEQ.TI": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "I",
+          "I",
+          "I"
+        ]
+      },
+      "SEQ.TS": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "1",
+          "1",
+          "1"
+        ]
+      },
+      "T1.A": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "S+",
+          "S+",
+          "S+"
+        ]
+      },
+      "T1.DF": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T1.F": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "AS",
+          "AS",
+          "AS"
+        ]
+      },
+      "T1.O": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "M5B4NW8NNS",
+          "M5B4NW8NNS",
+          "M5B4NW8NNS"
+        ]
+      },
+      "T1.Q": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T1.R": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T1.S": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "O",
+          "O",
+          "O"
+        ]
+      },
+      "T1.T": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T1.TG": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T1.W": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "FFFF",
+          "FFFF",
+          "FFFF"
+        ]
+      },
+      "T2.R": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N"
+        ]
+      },
+      "T3.R": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N"
+        ]
+      },
+      "T4.A": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "T4.DF": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N"
+        ]
+      },
+      "T4.F": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "R",
+          "R",
+          "R"
+        ]
+      },
+      "T4.O": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T4.Q": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T4.R": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T4.S": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "A",
+          "A",
+          "A"
+        ]
+      },
+      "T4.T": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T4.TG": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T4.W": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "T5.A": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "S+",
+          "S+",
+          "S+"
+        ]
+      },
+      "T5.DF": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N"
+        ]
+      },
+      "T5.F": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "AR",
+          "AR",
+          "AR"
+        ]
+      },
+      "T5.O": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T5.Q": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T5.R": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T5.S": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "T5.T": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T5.TG": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T5.W": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "T6.A": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "T6.DF": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N"
+        ]
+      },
+      "T6.F": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "R",
+          "R",
+          "R"
+        ]
+      },
+      "T6.O": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T6.Q": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T6.R": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T6.S": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "A",
+          "A",
+          "A"
+        ]
+      },
+      "T6.T": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T6.TG": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T6.W": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "T7.A": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "S+",
+          "S+",
+          "S+"
+        ]
+      },
+      "T7.DF": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N"
+        ]
+      },
+      "T7.F": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "AR",
+          "AR",
+          "AR"
+        ]
+      },
+      "T7.O": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T7.Q": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T7.R": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T7.S": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "T7.T": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T7.TG": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T7.W": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "U1.DF": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N"
+        ]
+      },
+      "U1.IPL": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "164",
+          "164",
+          "164"
+        ]
+      },
+      "U1.R": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "U1.T": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "U1.TG": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "U1.UN": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "148",
+          "148",
+          "148"
+        ]
+      },
+      "WIN.W1": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          65535,
+          65535,
+          65535
+        ]
+      },
+      "WIN.W2": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          65535,
+          65535,
+          65535
+        ]
+      },
+      "WIN.W3": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          65535,
+          65535,
+          65535
+        ]
+      },
+      "WIN.W4": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          65535,
+          65535,
+          65535
+        ]
+      },
+      "WIN.W5": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          65535,
+          65535,
+          65535
+        ]
+      },
+      "WIN.W6": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          65535,
+          65535,
+          65535
+        ]
+      }
+    }
+  },
+  "generator": {
+    "name": "fingerprint-lab/build_db.py",
+    "version": "0.1.0"
+  },
+  "inputs": {
+    "runs": [
+      {
+        "file": "run-synthetic-ws2022-0001.json",
+        "run_id": "synthetic-ws2022-0001",
+        "sha256": "347ff40a7feade5b3b2527274ecbafb685f826230c51d6a55433eb51e0d3088b"
+      },
+      {
+        "file": "run-synthetic-ws2022-0002.json",
+        "run_id": "synthetic-ws2022-0002",
+        "sha256": "73162f061e2aec2d2f8aa26cdfa75ce1ba4a5c8ff290701b567b889da410eb43"
+      },
+      {
+        "file": "run-synthetic-ws2022-0003.json",
+        "run_id": "synthetic-ws2022-0003",
+        "sha256": "459b61cd891c50903156992879c83740287f222d564bc61e37752950df47e6ee"
+      }
+    ],
+    "tool_versions_sha256": "0b5f0cb44367f1aa1baed66158e12bb728039ae82a2738b1a28dedfabf80420e"
+  },
+  "lab_run": {
+    "attempt": "1",
+    "dir": "run-900001-1-fwon",
+    "run_id": "900001"
+  },
+  "persona": "ws2022-fwon",
+  "rules_applied": {
+    "SEQ.ISR": "range 95-97 (min-max of runs)",
+    "SEQ.SP": "range 50-56 (min-max of runs)"
+  },
+  "target": {
+    "description": "Windows Server 2022",
+    "family": "windows",
+    "firewall": "on",
+    "key": "ws2022"
+  },
+  "tool_versions": {
+    "captured_utc": "2000-01-01T00:00:00Z",
+    "closed_tcp": "1",
+    "closed_udp": "40000",
+    "firewall": "on",
+    "ip": "10.0.0.22",
+    "kernel": "0.0.0-synthetic",
+    "nmap_version": "Nmap version 0.0 (synthetic)",
+    "open_tcp": "3389",
+    "os_release": "SYNTHETIC example data",
+    "pcap_bytes": "0",
+    "probe_host": "SYNTHETIC-EXAMPLE",
+    "python_version": "Python 3.0.0 (synthetic)",
+    "runs": "3",
+    "scapy_version": "0.0.0-synthetic",
+    "target": "ws2022",
+    "tool_source_commit": "0000000000000000000000000000000000000000",
+    "vm": "SYNTHETIC-ws2022"
+  }
+}
