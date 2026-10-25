@@ -4,74 +4,97 @@ Capture OS stack replies from **hosts you own** and derive draft honeyd
 personality entries for Phantom Mirage. Measurements only — nothing here is
 copied from any third-party OS fingerprint database.
 
-## Safety rules
+## Safety rules (enforced by `probe.py`)
 
-- Targets must be RFC1918 IPv4, RFC4193 ULA IPv6, or loopback.
-- `--i-own-these-hosts` is required on every real or dry-run invocation.
-- The tool opens sockets only to the target IPs you pass on the command line.
-- Do **not** run probes against production, cloud tenants, or the public Internet.
-- Lab VMs first; never point this at a network you do not control.
-- `nmap -O`, p0f and Satori are **test checks only** and are never shipped or
-  vendored into this repository.
+- `--i-own-these-hosts` is required on every invocation, including `--dry-run`;
+  without it `probe.py` exits before building any packet.
+- Exactly one target IP per invocation (positional argument). The tool opens
+  sockets only to that IP.
+- Targets must be private: RFC1918 IPv4, RFC4193 ULA IPv6, or loopback.
+  Anything else is refused. (Note: the check uses Python's `is_private`, so a
+  few other non-global reserved IPv4 ranges such as link-local are also
+  accepted; do not rely on that.)
+- `*_proxy` environment variables are dropped at start-up.
 
-## Exact operator commands
+Operating rules (not enforced by code):
 
-Create a run directory, then capture (lab VMs must exist and be reachable):
+- Measure **our own hosts only**. Never import or copy a third-party OS
+  fingerprint database.
+- Lab probes stay inside the lab VNet (`10.0.0.0/24`) or the local Parallels
+  host-only network. Decoy testing stays inside `192.168.1.240/29`.
+- Never probe production or the public Internet.
+- `nmap -O`, p0f and Satori are **test checks only**. They are never shipped
+  or vendored into this repository.
+
+## Azure reference lab (primary)
+
+The reference hosts live in a private Azure lab (repo
+`danieldejager/phantom-mirage-lab`): one VNet `10.0.0.0/24`, no public IPs.
+
+| Host               | VM name           | IP        | Open TCP | Closed TCP | Closed UDP | Notes                            |
+|--------------------|-------------------|-----------|----------|------------|------------|----------------------------------|
+| Probe              | `pm-probe`        | 10.0.0.10 | -        | -          | -          | Runs `probe.py` / `derive.py`    |
+| Ubuntu 24.04       | `pm-t-ubuntu2404` | 10.0.0.21 | 22       | 1          | 40000      |                                  |
+| Windows Server 2022| `pm-t-ws2022`     | 10.0.0.22 | 3389     | 1          | 40000      | Capture firewall on **and** off  |
+| Windows Server 2019| `pm-t-ws2019`     | 10.0.0.23 | 3389     | 1          | 40000      | Capture firewall on **and** off  |
+| Windows Server 2025| `pm-t-ws2025`     | 10.0.0.24 | 3389     | 1          | 40000      | Capture firewall on **and** off  |
+
+Captures are run through a manual, approval-gated GitHub Actions capture
+workflow in the lab repo (planned / in review). There is no manual CLI access
+to Azure. The workflow runs these fixed commands on `pm-probe` as root, from
+this directory:
 
 ```
-cd tools/fingerprint-lab
-python3 probe.py --dry-run --i-own-these-hosts --open-tcp 22 --closed-tcp 1 --closed-udp 40000 --output ../../fingerprint-runs/ubuntu2404 10.211.55.10
-sudo python3 probe.py --i-own-these-hosts --runs 3 --open-tcp 22 --closed-tcp 1 --closed-udp 40000 --output ../../fingerprint-runs/ubuntu2404 10.211.55.10
-python3 derive.py --os-name "Linux Ubuntu 24.04 ARM64" --os-build "6.8.0-lab" -o ../../fingerprint-runs/ubuntu2404/personality.txt ../../fingerprint-runs/ubuntu2404/run-*.json
-python3 -m pytest -q
+# Ubuntu 24.04
+python3 probe.py --i-own-these-hosts --runs 3 --open-tcp 22 --closed-tcp 1 --closed-udp 40000 --output /opt/pm/runs/ubuntu2404 10.0.0.21
+
+# Windows Server 2022 (repeat for 2019 = 10.0.0.23, 2025 = 10.0.0.24)
+python3 probe.py --i-own-these-hosts --runs 3 --open-tcp 3389 --closed-tcp 1 --closed-udp 40000 --output /opt/pm/runs/ws2022-fw-on  10.0.0.22
+#   ...switch the Windows firewall off on the target, then:
+python3 probe.py --i-own-these-hosts --runs 3 --open-tcp 3389 --closed-tcp 1 --closed-udp 40000 --output /opt/pm/runs/ws2022-fw-off 10.0.0.22
+
+# Derive one draft personality per target / firewall state
+python3 derive.py --os-name "Linux Ubuntu 24.04" --os-build "<uname -r>" -o /opt/pm/runs/ubuntu2404/personality.txt /opt/pm/runs/ubuntu2404/run-*.json
+python3 derive.py --os-name "Microsoft Windows Server 2022" --os-build "<build>" -o /opt/pm/runs/ws2022-fw-on/personality.txt /opt/pm/runs/ws2022-fw-on/run-*.json
 ```
 
-Windows example (RDP open, ephemeral closed):
+Add `--dry-run` to any `probe.py` command to print the probe set without
+sending. `derive.py` also accepts `--json-report <file>` for a per-field
+observation report.
+
+### Azure path caveat
+
+Captures taken through Azure's virtual network may differ from physical or
+other-hypervisor paths for some fields (TTL, IP ID, TCP timestamps). This is
+unverified. Validate a derived decoy over the same Azure path (a sensor VM in
+the lab, planned), not only from a different network.
+
+### Cost and cleanup
+
+Lab VMs are destroyed after each session; disks bill while they exist. Copy
+the run JSONs (and derived personalities) out of `/opt/pm/runs` before
+destroying the lab.
+
+## Local Parallels lab (ARM guests)
+
+Windows 11 ARM and Ubuntu ARM stay on a Parallels Desktop **Host-Only**
+network on Apple Silicon (e.g. `10.211.55.0/24`, static guest IPs).
+
+| Guest          | IP           | Open TCP | Closed TCP | Closed UDP | Notes                           |
+|----------------|--------------|----------|------------|------------|---------------------------------|
+| Ubuntu 24.04   | 10.211.55.10 | 22       | 1          | 40000      | ARM64                           |
+| Windows 11     | 10.211.55.20 | 3389     | 1          | 40000      | ARM; capture firewall on **and** off |
 
 ```
+sudo python3 probe.py --i-own-these-hosts --runs 3 --open-tcp 22 --closed-tcp 1 --closed-udp 40000 --output ../../fingerprint-runs/ubuntu2404-arm 10.211.55.10
 sudo python3 probe.py --i-own-these-hosts --runs 3 --open-tcp 3389 --closed-tcp 1 --closed-udp 40000 --output ../../fingerprint-runs/win11-fw-on 10.211.55.20
 ```
 
-## Host-only lab setup (Apple Silicon)
+### Emulation
 
-Use a host-only / shared network so guest IPs are fixed and unreachable from
-other LANs.
-
-### Parallels Desktop
-
-1. Create a **Host-Only** network (e.g. `10.211.55.0/24`).
-2. Attach each guest NIC to that network; set static IPs (table below).
-3. On each Linux guest: install `openssh-server` (open TCP 22); leave TCP 1 and
-   UDP 40000 closed.
-4. On each Windows guest: enable Remote Desktop (open TCP 3389) **or** a
-   simple listener; capture once with Windows Firewall **on** and once **off**.
-
-### UTM
-
-1. Use a **Shared Network** or Emulated VLAN with static DHCP mappings /
-   guest-side static IPs in `10.211.55.0/24` (or another RFC1918 block).
-2. For x86_64 guests on Apple Silicon, use UTM emulation (qemu). Expect slower
-   timers — see timing note below.
-3. Same open/closed port convention as Parallels.
-
-### Planned VMs
-
-| Guest                         | Arch / how          | Suggested IP   | Open TCP | Closed TCP | Closed UDP | Notes                          |
-|------------------------------|---------------------|----------------|----------|------------|------------|--------------------------------|
-| Ubuntu 24.04                 | ARM64 native        | 10.211.55.10   | 22       | 1          | 40000      | Primary Linux reference        |
-| Windows 11                   | ARM native          | 10.211.55.20   | 3389     | 1          | 40000      | Capture firewall on **and** off |
-| Windows Server 2022          | x64 via UTM emu     | 10.211.55.30   | 3389     | 1          | 40000      | Emulated; cross-check timing   |
-| Windows Server 2019          | x64 via UTM emu     | 10.211.55.31   | 3389     | 1          | 40000      | Emulated; cross-check timing   |
-| Windows Server 2025          | x64 via UTM emu     | 10.211.55.32   | 3389     | 1          | 40000      | Emulated; cross-check timing   |
-| Rocky Linux 9 (optional)     | ARM64 native        | 10.211.55.40   | 22       | 1          | 40000      | Optional RHEL-class reference  |
-| FreeBSD 14 (optional)        | ARM64 native        | 10.211.55.50   | 22       | 1          | 40000      | Optional BSD reference         |
-
-### Timing note
-
-Timing-based fields (ISN rate / SP / ISR, timestamp Hz) from **emulated** VMs
-are less reliable than native runs. Treat UTM-emulated Windows Server captures
-as drafts and cross-check against native hardware or ARM-native guests before
-shipping a personality.
+Timing fields (ISN rate / SP / ISR, timestamp Hz) from emulated guests are
+unreliable. We do not use CPU emulation for any shipped personality; x64
+references come from the Azure lab.
 
 ## Outputs
 
