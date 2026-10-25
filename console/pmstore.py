@@ -28,6 +28,8 @@ JUMP_LIMIT = 300            # wall vs monotonic disagreement that counts as a cl
 STABLE_RESUME = 86400       # cleanup resumes by itself after 24 h of stable clock
 FLOW_WINDOW = 300           # a decoy-sent packet makes matching replies "expected" for 5 minutes (#139)
 FLOW_MAX = 4096             # cap on remembered decoy-sent flows; oldest dropped first
+ANSWER_WINDOW = 10          # decoy packets within 10 s of an inbound one on the same flow are answers
+INBOUND_MAX = 4096          # cap on remembered recent inbound flows; oldest dropped first
 DEFAULTS = {"sensor_name": "", "port": 8443, "time_source": "browser",
             "ntp_server": "", "timezone": "UTC", "alert_retention_days": 90,
             "drift_warn_seconds": 60, "ssh_ports": [22], "muted": []}
@@ -223,6 +225,8 @@ class AlertEngine:
         self.activity = []
         # decoy-sent flows (#139), in memory only: key -> last event time
         self.flows = OrderedDict()
+        # recent inbound flows, to tell decoy answers from decoy-started traffic
+        self.inbound = OrderedDict()
         self.last_touch = {}
         self.last_event_ts = None
 
@@ -268,9 +272,43 @@ class AlertEngine:
         else:
             dp, pp = e.get("dst_port"), e.get("src_port")
         k = self._flow_key(decoy, peer, e, dp, pp)
+        self._expire_flows(t)
+        if k not in self.flows:
+            # only a decoy-started flow is remembered: for TCP its first
+            # packet must be a bare SYN; and an answer to a recent inbound
+            # packet (SYN-ACK, RST, UDP reply, ICMP error) never starts one
+            fl = e.get("tcp_flags")
+            if k[2] == "tcp" and not (isinstance(fl, str) and "S" in fl and "A" not in fl):
+                return
+            if self._answers_inbound(k, t):
+                return
         self.flows[k] = t
         self.flows.move_to_end(k)
         self._expire_flows(t)
+
+    def _note_inbound(self, k, t):
+        for key in (k, k[:2] + ("*",)):
+            self.inbound[key] = t
+            self.inbound.move_to_end(key)
+        self._expire_inbound(t)
+
+    def _expire_inbound(self, t):
+        while self.inbound:
+            k, seen = next(iter(self.inbound.items()))
+            if t - seen > ANSWER_WINDOW or len(self.inbound) > INBOUND_MAX:
+                del self.inbound[k]
+            else:
+                break
+
+    def _answers_inbound(self, k, t):
+        """True if the peer sent to this decoy on the same flow within
+        ANSWER_WINDOW. ICMP and other port-less packets (for example port
+        unreachable for a UDP probe) count as answers to any recent inbound
+        packet from that peer."""
+        self._expire_inbound(t)
+        keys = [k] if k[3] is not None else [k, k[:2] + ("*",)]
+        return any(key in self.inbound and t - self.inbound[key] <= ANSWER_WINDOW
+                   for key in keys)
 
     def _expire_flows(self, t):
         while self.flows:
@@ -286,6 +324,7 @@ class AlertEngine:
         scans with no earlier decoy-sent packet still alert."""
         self._expire_flows(t)
         k = self._flow_key(decoy, src, e, e.get("dst_port"), e.get("src_port"))
+        self._note_inbound(k, t)
         seen = self.flows.get(k)
         return seen is not None and t - seen <= FLOW_WINDOW
 
