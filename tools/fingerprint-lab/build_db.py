@@ -38,6 +38,8 @@ from _version import __version__  # noqa: E402
 from derive import FieldObs, derive, render_personality  # noqa: E402
 
 GENERATOR = "fingerprint-lab/build_db.py"
+# The generator has its own version, separate from the probe/derive version.
+GENERATOR_VERSION = "1.0.0"
 MIN_RUNS = 3
 
 # Capture target key -> (os family, description used in provenance only).
@@ -71,7 +73,13 @@ RANGE_FIELDS = ("SEQ.SP", "SEQ.ISR")
 # Also dropped: lab host names and addresses (vm, ip, probe_host). They are
 # lab-network details, not facts about the target OS, and must not end up in
 # a committed sidecar.
-TOOL_VERSIONS_DROP = {"nmap_os_db", "ip", "vm", "probe_host"}
+# Lab host data and oracle tool versions never reach the shipped file or
+# sidecars: addresses, VM and probe host names, the probe host kernel (its
+# cloud flavour), and the nmap/p0f versions (oracles only, not inputs).
+TOOL_VERSIONS_DROP = {"nmap_os_db", "ip", "vm", "probe_host", "kernel",
+                      "nmap_version", "nmap_pkg", "p0f_version"}
+# A kernel flavour tag in a build string names the lab hosting, not the OS.
+_HOSTING_FLAVOUR_RE = re.compile(r"-(azure|aws|gcp|gke|oracle|kvm)\b", re.I)
 
 # run-<lab run id>-<attempt>-fw<on|off>[-restart][-p<open tcp port>]
 RUN_DIR_RE = re.compile(
@@ -292,7 +300,16 @@ def _check_ecn_line(body: str) -> None:
 
 
 def _public_tv(tv: dict[str, str]) -> dict[str, str]:
-    return {k: v for k, v in sorted(tv.items()) if k not in TOOL_VERSIONS_DROP}
+    return {k: v for k, v in sorted(tv.items())
+            if k not in TOOL_VERSIONS_DROP and not _HOSTING_FLAVOUR_RE.search(v)}
+
+
+def _public_build(tv: dict[str, str]) -> tuple[str | None, str | None]:
+    """OS build and patch, or (None, None) when they carry a hosting flavour."""
+    b, pt = tv.get("target_os_build"), tv.get("target_os_patch")
+    if any(x and _HOSTING_FLAVOUR_RE.search(x) for x in (b, pt)):
+        return None, None
+    return b, pt
 
 
 def build_block(inps: list[dict[str, Any]] | dict[str, Any]) -> tuple[str, str, str]:
@@ -335,8 +352,13 @@ def build_block(inps: list[dict[str, Any]] | dict[str, Any]) -> tuple[str, str, 
     persona = meta["persona"]
     result = derive(docs, os_name=persona, os_build=meta["description"])
     # Snapshot the raw per-run report before rules rewrite range fields.
+    # Probe run ids are replaced by capture/run labels (c1r1, c1r2, ...),
+    # in the same order as captures[].inputs.runs in the sidecar.
+    label = {str(d[0]["run_id"]): f"c{ci}r{ri}"
+             for ci, i in enumerate(inps, start=1) for ri, d in enumerate(i["runs"], start=1)}
     report_fields = json.loads(json.dumps(
-        {k: {"values": v.values, "sources": v.sources, "stable": v.unanimous()}
+        {k: {"values": v.values, "sources": [label.get(str(x), str(x)) for x in v.sources],
+             "stable": v.unanimous()}
          for k, v in sorted(result["obs"].items())}, default=str))
     rules = _resolve_fields(result["obs"])
 
@@ -351,52 +373,49 @@ def build_block(inps: list[dict[str, Any]] | dict[str, Any]) -> tuple[str, str, 
     limits = []
     if len(inps) == 1:
         limits.append(
-            f"single capture: every field rests on one lab run ({meta['lab_run_id']}, "
-            f"{len(docs)} probe runs, one boot); no restart capture to confirm it"
+            f"single capture: every field rests on one capture ({len(docs)} probe runs, "
+            f"one boot); no restart capture to confirm it"
         )
-
-    def _lab(m):
-        return f"{m['lab_run_id']} attempt {m['attempt']}" + (" restart" if m["restart"] else "")
 
     def _uniq(key):
         return ",".join(dict.fromkeys(i["tv"].get(key, "unknown") for i in inps))
 
+    os_build, os_patch = _public_build(tv0)
     hdr = [
         f"#@ persona: {persona}",
         f"#@ target: {meta['target_key']} ({meta['description']})",
-        f"#@ os-build: {tv0.get('target_os_build', 'unknown')} {tv0.get('target_os_patch', '')}".rstrip(),
+    ] + ([f"#@ os-build: {os_build} {os_patch or ''}".rstrip()] if os_build else []) + [
         f"#@ firewall: {meta['firewall']}",
         f"#@ ports: open_tcp={ports.get('open_tcp')} closed_tcp={ports.get('closed_tcp')} "
         f"closed_udp={ports.get('closed_udp')}",
-        f"#@ lab-run: {', '.join(_lab(m) for m in metas)}",
-        f"#@ captures: {len(inps)}",
-        f"#@ probe-runs: {','.join(ids)}",
+        f"#@ captures: {len(inps)}"
+        + (" (second after a restart)" if len(inps) == 2 and metas[1]["restart"] else ""),
+        f"#@ probe-runs: {len(ids)}",
         f"#@ probe-tool: fingerprint-lab/probe.py {docs[0]['tool_version']}",
         f"#@ captured-utc: {_uniq('captured_utc')}",
         f"#@ tool-source-commit: {_uniq('tool_source_commit')}",
         f"#@ tool-versions-sha256: {','.join(i['tv_sha256'] for i in inps)}",
-        f"#@ generator: {GENERATOR} {__version__}",
+        f"#@ generator: {GENERATOR} {GENERATOR_VERSION}",
         "#@ sp-isr-method: min-max range over all probe runs (see sidecar)",
         f"#@ ranges: {', '.join(f'{k} {v}' for k, v in rules.items()) or 'none'}",
     ] + [f"#@ limit: {x}" for x in limits]
     block = "\n".join(hdr) + "\n" + body
     sidecar = {
         "persona": persona,
-        "generator": {"name": GENERATOR, "version": __version__},
+        "generator": {"name": GENERATOR, "version": GENERATOR_VERSION},
         "target": {"key": meta["target_key"], "family": meta["family"],
                    "description": meta["description"], "firewall": meta["firewall"],
-                   "os_build": tv0.get("target_os_build"), "os_patch": tv0.get("target_os_patch"),
+                   "os_build": os_build, "os_patch": os_patch,
                    "os_edition": tv0.get("target_os_edition")},
         "ports": ports,
         "captures": [
-            {"lab_run": {"run_id": m["lab_run_id"], "attempt": m["attempt"],
-                         "restart": m["restart"], "dir": i["run_name"]},
+            {"capture": f"c{ci}", "restart": m["restart"],
              "inputs": {
-                 "runs": [{"run_id": str(d["run_id"]), "file": name, "sha256": sha}
-                          for d, sha, name in i["runs"]],
+                 "runs": [{"run": f"c{ci}r{ri}", "sha256": sha}
+                          for ri, (d, sha, name) in enumerate(i["runs"], start=1)],
                  "tool_versions_sha256": i["tv_sha256"]},
              "tool_versions": _public_tv(i["tv"])}
-            for m, i in zip(metas, inps)
+            for ci, (m, i) in enumerate(zip(metas, inps), start=1)
         ],
         "limits": limits,
         "sp_isr_method": SP_ISR_METHOD,
@@ -460,7 +479,7 @@ def assemble(blocks: list[str], include: list[str]) -> tuple[str, list[str]]:
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="build_db.py", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    p.add_argument("--version", action="version", version=f"%(prog)s {GENERATOR_VERSION} (derive {__version__})")
     sub = p.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("block", help="build one persona block + sidecar")
     b.add_argument("run_dir", nargs="*", type=Path,

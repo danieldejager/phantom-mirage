@@ -15,18 +15,31 @@ selects the new file by default yet.
 
 ## Shipped personas
 
-| Persona | Target | Captures (lab run, see `fingerprints/sources.txt`) | Open port |
+| Persona | Target | Captures | Open port |
 |---|---|---|---|
-| `ubuntu2404` | Ubuntu 24.04, firewall on | 1: run 40274255117 | tcp 22 |
-| `ws2022-fwoff` | Windows Server 2022, firewall off | 1: run 40301571937 | tcp 135 |
-| `ws2019-fwoff` | Windows Server 2019, firewall off | 2: runs 40316625491, 40321836463 (after restart) | tcp 135 |
-| `ws2025-fwoff` | Windows Server 2025, firewall off | 2: runs 40340734957, 40348380922 (after restart) | tcp 135 |
+| `ubuntu2404` | Ubuntu 24.04, firewall on | 1 (3 probe runs) | tcp 22 |
+| `ws2022-fwoff` | Windows Server 2022, firewall off | 1 (3 probe runs) | tcp 135 |
+| `ws2019-fwoff` | Windows Server 2019, firewall off | 2, second after a restart (6 probe runs) | tcp 135 |
+| `ws2025-fwoff` | Windows Server 2025, firewall off | 2, second after a restart (6 probe runs) | tcp 135 |
 
 Each capture is 3 or more `probe.py` 0.3.2 runs. The raw captures are not
-in the repository, because they hold lab host names and addresses; they
-are referenced by lab run id. `fingerprints/sources.txt` names the run
-directories per persona, `fingerprints/personas.txt` is the include list,
-and `build_shipped_db.py` rebuilds the file and sidecars from them:
+in the repository, because they hold lab host names and addresses.
+
+### Where the persona to lab run mapping lives
+
+The shipped file and sidecars carry no lab identifiers: no lab run numbers,
+no run directory names, no probe run UUIDs, no probe host kernel or cloud
+flavour, no nmap or p0f version strings. Each sidecar lists its input run
+files only by label (`c1r1`, `c1r2`, ...) and sha256, so a holder of the
+captures can still verify them.
+
+The mapping from persona to lab run directories is internal and is kept
+**outside the repository**, in a local-only sources file (one line per
+persona: `<persona>: <run dir> [<run dir> ...]`). `build_shipped_db.py`
+reads it from `--sources FILE`, else `$PM_SOURCES`, else
+`<captures-root>/phantom-mirage-sources.txt`. The run ids for the current
+file are recorded in the description of PR #161. `fingerprints/personas.txt`
+(the include list) stays in the repository.
 
 ```sh
 python3 build_shipped_db.py --captures-root /path/to/captures          # rewrite fingerprints/
@@ -56,9 +69,8 @@ It never opens `nmap.xml`, `nmap.txt`, `p0f.log`, `personality.txt`,
 marker files with those names and check two things: the marker files are
 never opened, and no marker text appears in the output. The `nmap_os_db=`
 line of `tool-versions.txt` is dropped from the provenance, and so are
-the lab host data in it (`ip`, `vm`, `probe_host`). The sidecar keeps the
-version strings of the oracle tools on the probe host (`nmap_version`,
-`nmap_pkg`, `p0f_version`) as plain tool versions; no oracle output is read.
+the lab host data in it (`ip`, `vm`, `probe_host`, `kernel`) and the
+oracle tool versions (`nmap_version`, `nmap_pkg`, `p0f_version`).
 
 ## Usage
 
@@ -121,12 +133,15 @@ line uses only the fields that `parse_ecn` accepts: `R DF T TG W O CC Q`.
 The file begins with a fixed comment header and a
 `#@ db-personas: a,b,...` line.
 
-Header keys, in order: `persona`, `target`, `os-build`, `firewall`,
-`ports`, `lab-run`, `captures`, `probe-runs`, `probe-tool`, `captured-utc`,
-`tool-source-commit`, `tool-versions-sha256`, `generator`, `sp-isr-method`,
-`ranges`, then one `limit` line per known limit (today: a persona built from
-a single capture). Keys with several captures hold comma separated lists in
-capture order (sorted by lab run id).
+Header keys, in order: `persona`, `target`, `os-build` (omitted when the
+build string names the lab hosting, as for the Ubuntu cloud kernel),
+`firewall`, `ports`, `captures` (count), `probe-runs` (count), `probe-tool`
+(probe.py and its version), `captured-utc`, `tool-source-commit`,
+`tool-versions-sha256`, `generator` (build_db.py and its own version, 1.0.0,
+separate from the probe version), `sp-isr-method`, `ranges`, then one
+`limit` line per known limit (today: a persona built from a single
+capture). Keys with several captures hold comma separated lists in capture
+order.
 
 ## Provenance sidecar
 
@@ -135,10 +150,11 @@ an indent of 2. It records:
 
 - the persona, generator and version
 - the target (with OS build, patch and edition when recorded) and the ports
-- per capture: the lab run (dir, id, attempt, firewall, restart, port), each
-  input run file with its basename, run_id and sha256, and the sha256 of
-  `tool-versions.txt` with its parsed values (without `nmap_os_db`, `ip`,
-  `vm`, `probe_host`)
+- per capture: a label (`c1`, `c2`), the restart flag, each input run file
+  by label and sha256, and the sha256 of `tool-versions.txt` with its parsed
+  values, without `nmap_os_db`, `ip`, `vm`, `probe_host`, `kernel`,
+  `nmap_version`, `nmap_pkg`, `p0f_version` and any value naming the lab
+  hosting (such as `-azure`)
 - the SP/ISR method and the known limits
 - the rules applied
 - the raw derived fields of each run, before any rule

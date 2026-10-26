@@ -1,40 +1,31 @@
 {
-  "block_sha256": "cf6c1b11beda27b07294f488a20854a2aa48ab01b42611118eff04d6be012c17",
+  "block_sha256": "e4314680b05f1711c88b5f641efa9506b3b85140cdedc94c4fa049415993054e",
   "captures": [
     {
+      "capture": "c1",
       "inputs": {
         "runs": [
           {
-            "file": "run-synthetic-ubuntu2404-0001.json",
-            "run_id": "synthetic-ubuntu2404-0001",
+            "run": "c1r1",
             "sha256": "b57d0481440d7c51a4f3d2b456eae53ba3a008fffc37f5ed6c477a89a32a0709"
           },
           {
-            "file": "run-synthetic-ubuntu2404-0002.json",
-            "run_id": "synthetic-ubuntu2404-0002",
+            "run": "c1r2",
             "sha256": "463b466f011e32569df5ca8f51f0fcd312fe3916a0c37a05e9023b0711eb8842"
           },
           {
-            "file": "run-synthetic-ubuntu2404-0003.json",
-            "run_id": "synthetic-ubuntu2404-0003",
+            "run": "c1r3",
             "sha256": "03273ad4d89fee20c23fa1e1ffd09dbfe8f50bf016dcf357e65b8d25181ca207"
           }
         ],
         "tool_versions_sha256": "fcbd9e4f23635ed1f3b9930f3861600f74e08a01b96bcd8766c4cf192ce3fd4a"
       },
-      "lab_run": {
-        "attempt": "1",
-        "dir": "run-900002-1-fwon",
-        "restart": false,
-        "run_id": "900002"
-      },
+      "restart": false,
       "tool_versions": {
         "captured_utc": "2000-01-01T00:00:00Z",
         "closed_tcp": "1",
         "closed_udp": "40000",
         "firewall": "on",
-        "kernel": "0.0.0-synthetic",
-        "nmap_version": "Nmap version 0.0 (synthetic)",
         "open_tcp": "22",
         "os_release": "SYNTHETIC example data",
         "pcap_bytes": "0",
@@ -50,9 +41,9 @@
     "fields": {
       "ECN.A": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -63,9 +54,9 @@
       },
       "ECN.CC": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -76,9 +67,9 @@
       },
       "ECN.DF": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -89,9 +80,9 @@
       },
       "ECN.F": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -102,9 +93,9 @@
       },
       "ECN.O": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -115,9 +106,9 @@
       },
       "ECN.Q": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -128,9 +119,9 @@
       },
       "ECN.R": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -141,9 +132,9 @@
       },
       "ECN.S": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -154,9 +145,9 @@
       },
       "ECN.T": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -167,9 +158,9 @@
       },
       "ECN.TG": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -180,9 +171,9 @@
       },
       "ECN.W": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -193,9 +184,9 @@
       },
       "IE.CD": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -206,9 +197,9 @@
       },
       "IE.DFI": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -219,9 +210,9 @@
       },
       "IE.R": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -232,9 +223,9 @@
       },
       "IE.T": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -245,9 +236,9 @@
       },
       "IE.TG": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -258,9 +249,9 @@
       },
       "OPS.O1": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -271,9 +262,9 @@
       },
       "OPS.O2": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -284,9 +275,9 @@
       },
       "OPS.O3": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -297,9 +288,9 @@
       },
       "OPS.O4": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -310,9 +301,9 @@
       },
       "OPS.O5": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -323,9 +314,9 @@
       },
       "OPS.O6": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -336,9 +327,9 @@
       },
       "SEQ.CI": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -349,9 +340,9 @@
       },
       "SEQ.GCD": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -362,9 +353,9 @@
       },
       "SEQ.II": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -375,9 +366,9 @@
       },
       "SEQ.ISR": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -388,9 +379,9 @@
       },
       "SEQ.SP": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -401,9 +392,9 @@
       },
       "SEQ.SS": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -414,9 +405,9 @@
       },
       "SEQ.TI": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -427,9 +418,9 @@
       },
       "SEQ.TS": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -440,9 +431,9 @@
       },
       "T1.A": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -453,9 +444,9 @@
       },
       "T1.DF": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -466,9 +457,9 @@
       },
       "T1.F": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -479,9 +470,9 @@
       },
       "T1.O": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -492,9 +483,9 @@
       },
       "T1.Q": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -505,9 +496,9 @@
       },
       "T1.R": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -518,9 +509,9 @@
       },
       "T1.S": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -531,9 +522,9 @@
       },
       "T1.T": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -544,9 +535,9 @@
       },
       "T1.TG": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -557,9 +548,9 @@
       },
       "T1.W": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -570,9 +561,9 @@
       },
       "T2.R": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -583,9 +574,9 @@
       },
       "T3.R": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -596,9 +587,9 @@
       },
       "T4.A": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -609,9 +600,9 @@
       },
       "T4.DF": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -622,9 +613,9 @@
       },
       "T4.F": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -635,9 +626,9 @@
       },
       "T4.O": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -648,9 +639,9 @@
       },
       "T4.Q": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -661,9 +652,9 @@
       },
       "T4.R": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -674,9 +665,9 @@
       },
       "T4.S": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -687,9 +678,9 @@
       },
       "T4.T": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -700,9 +691,9 @@
       },
       "T4.TG": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -713,9 +704,9 @@
       },
       "T4.W": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -726,9 +717,9 @@
       },
       "T5.A": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -739,9 +730,9 @@
       },
       "T5.DF": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -752,9 +743,9 @@
       },
       "T5.F": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -765,9 +756,9 @@
       },
       "T5.O": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -778,9 +769,9 @@
       },
       "T5.Q": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -791,9 +782,9 @@
       },
       "T5.R": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -804,9 +795,9 @@
       },
       "T5.S": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -817,9 +808,9 @@
       },
       "T5.T": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -830,9 +821,9 @@
       },
       "T5.TG": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -843,9 +834,9 @@
       },
       "T5.W": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -856,9 +847,9 @@
       },
       "T6.A": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -869,9 +860,9 @@
       },
       "T6.DF": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -882,9 +873,9 @@
       },
       "T6.F": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -895,9 +886,9 @@
       },
       "T6.O": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -908,9 +899,9 @@
       },
       "T6.Q": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -921,9 +912,9 @@
       },
       "T6.R": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -934,9 +925,9 @@
       },
       "T6.S": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -947,9 +938,9 @@
       },
       "T6.T": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -960,9 +951,9 @@
       },
       "T6.TG": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -973,9 +964,9 @@
       },
       "T6.W": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -986,9 +977,9 @@
       },
       "T7.A": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -999,9 +990,9 @@
       },
       "T7.DF": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1012,9 +1003,9 @@
       },
       "T7.F": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1025,9 +1016,9 @@
       },
       "T7.O": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1038,9 +1029,9 @@
       },
       "T7.Q": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1051,9 +1042,9 @@
       },
       "T7.R": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1064,9 +1055,9 @@
       },
       "T7.S": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1077,9 +1068,9 @@
       },
       "T7.T": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1090,9 +1081,9 @@
       },
       "T7.TG": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1103,9 +1094,9 @@
       },
       "T7.W": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1116,9 +1107,9 @@
       },
       "U1.DF": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1129,9 +1120,9 @@
       },
       "U1.IPL": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1142,9 +1133,9 @@
       },
       "U1.R": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1155,9 +1146,9 @@
       },
       "U1.RID": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1168,9 +1159,9 @@
       },
       "U1.RIPCK": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1181,9 +1172,9 @@
       },
       "U1.RIPL": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1194,9 +1185,9 @@
       },
       "U1.RUCK": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1207,9 +1198,9 @@
       },
       "U1.RUD": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1220,9 +1211,9 @@
       },
       "U1.T": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1233,9 +1224,9 @@
       },
       "U1.TG": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1246,9 +1237,9 @@
       },
       "U1.UN": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1259,9 +1250,9 @@
       },
       "WIN.W1": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1272,9 +1263,9 @@
       },
       "WIN.W2": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1285,9 +1276,9 @@
       },
       "WIN.W3": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1298,9 +1289,9 @@
       },
       "WIN.W4": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1311,9 +1302,9 @@
       },
       "WIN.W5": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1324,9 +1315,9 @@
       },
       "WIN.W6": {
         "sources": [
-          "synthetic-ubuntu2404-0001",
-          "synthetic-ubuntu2404-0002",
-          "synthetic-ubuntu2404-0003"
+          "c1r1",
+          "c1r2",
+          "c1r3"
         ],
         "stable": true,
         "values": [
@@ -1339,10 +1330,10 @@
   },
   "generator": {
     "name": "fingerprint-lab/build_db.py",
-    "version": "0.3.2"
+    "version": "1.0.0"
   },
   "limits": [
-    "single capture: every field rests on one lab run (900002, 3 probe runs, one boot); no restart capture to confirm it"
+    "single capture: every field rests on one capture (3 probe runs, one boot); no restart capture to confirm it"
   ],
   "persona": "ubuntu2404",
   "ports": {

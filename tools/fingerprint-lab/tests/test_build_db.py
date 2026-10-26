@@ -92,8 +92,8 @@ def test_sidecar_matches_block_and_inputs():
     assert side["persona"] == "ws2022-fwon"
     assert side["block_sha256"] == build_db._sha256(fp)
     (cap,) = side["captures"]
-    assert [i["file"] for i in cap["inputs"]["runs"]] == sorted(p.name for p in WS.glob("run-*.json"))
-    for k in ("nmap_os_db", "ip", "vm", "probe_host"):
+    assert [i["run"] for i in cap["inputs"]["runs"]] == ["c1r1", "c1r2", "c1r3"]
+    for k in ("nmap_os_db", "ip", "vm", "probe_host", "kernel", "nmap_version", "p0f_version"):
         assert k not in cap["tool_versions"]
     assert "single capture" in side["limits"][0]
     assert "min-max" in side["sp_isr_method"] and "n-1" in side["sp_isr_method"]

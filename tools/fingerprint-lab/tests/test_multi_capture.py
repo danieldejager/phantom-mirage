@@ -99,12 +99,12 @@ def test_two_captures_merge_and_record_port(tmp_path):
     assert _block(tmp_path / "o", a, b) == 0
     fp = (tmp_path / "o" / "ws2022-fwon.fp").read_text()
     side = json.loads((tmp_path / "o" / "ws2022-fwon.provenance.json").read_text())
-    assert "#@ captures: 2\n" in fp and "#@ limit:" not in fp
+    assert "#@ limit:" not in fp
     assert "#@ ports: open_tcp=3389 closed_tcp=1 closed_udp=40000\n" in fp
-    assert "#@ lab-run: 900011 attempt 1, 900012 attempt 1 restart\n" in fp
-    assert len(re.search(r"^#@ probe-runs: (.*)$", fp, re.M)[1].split(",")) == 6
+    assert "lab-run" not in fp and "900011" not in fp and "900012" not in fp
+    assert "#@ captures: 2 (second after a restart)\n" in fp and "#@ probe-runs: 6\n" in fp
     assert side["ports"]["open_tcp"] == 3389 and side["limits"] == []
-    assert [c["lab_run"]["restart"] for c in side["captures"]] == [False, True]
+    assert [c["restart"] for c in side["captures"]] == [False, True]
     assert side["block_sha256"] == hashlib.sha256(fp.encode()).hexdigest()
 
 
@@ -258,7 +258,6 @@ def test_shipped_windows_personas_name_their_port():
         assert b[name]["hdr"]["ports"].startswith("open_tcp=135 "), name
         side = json.loads((FP / f"{name}.provenance.json").read_text())
         assert side["ports"]["open_tcp"] == 135
-        assert all(c["lab_run"]["dir"].endswith("-p135") for c in side["captures"])
     assert b["ubuntu2404"]["hdr"]["ports"].startswith("open_tcp=22 ")
 
 
@@ -283,8 +282,8 @@ def test_shipped_limits_recorded():
     b = _blocks()
     assert b["ws2022-fwoff"]["hdr"]["captures"] == "1"
     assert b["ws2022-fwoff"]["hdr"]["limit"].startswith("single capture")
-    assert b["ws2019-fwoff"]["hdr"]["captures"] == "2"
-    assert b["ws2025-fwoff"]["hdr"]["captures"] == "2"
+    assert b["ws2019-fwoff"]["hdr"]["captures"] == "2 (second after a restart)"
+    assert b["ws2025-fwoff"]["hdr"]["captures"] == "2 (second after a restart)"
 
 
 def test_shipped_db_has_no_class_or_cpe_lines():
@@ -311,3 +310,46 @@ SHIPPED_SEL = ('create u\nset u personality "ubuntu2404"\nadd u tcp port 22 open
 def test_shipped_db_loadable_by_personality_c(tmp_path):
     r = _verify(_binary(), FP / "phantom-mirage-os.db", SHIPPED_SEL, tmp_path)
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+# ---- no lab identifiers in shipped output (review on #161) --------------
+
+LEAKS = {
+    "lab-run": re.compile(r"lab-run|lab_run"),
+    "10+ digit run number": re.compile(r"(?<![0-9a-fA-F])[0-9]{10,}(?![0-9a-fA-F])"),
+    "UUID": re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"),
+    "-azure": re.compile(r"-azure", re.I),
+    "oracle tool version": re.compile(r"nmap_version|nmap_pkg|p0f_version|Nmap version"),
+    "run dir name": re.compile(r"run-[0-9]+-[0-9]+-fw"),
+}
+
+
+def _leaks(text):
+    return [k for k, rx in LEAKS.items() if rx.search(text)]
+
+
+def test_shipped_files_have_no_lab_identifiers():
+    files = [FP / "phantom-mirage-os.db", *sorted(FP.glob("*.provenance.json"))]
+    assert len(files) == 5
+    for p in files:
+        assert _leaks(p.read_text()) == [], p.name
+
+
+def test_no_sources_file_in_repo():
+    assert not (FP / "sources.txt").exists()
+
+
+def test_leak_patterns_fire():
+    for bad in ("#@ lab-run: 1", "x 12345678901 y", "01234567-89ab-cdef-0123-456789abcdef",
+                "7.0.0-1017-azure", '"nmap_pkg": "7.94"', "run-1-1-fwoff"):
+        assert _leaks(bad), bad
+    assert not _leaks("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef 10.0.12345.1")
+
+
+def test_synthetic_build_has_no_lab_identifiers(tmp_path):
+    a, b = _pair(tmp_path)
+    assert _block(tmp_path / "o", a, b) == 0
+    for p in (tmp_path / "o").iterdir():
+        t = p.read_text()
+        assert "lab_run" not in t and "lab-run" not in t and "synthetic-ws2022-000" not in t
+        assert not LEAKS["UUID"].search(t) and "run-9000" not in t, p.name
