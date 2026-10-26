@@ -135,27 +135,196 @@ def build_send_plan(
     return plan
 
 
-def _send_and_recv(pkt: Any, timeout: float) -> Any | None:
-    # Imported lazily so unit tests that never send need only scapy offline.
-    from scapy.all import sr1  # type: ignore
+def reply_matches(probe: Any, reply: Any) -> bool:
+    """Return True if *reply* answers *probe*.
 
-    return sr1(pkt, timeout=timeout, verbose=0)
+    TCP replies are matched on addresses and ports (src/dst IP, src/dst port,
+    protocol). For an RST reply nothing else is checked: observed on the wire,
+    page silent -- a Linux or Windows stack answers a probe WITHOUT the ACK
+    flag (T2, T3, T7) with RST+ACK seq=0 even though our probe carries a
+    non-zero ack field, and scapy's TCP.answers() rejects that pair because
+    it compares the probe's ack field with the reply's seq. The S and A
+    tests in derive need exactly that reply, so seq/ack must not gate it.
+    Non-RST TCP replies keep scapy's own checks on top of the address/port
+    match. Non-TCP replies (ICMP echo, ICMP port unreachable for U1) are
+    matched by scapy's answers() as before.
+    """
+    from scapy.layers.inet import IP, TCP  # type: ignore
+
+    if IP not in probe or IP not in reply:
+        return bool(reply.answers(probe))
+    if TCP in probe and TCP in reply and reply[IP].proto == probe[IP].proto:
+        pi, ri, pt, rt = probe[IP], reply[IP], probe[TCP], reply[TCP]
+        if not (ri.src == pi.dst and ri.dst == pi.src and rt.sport == pt.dport and rt.dport == pt.sport):
+            return False
+        if int(rt.flags) & 0x04:  # RST: addresses and ports are enough
+            return True
+        return bool(reply.answers(probe))
+    if TCP in probe or TCP in reply:
+        return False
+    return bool(reply.answers(probe))
+
+
+def match_replies(
+    sent: list[tuple[Any, float | None]],
+    received: list[Any],
+    window: float | None = None,
+) -> list[Any | None]:
+    """Pair each sent probe with the first unclaimed reply that matches it.
+
+    *sent* is (packet, sent_time); *received* is in arrival order (each with
+    a .time). A reply is eligible for a probe only inside that probe's own
+    window: at or after its send time and, if *window* is given, no later
+    than send time + *window*. A late RST therefore cannot be claimed by a
+    later probe (ports differ per probe as well).
+    """
+    used: set[int] = set()
+    out: list[Any | None] = []
+    for pkt, t_sent in sent:
+        hit = None
+        for j, r in enumerate(received):
+            if j in used:
+                continue
+            rt = float(getattr(r, "time", 0) or 0)
+            if t_sent is not None:
+                if rt < t_sent:
+                    continue
+                if window is not None and rt > t_sent + window:
+                    continue
+            if reply_matches(pkt, r):
+                hit = r
+                used.add(j)
+                break
+        out.append(hit)
+    return out
+
+
+def _route_iface(dst: str) -> Any:
+    from scapy.all import conf  # type: ignore
+
+    return conf.route.route(dst)[0]
+
+
+def _wire_key(ip_bytes: bytes) -> bytes:
+    """Exact IP packet bytes, trimmed to the IP total length, with the L4
+    checksum field zeroed.
+
+    Why the L4 checksum is ignored: with NIC checksum offload the kernel hands
+    the frame to the NIC (and to the capture tap) before the TCP/UDP checksum
+    is filled in, so a captured OUTGOING packet can carry an unfilled or wrong
+    L4 checksum even though the wire copy is right. Every other byte
+    (IP header incl. its checksum, L4 header, options, payload) must match.
+    """
+    raw = bytearray(ip_bytes)
+    if len(raw) < 20:
+        return bytes(raw)
+    total = int.from_bytes(raw[2:4], "big")
+    if 20 <= total <= len(raw):
+        raw = raw[:total]  # drop Ethernet padding the capture may carry
+    ihl = (raw[0] & 0x0F) * 4
+    off = {6: 16, 17: 6, 1: 2}.get(raw[9])  # TCP, UDP, ICMP checksum offset
+    if off is not None and len(raw) >= ihl + off + 2:
+        raw[ihl + off : ihl + off + 2] = b"\x00\x00"
+    return bytes(raw)
+
+
+def wire_send_times(
+    pkts: list[Any], post_send: list[float], captured: list[Any]
+) -> list[float]:
+    """Send time per probe: the capture timestamp of our own outgoing packet
+    (what sr() used to record), else the timestamp taken right after send().
+
+    A captured frame is matched to a probe by its exact IP bytes as built and
+    sent (see _wire_key for the one exception, the L4 checksum). Captured
+    copies are scanned in arrival order and each is used at most once, so
+    when a frame shows up twice (e.g. on loopback) the first copy wins.
+    """
+    from scapy.layers.inet import IP  # type: ignore
+
+    pool: list[tuple[bytes, float]] = [
+        (_wire_key(bytes(c[IP])), float(c.time)) for c in captured if IP in c
+    ]
+    pool.sort(key=lambda kt: kt[1])
+    taken: set[int] = set()
+    out: list[float] = []
+    for p, fallback in zip(pkts, post_send):
+        # bytes() builds the packet (lengths and checksums filled in), i.e.
+        # exactly what the socket put on the wire.
+        k = _wire_key(bytes(p[IP]))
+        t = fallback
+        for j, (ck, ct) in enumerate(pool):
+            if j not in taken and ck == k:
+                t = ct
+                taken.add(j)
+                break
+        out.append(t)
+    return out
+
+
+def _exchange(
+    pkts: list[Any],
+    inter: float,
+    timeout: float,
+    *,
+    sniffer_factory: Any = None,
+    socket_factory: Any = None,
+    clock: Any = time.time,
+    sleep: Any = time.sleep,
+) -> list[tuple[float | None, Any | None]]:
+    """Send *pkts* (L3) *inter* seconds apart on ONE L3 socket while a
+    sniffer captures both directions; match replies with reply_matches()
+    instead of scapy's sr()/sr1() matcher (see its docstring).
+
+    Send times come from the capture of our own outgoing packets (fallback:
+    clock right after the socket's send), because derive uses them for
+    ISR/SP/TS and the SEQ probes must be stamped at the wire.
+    """
+    from scapy.layers.inet import IP  # type: ignore
+
+    if sniffer_factory is None or socket_factory is None:
+        from scapy.all import AsyncSniffer, conf  # type: ignore
+
+        target0 = pkts[0][IP].dst
+        sniffer_factory = sniffer_factory or (lambda lf: AsyncSniffer(
+            iface=_route_iface(target0), lfilter=lf, store=True))
+        socket_factory = socket_factory or conf.L3socket
+
+    target = pkts[0][IP].dst
+    sniffer = sniffer_factory(lambda r: IP in r and target in (r[IP].src, r[IP].dst))
+    sniffer.start()
+    sleep(0.05)  # let the capture socket come up before sending
+    post_send: list[float] = []
+    sock = socket_factory()
+    try:
+        for k, p in enumerate(pkts):
+            if k and inter:
+                sleep(inter)
+            sock.send(p)
+            post_send.append(clock())
+        sleep(timeout)
+    finally:
+        sock.close()
+        captured = list(sniffer.stop() or [])
+    ips = [_with_time(c[IP], c.time) for c in captured if IP in c]
+    outgoing = [c for c in ips if c.dst == target]
+    incoming = [c for c in ips if c.src == target]
+    sent_times = wire_send_times(pkts, post_send, outgoing)
+    replies = match_replies(list(zip(pkts, sent_times)), incoming, window=timeout)
+    return list(zip(sent_times, replies))
+
+
+def _with_time(layer: Any, t: Any) -> Any:
+    layer.time = t
+    return layer
+
+
+def _send_and_recv(pkt: Any, timeout: float) -> Any | None:
+    return _exchange([pkt], 0.0, timeout)[0][1]
 
 
 def _send_batch(pkts: list[Any], inter: float, timeout: float) -> list[tuple[float | None, Any | None]]:
     """Send *pkts* on a fixed *inter* clock; return (sent_time, reply) per packet."""
-    from scapy.all import sr  # type: ignore
-
-    ans, _unans = sr(pkts, inter=inter, timeout=timeout, verbose=0)
-    out: list[tuple[float | None, Any | None]] = []
-    for p in pkts:
-        hit = None
-        for snd, rcv in ans:
-            if bytes(snd) == bytes(p):
-                hit = (float(getattr(snd, "sent_time", 0) or 0) or None, rcv)
-                break
-        out.append(hit or (float(getattr(p, "sent_time", 0) or 0) or None, None))
-    return out
+    return _exchange(pkts, inter, timeout)
 
 
 def run_once(
@@ -198,8 +367,7 @@ def run_once(
             inter = SEQ_GAP_SEC if item["batch"] == "syn_seq" else 0.0
             results = _send_batch([g["packet"] for g in group], inter, RECV_TIMEOUT_SEC)
         else:
-            sent_wall = time.time()
-            results = [(sent_wall, _send_and_recv(item["packet"], RECV_TIMEOUT_SEC))]
+            results = _send_batch([item["packet"]], 0.0, RECV_TIMEOUT_SEC)
 
         for k, (g, (sent_wall, reply)) in enumerate(zip(group, results)):
             if sent_wall is not None:

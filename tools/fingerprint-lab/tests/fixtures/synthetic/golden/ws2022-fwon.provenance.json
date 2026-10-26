@@ -1,5 +1,5 @@
 {
-  "block_sha256": "44be8bb1ca0d7bef437c7e23e0b1f7c644f6e3a4be134002ca58c6322cd846e3",
+  "block_sha256": "9a63a5ff3142f0deb2b650fbe29c11067d90d6229fc1f95308a17f46ba83f043",
   "derive_report": {
     "fields": {
       "ECN.A": {
@@ -1293,7 +1293,7 @@
   },
   "generator": {
     "name": "fingerprint-lab/build_db.py",
-    "version": "0.3.1"
+    "version": "0.3.2"
   },
   "inputs": {
     "runs": [

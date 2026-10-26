@@ -125,6 +125,15 @@ references come from the Azure lab.
   the shared random ACK is unchanged. Runs captured before 0.3.1 still derive (the
   values that depend only on replies are recomputed from the recorded hex),
   but `build_db.py` refuses them because their probes differed.
+- From 0.3.2 `probe.py` matches replies itself (`reply_matches()`): TCP
+  replies on src/dst IP, src/dst port and protocol, and an RST reply is
+  accepted with no seq/ack check (scapy's matcher dropped the RST+ACK seq 0
+  that a stack sends to a probe without the ACK flag but with a non-zero ack
+  field: T2 and T7, so 0.3.1 recorded them as timeouts). Non-RST TCP replies
+  keep scapy's checks; ICMP matching is unchanged. Probes go out on one L3 socket and each send
+  time is the capture timestamp of the outgoing packet (as `sr()` recorded),
+  falling back to the clock right after send. Probe packets are
+  unchanged, so `build_db.py` still accepts 0.3.1 runs.
 - `derive.py` prints a draft `Fingerprint …` block in honeyd syntax, with a
   comment header recording run ids and the operator-supplied OS name/build,
   and flags fields that vary across runs.
