@@ -126,3 +126,14 @@ def test_seq_metrics_hex_above_ff():
     m = _seq_metrics([0, 1_200_000_000, 3_900_000_000, 800_000_000, 2_000_000_000, 4_100_000_000],
                      [i * 0.1 for i in range(6)])
     assert m["ISR"] > 0xFF  # no clamp; rendered as hex
+
+
+def test_noted_deviations_are_documented():
+    """Page-vs-wire deviations must be marked and quote the page."""
+    src = (LAB / "probespec.py").read_text()
+    assert src.count("# NOTED DEVIATION") == 2  # ECN reserved bit, IE2 DF
+    assert "immediately precedes the" in src and "The second ping query is similar" in src
+    p = _plan()
+    tcp = bytes(p["ECN"][scapy.TCP])
+    assert tcp[12] & 0x0F == 0x08 and not tcp[12] & 0x01  # wire: first reserved bit
+    assert not p["IE2"].flags.DF

@@ -7,9 +7,11 @@ Packet shapes are written from the published description of the probe set in
 the Nmap book, "TCP/IP Fingerprinting Methods Supported by Nmap":
     https://nmap.org/book/osdetect-methods.html  (section "Probes Sent")
 They are NOT taken from nmap source code or from nmap-os-db. Where that page
-is silent (IP DF on the SEQ, ECN, IE2 and U1 probes) we follow what was seen
-on the wire in our own lab capture and say so in a comment. No OS
-fingerprint database entries are embedded here.
+is silent, or where it differs from the packets the oracle actually sent in
+our own lab capture, THE WIRE WINS for the probe (project ruling). Each such
+point is marked "NOTED DEVIATION" (page and wire differ) or "PAGE SILENT"
+below, with the page text quoted. No OS fingerprint database entries are
+embedded here.
 
 TCP options are an explicit ORDERED tuple of (kind, value) entries, because
 the order and the NOP padding are part of the probe (and of the reply the
@@ -52,7 +54,8 @@ class ProbeDef:
 
 # --- SEQ: six SYNs to an open port, sent exactly 100 ms apart (doc: "Sequence
 # generation (SEQ, OPS, WIN, and T1)"). Options and windows per the doc's
-# per-packet list. IP DF: the doc does not say; our capture shows DF clear.
+# per-packet list. PAGE SILENT on IP DF for these probes (the section lists
+# only options and window). Wire: DF clear on all six, so DF clear.
 _SEQ = [
     (1, (("WS", 10), ("NOP", None), ("MSS", 1460), ("TS", TS_PROBE), ("SACK", None))),
     (63, (("MSS", 1400), ("WS", 0), ("SACK", None), ("TS", TS_PROBE), ("EOL", None))),
@@ -73,23 +76,32 @@ ICMP_PROBES: list[ProbeDef] = [
     ProbeDef(name="IE1", kind="icmp", dst_port_role="n/a", tos=0, df=True, icmp_type=8,
              icmp_code=9, icmp_seq=295, icmp_payload_len=120,
              notes="echo request, DF, TOS 0, code 9, seq 295, random id, 120 x 0x00"),
-    # Doc: "similar, except TOS 4, code 0, 150 bytes, id and seq +1". It does
-    # not restate DF; our capture shows DF clear on the second echo.
+    # NOTED DEVIATION. Page: "The second ping query is similar, except a TOS
+    # of four (IP_TOS_RELIABILITY) is used, the code is zero, 150 bytes of
+    # data is sent, and the ICMP request ID and sequence numbers are
+    # incremented by one". Read literally, "similar" keeps IE1's DF. Wire: the
+    # oracle's second echo has DF clear. The wire wins: DF clear.
     ProbeDef(name="IE2", kind="icmp", dst_port_role="n/a", tos=4, df=False, icmp_type=8,
              icmp_code=0, icmp_seq=296, icmp_payload_len=150,
              notes="echo request, TOS 4, code 0, id+1, seq 296, 150 x 0x00"),
 ]
 
 # --- U1 (doc: "UDP (U1)"): 300 x 'C' to a closed port, IP ID 0x1042.
+# PAGE SILENT on IP DF. Wire: DF clear, so DF clear.
 UDP_PROBE = ProbeDef(name="U1", kind="udp", dst_port_role="closed_udp", df=False, ip_id=0x1042,
                      udp_payload_len=300, notes="UDP to closed port, IP ID 0x1042")
 
 # --- ECN (doc: "TCP explicit congestion notification (ECN)").
 ECN_PROBE = ProbeDef(
     name="ECN", kind="ecn", dst_port_role="open_tcp", window=3, flags="SEC",
-    # The doc says "the reserved bit which immediately precedes the CWR bit";
-    # on the wire (our capture) that is the high reserved bit, byte 12 = 0x?8,
-    # i.e. scapy reserved=4.
+    # NOTED DEVIATION. Page: "the reserved bit which immediately precedes the
+    # CWR bit is set". The bit right before CWR is header bit 0x100 (byte 12,
+    # value 0x01). Wire: the oracle's ECN probe has byte 12 = 0x88, i.e. the
+    # FIRST reserved bit (byte 12 value 0x08, scapy reserved=4), with 0x01
+    # clear. The wire wins: reserved=4.
+    # PAGE SILENT on IP DF for this probe. Wire: DF clear, so DF clear.
+    # Matches the page: urgent 0xF7F5 without URG, ack 0, window 3, options
+    # "WScale (10), NOP, MSS (1460), SACK permitted, NOP, NOP".
     reserved=4, urgptr=0xF7F5, ack_zero=True, df=False,
     options=(("WS", 10), ("NOP", None), ("MSS", 1460), ("SACK", None), ("NOP", None), ("NOP", None)),
     notes="SYN+ECE+CWR, reserved bit, urg 0xF7F5 without URG, ack 0, window 3",
