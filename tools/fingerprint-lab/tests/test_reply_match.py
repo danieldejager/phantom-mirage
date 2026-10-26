@@ -101,3 +101,96 @@ def test_pcap_replay_records_t7_reply():
     # scapy alone would have dropped every T7 reply
     t7_probes = [p for p, _ in sent if p[TCP].flags == "FPU"]
     assert not any(r.answers(p) for p, r in zip(t7_probes, t7))
+
+
+# ---- send-time choice (review on #158) ------------------------------------
+
+import probe as probe_mod  # noqa: E402
+
+
+class _FakeSock:
+    def __init__(self, log):
+        self.log = log
+
+    def send(self, p):
+        self.log.append(("send", p))
+
+    def close(self):
+        pass
+
+
+class _FakeSniffer:
+    """Captures what the fake socket sent (at a chosen 'wire' time) plus
+    scripted replies."""
+
+    def __init__(self, log, wire_times, replies, drop_outgoing=()):
+        self.log, self.wire_times, self.replies, self.drop = log, wire_times, replies, set(drop_outgoing)
+
+    def start(self):
+        pass
+
+    def stop(self):
+        out = []
+        sends = [p for k, p in self.log if k == "send"]
+        for i, p in enumerate(sends):
+            if i in self.drop:
+                continue
+            c = IP(bytes(p))
+            c.time = self.wire_times[i]
+            out.append(c)
+        out.extend(self.replies)
+        return sorted(out, key=lambda c: c.time)
+
+
+def _run_fake(pkts, wire_times, post_times, replies, drop=()):
+    log = []
+    clock = iter(post_times)
+    return probe_mod._exchange(
+        pkts, 0.1, 2.0,
+        sniffer_factory=lambda lf: _FakeSniffer(log, wire_times, replies, drop),
+        socket_factory=lambda: _FakeSock(log),
+        clock=lambda: next(clock),
+        sleep=lambda s: None,
+    )
+
+
+def _reply_at(probe, t):
+    r = IP(bytes(_rst_ack_seq0(probe)))
+    r.time = t
+    return r
+
+
+def test_send_time_is_outgoing_capture_timestamp():
+    plan = _plan()
+    pkts = [plan["T2"], plan["T7"]]
+    wire = [100.000, 100.100]
+    post = [100.0013, 100.1011]  # post-send clock trails the wire
+    res = _run_fake(pkts, wire, post, [_reply_at(pkts[1], 100.1009)])
+    assert [t for t, _ in res] == wire
+    assert res[0][1] is None and res[1][1] is not None
+
+
+def test_send_time_falls_back_to_post_send_when_not_captured():
+    plan = _plan()
+    pkts = [plan["T2"], plan["T7"]]
+    res = _run_fake(pkts, [100.0, 100.1], [100.0013, 100.1011],
+                    [_reply_at(pkts[1], 100.1020)], drop={1})
+    assert [t for t, _ in res] == [100.0, 100.1011]
+    assert res[1][1] is not None
+
+
+def test_pairing_uses_probe_windows():
+    plan = _plan()
+    pkts = [plan["T5"], plan["T6"], plan["T7"]]
+    # T5's reply arrives before T6 is sent; a reply to T5 2.5 s late is
+    # outside T5's window and must not be claimed by anyone.
+    r5 = _reply_at(pkts[0], 100.0009)
+    late = _reply_at(pkts[0], 102.6)
+    r7 = _reply_at(pkts[2], 100.2009)
+    res = _run_fake(pkts, [100.0, 100.1, 100.2], [100.001, 100.101, 100.201], [r5, late, r7])
+    assert res[0][1] is r5 or res[0][1].time == 100.0009
+    assert res[1][1] is None
+    assert res[2][1].time == 100.2009
+    # a reply stamped before its probe's wire time is not paired with it
+    res = _run_fake([pkts[2]], [100.2], [100.201], [_reply_at(pkts[2], 100.1999)])
+    assert res[0][1] is None

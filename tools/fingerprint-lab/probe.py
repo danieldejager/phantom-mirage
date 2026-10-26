@@ -166,12 +166,17 @@ def reply_matches(probe: Any, reply: Any) -> bool:
 
 
 def match_replies(
-    sent: list[tuple[Any, float | None]], received: list[Any]
+    sent: list[tuple[Any, float | None]],
+    received: list[Any],
+    window: float | None = None,
 ) -> list[Any | None]:
     """Pair each sent probe with the first unclaimed reply that matches it.
 
     *sent* is (packet, sent_time); *received* is in arrival order (each with
-    a .time). Replies that arrived before the probe was sent are skipped.
+    a .time). A reply is eligible for a probe only inside that probe's own
+    window: at or after its send time and, if *window* is given, no later
+    than send time + *window*. A late RST therefore cannot be claimed by a
+    later probe (ports differ per probe as well).
     """
     used: set[int] = set()
     out: list[Any | None] = []
@@ -180,8 +185,12 @@ def match_replies(
         for j, r in enumerate(received):
             if j in used:
                 continue
-            if t_sent is not None and float(getattr(r, "time", 0) or 0) < t_sent - 0.001:
-                continue
+            rt = float(getattr(r, "time", 0) or 0)
+            if t_sent is not None:
+                if rt < t_sent:
+                    continue
+                if window is not None and rt > t_sent + window:
+                    continue
             if reply_matches(pkt, r):
                 hit = r
                 used.add(j)
@@ -196,34 +205,91 @@ def _route_iface(dst: str) -> Any:
     return conf.route.route(dst)[0]
 
 
-def _exchange(pkts: list[Any], inter: float, timeout: float) -> list[tuple[float | None, Any | None]]:
-    """Send *pkts* (L3) *inter* seconds apart, sniff, and match replies with
-    reply_matches() instead of scapy's sr()/sr1() matcher (see its docstring).
+def wire_send_times(
+    pkts: list[Any], post_send: list[float], captured: list[Any]
+) -> list[float]:
+    """Send time per probe: the capture timestamp of our own outgoing packet
+    (what sr() used to record), else the timestamp taken right after send().
+
+    Outgoing packets are found by their IP bytes (src/dst/id/proto plus the
+    L4 header), each captured copy used at most once.
     """
-    from scapy.all import AsyncSniffer, send  # type: ignore
     from scapy.layers.inet import IP  # type: ignore
 
+    def key(ip: Any) -> bytes:
+        raw = bytes(ip)
+        ihl = (raw[0] & 0x0F) * 4
+        # ip id (4:6), proto (9), src/dst (12:20), first 8 L4 bytes; skip
+        # TTL/checksum fields a capture might show rewritten.
+        return raw[4:6] + raw[9:10] + raw[12:20] + raw[ihl : ihl + 8]
+
+    pool: list[tuple[bytes, float]] = [
+        (key(c[IP]), float(c.time)) for c in captured if IP in c
+    ]
+    taken: set[int] = set()
+    out: list[float] = []
+    for p, fallback in zip(pkts, post_send):
+        k = key(p[IP])
+        t = fallback
+        for j, (ck, ct) in enumerate(pool):
+            if j not in taken and ck == k:
+                t = ct
+                taken.add(j)
+                break
+        out.append(t)
+    return out
+
+
+def _exchange(
+    pkts: list[Any],
+    inter: float,
+    timeout: float,
+    *,
+    sniffer_factory: Any = None,
+    socket_factory: Any = None,
+    clock: Any = time.time,
+    sleep: Any = time.sleep,
+) -> list[tuple[float | None, Any | None]]:
+    """Send *pkts* (L3) *inter* seconds apart on ONE L3 socket while a
+    sniffer captures both directions; match replies with reply_matches()
+    instead of scapy's sr()/sr1() matcher (see its docstring).
+
+    Send times come from the capture of our own outgoing packets (fallback:
+    clock right after the socket's send), because derive uses them for
+    ISR/SP/TS and the SEQ probes must be stamped at the wire.
+    """
+    from scapy.layers.inet import IP  # type: ignore
+
+    if sniffer_factory is None or socket_factory is None:
+        from scapy.all import AsyncSniffer, conf  # type: ignore
+
+        target0 = pkts[0][IP].dst
+        sniffer_factory = sniffer_factory or (lambda lf: AsyncSniffer(
+            iface=_route_iface(target0), lfilter=lf, store=True))
+        socket_factory = socket_factory or conf.L3socket
+
     target = pkts[0][IP].dst
-    sniffer = AsyncSniffer(
-        iface=_route_iface(target),
-        lfilter=lambda r: IP in r and r[IP].src == target,
-        store=True,
-    )
+    sniffer = sniffer_factory(lambda r: IP in r and target in (r[IP].src, r[IP].dst))
     sniffer.start()
-    time.sleep(0.05)  # let the capture socket come up before sending
-    sent: list[tuple[Any, float | None]] = []
+    sleep(0.05)  # let the capture socket come up before sending
+    post_send: list[float] = []
+    sock = socket_factory()
     try:
         for k, p in enumerate(pkts):
             if k and inter:
-                time.sleep(inter)
-            t = time.time()
-            send(p, verbose=0)
-            sent.append((p, t))
-        time.sleep(timeout)
+                sleep(inter)
+            sock.send(p)
+            post_send.append(clock())
+        sleep(timeout)
     finally:
-        received = list(sniffer.stop() or [])
-    replies = match_replies(sent, [_with_time(r[IP], r.time) for r in received if IP in r])
-    return [(t, r) for (_p, t), r in zip(sent, replies)]
+        sock.close()
+        captured = list(sniffer.stop() or [])
+    ips = [_with_time(c[IP], c.time) for c in captured if IP in c]
+    outgoing = [c for c in ips if c.dst == target]
+    incoming = [c for c in ips if c.src == target]
+    sent_times = wire_send_times(pkts, post_send, outgoing)
+    replies = match_replies(list(zip(pkts, sent_times)), incoming, window=timeout)
+    return list(zip(sent_times, replies))
 
 
 def _with_time(layer: Any, t: Any) -> Any:
