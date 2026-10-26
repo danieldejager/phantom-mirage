@@ -1,5 +1,5 @@
 {
-  "block_sha256": "df58ee08a64d4cad0dfc84b2d6aa62452d49eabae944c522036eff5b26f4853e",
+  "block_sha256": "5dc651ded774ec705f3e3f359a6fd6315a92e7b29d858237a58858c0a1319ec3",
   "derive_report": {
     "fields": {
       "ECN.A": {
@@ -348,9 +348,9 @@
         ],
         "stable": false,
         "values": [
-          80,
-          86,
-          85
+          28,
+          34,
+          33
         ]
       },
       "SEQ.SS": {
@@ -387,9 +387,9 @@
         ],
         "stable": true,
         "values": [
-          "1",
-          "1",
-          "1"
+          "U",
+          "U",
+          "U"
         ]
       },
       "T1.A": {
@@ -1107,6 +1107,71 @@
           "Y"
         ]
       },
+      "U1.RID": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RIPCK": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RIPL": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RUCK": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RUD": {
+        "sources": [
+          "synthetic-ws2022-0001",
+          "synthetic-ws2022-0002",
+          "synthetic-ws2022-0003"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G"
+        ]
+      },
       "U1.T": {
         "sources": [
           "synthetic-ws2022-0001",
@@ -1141,9 +1206,9 @@
         ],
         "stable": true,
         "values": [
-          "148",
-          "148",
-          "148"
+          "0",
+          "0",
+          "0"
         ]
       },
       "WIN.W1": {
@@ -1228,24 +1293,24 @@
   },
   "generator": {
     "name": "fingerprint-lab/build_db.py",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "inputs": {
     "runs": [
       {
         "file": "run-synthetic-ws2022-0001.json",
         "run_id": "synthetic-ws2022-0001",
-        "sha256": "347ff40a7feade5b3b2527274ecbafb685f826230c51d6a55433eb51e0d3088b"
+        "sha256": "7d35c90ee9f56565a555e74be36df22de54663a9aba5604ae7deab5428d193e0"
       },
       {
         "file": "run-synthetic-ws2022-0002.json",
         "run_id": "synthetic-ws2022-0002",
-        "sha256": "73162f061e2aec2d2f8aa26cdfa75ce1ba4a5c8ff290701b567b889da410eb43"
+        "sha256": "dc9d490adb80be3287a4eef40cffdfa4337c21f0b4dc66a4ba1f697d760ae555"
       },
       {
         "file": "run-synthetic-ws2022-0003.json",
         "run_id": "synthetic-ws2022-0003",
-        "sha256": "459b61cd891c50903156992879c83740287f222d564bc61e37752950df47e6ee"
+        "sha256": "19aaa21ae04915cb7cf65911ce5102b31c80c1b61e61c7e25d056fcb1d290f21"
       }
     ],
     "tool_versions_sha256": "0b5f0cb44367f1aa1baed66158e12bb728039ae82a2738b1a28dedfabf80420e"
@@ -1258,7 +1323,7 @@
   "persona": "ws2022-fwon",
   "rules_applied": {
     "SEQ.ISR": "range 95-97 (min-max of runs)",
-    "SEQ.SP": "range 50-56 (min-max of runs)"
+    "SEQ.SP": "range 1C-22 (min-max of runs)"
   },
   "target": {
     "description": "Windows Server 2022",

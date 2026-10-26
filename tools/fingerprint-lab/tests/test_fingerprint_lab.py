@@ -186,19 +186,27 @@ def test_parse_port_unreach():
 # ---------------------------------------------------------------------------
 
 def test_classify_ipid():
-    assert _classify_ipid([0, 0, 0]) == "Z"
-    assert _classify_ipid([1, 2, 3, 4]) == "I"
-    assert _classify_ipid([0, 256, 512]) == "BI"
-    assert _classify_ipid([10, 10, 10]) == "A"
-    assert _classify_ipid([1, 100, 200]) == "RI"
+    # Rules from the published method (IP ID sequence generation algorithm).
+    assert _classify_ipid([0, 0, 0], min_count=3) == "Z"
+    assert _classify_ipid([1, 2, 3, 4], min_count=3) == "I"
+    assert _classify_ipid([0, 256, 512], min_count=3) == "BI"
+    assert _classify_ipid([10, 10, 10], min_count=3) == "A"
+    assert _classify_ipid([1, 2000, 4001], min_count=3) == "RI"
+    assert _classify_ipid([1, 30000, 60001], min_count=3) == "RD"
+    assert _classify_ipid([1, 30000], min_count=2, allow_rd=False) == "RI"  # RD not allowed for II
+    assert _classify_ipid([1, 100, 200], min_count=3) is None  # no rule fits: omitted
+    assert _classify_ipid([1, 2], min_count=3) is None  # too few responses
 
 
 def test_gcd_and_seq_metrics():
     assert _gcd_list([10, 20, 35]) == 5
-    m = _seq_metrics([1000, 2000, 3000, 4000], [0.1, 0.1, 0.1])
+    m = _seq_metrics([1000, 2000, 3000, 4000], [0.0, 0.1, 0.2, 0.3])
     assert m["GCD"] == 1000
-    assert isinstance(m["SP"], int)
-    assert isinstance(m["ISR"], int)
+    assert m["ISR"] == round(8 * math.log2(10000))
+    assert m["SP"] == 0  # constant rate
+    m = _seq_metrics([0, 2 ** 31, 2 ** 31 + 5], [0.0, 0.1, 0.2])
+    assert m["SP"] is None  # SP needs >= 4 responses
+    assert m["ISR"] > 0xFF  # no clamp at FF
 
 
 def _synthetic_run(run_id: str, *, window: int = 64240, ttl: int = 64, ip_id_base: int = 10) -> dict:

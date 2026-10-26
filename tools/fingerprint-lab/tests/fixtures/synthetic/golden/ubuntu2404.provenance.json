@@ -1,5 +1,5 @@
 {
-  "block_sha256": "e1f7126ca27397aa886690385f57811fd62c2fbba89f709820a98fe587f73e0d",
+  "block_sha256": "4c7aacccd45e46d27190c1abaa63d8a6c20e472a16526fd65ae3276785e889b6",
   "derive_report": {
     "fields": {
       "ECN.A": {
@@ -348,9 +348,9 @@
         ],
         "stable": true,
         "values": [
-          74,
-          74,
-          74
+          23,
+          23,
+          23
         ]
       },
       "SEQ.SS": {
@@ -387,9 +387,9 @@
         ],
         "stable": true,
         "values": [
-          "1",
-          "1",
-          "1"
+          "A",
+          "A",
+          "A"
         ]
       },
       "T1.A": {
@@ -1107,6 +1107,71 @@
           "Y"
         ]
       },
+      "U1.RID": {
+        "sources": [
+          "synthetic-ubuntu2404-0001",
+          "synthetic-ubuntu2404-0002",
+          "synthetic-ubuntu2404-0003"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RIPCK": {
+        "sources": [
+          "synthetic-ubuntu2404-0001",
+          "synthetic-ubuntu2404-0002",
+          "synthetic-ubuntu2404-0003"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RIPL": {
+        "sources": [
+          "synthetic-ubuntu2404-0001",
+          "synthetic-ubuntu2404-0002",
+          "synthetic-ubuntu2404-0003"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RUCK": {
+        "sources": [
+          "synthetic-ubuntu2404-0001",
+          "synthetic-ubuntu2404-0002",
+          "synthetic-ubuntu2404-0003"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RUD": {
+        "sources": [
+          "synthetic-ubuntu2404-0001",
+          "synthetic-ubuntu2404-0002",
+          "synthetic-ubuntu2404-0003"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G"
+        ]
+      },
       "U1.T": {
         "sources": [
           "synthetic-ubuntu2404-0001",
@@ -1141,9 +1206,9 @@
         ],
         "stable": true,
         "values": [
-          "148",
-          "148",
-          "148"
+          "0",
+          "0",
+          "0"
         ]
       },
       "WIN.W1": {
@@ -1228,24 +1293,24 @@
   },
   "generator": {
     "name": "fingerprint-lab/build_db.py",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "inputs": {
     "runs": [
       {
         "file": "run-synthetic-ubuntu2404-0001.json",
         "run_id": "synthetic-ubuntu2404-0001",
-        "sha256": "2593eb0efa18442c637eba40cb9d6bd118984c2443e026e1213fbeb9364e64e1"
+        "sha256": "b195b15822826edd1713635e181c7ffbb9ebd86993e7f10956f3bae23542f9a4"
       },
       {
         "file": "run-synthetic-ubuntu2404-0002.json",
         "run_id": "synthetic-ubuntu2404-0002",
-        "sha256": "2d2834368bf9cc5d21e9b39d3e9bd6e631305d2eaab87d47d0e05a38e2d2520e"
+        "sha256": "845a76d687a4c204cfa7c4213957eefda696ca808004936049a9e273b5bb7677"
       },
       {
         "file": "run-synthetic-ubuntu2404-0003.json",
         "run_id": "synthetic-ubuntu2404-0003",
-        "sha256": "b9d7334ff72b945b477ec5992e2b6e45e73471790210eedb74c6f583baedb856"
+        "sha256": "aef292490af865eabcb837f8cc8a012b7584ab7acee6396a0138b24ad3be5a33"
       }
     ],
     "tool_versions_sha256": "fcbd9e4f23635ed1f3b9930f3861600f74e08a01b96bcd8766c4cf192ce3fd4a"

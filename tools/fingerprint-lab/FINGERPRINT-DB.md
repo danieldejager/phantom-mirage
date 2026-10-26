@@ -117,6 +117,9 @@ The generator refuses, with a non-zero exit and nothing written, on any of:
 - a missing `tool-versions.txt`
 - a dry run, flagged at the top level or on any exchange
 - runs that disagree on `target`, `ports` or `tool_version`, or are missing them
+- runs captured with a `probe.py` older than 0.3.0 (their probes did not
+  match the published probe set, so O3, the ECN options and T4/T6 `S` were
+  measured against different packets; re-capture)
 - a duplicate `run_id`
 - an unknown target
 - a run directory name without `-fwon` or `-fwoff`
@@ -171,8 +174,15 @@ unknown persona, a duplicate) exits 2.
   `C` = CWR), which 0.1.0 already recorded. `derive.py` renders the ECN line
   directly in the `parse_ecn` field set, and `build_db.py` only verifies that
   the field set is right; it no longer rewrites the line.
-- The fields come from `derive.py`'s heuristics. The generator adds nothing
-  to them beyond the range rule.
+- The fields come from `derive.py`, which follows the response-test rules
+  in <https://nmap.org/book/osdetect-methods.html>. SP uses the sample
+  (n-1) standard deviation of the per-probe ISN rates; on our first real
+  capture this reproduces the oracle's SP exactly (the population form is 1
+  lower). Linux gives each connection a random timestamp offset, so the
+  TSval differences wrap and TS comes out as a large class (e.g. `22`), as
+  the oracle also reports. `TG` is still written next to `T`, and `T1`
+  keeps `W` and `O`; `personality.c` reads them.
+- The generator adds nothing to the derived fields beyond the range rule.
 - `win11` is a Parallels guest (Daniel's VM is its control). The fixed target
   table `capture/targets.sh` lives in the separate lab repository, not in this
   one, so win11 is not added here. Until it is, the generator's ip and ports

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """OS fingerprint probe capture for Phantom Mirage.
 
+Probe set and timing follow the published method description
+https://nmap.org/book/osdetect-methods.html (written from that text only).
+
 Sends the standard fingerprint probe set to a single RFC1918/ULA target that
 the operator explicitly owns, and records every reply to JSON. Never probes
 the public Internet. Use --dry-run to print packets without sending.
@@ -35,17 +38,13 @@ from packetutil import (  # noqa: E402
     parse_reply,
 )
 from probespec import (  # noqa: E402
-    SEQ_PROBES,
-    T_PROBES,
-    ECN_PROBE,
-    ICMP_PROBES,
-    UDP_PROBE,
+    METHOD_DOC_URL,
+    SEQ_GAP_SEC,
     all_probe_defs,
     probe_plan_summary,
 )
 from rfc1918 import assert_allowed_targets  # noqa: E402
 
-SEQ_GAP_SEC = 0.100
 INTER_GROUP_GAP_SEC = 0.200
 RECV_TIMEOUT_SEC = 2.0
 
@@ -80,15 +79,23 @@ def build_send_plan(
     closed_udp: int,
     src_ip: str | None,
 ) -> list[dict[str, Any]]:
-    """Construct every probe packet (offline). Returns metadata + scapy pkt."""
+    """Construct every probe packet (offline). Returns metadata + scapy pkt.
+
+    Probe shapes and order: METHOD_DOC_URL ("Probes Sent"). Per run: one random
+    non-zero TCP ack (used by every TCP probe except ECN, whose ack is 0) so
+    that the S test (reply seq vs probe ack) is meaningful; one random ICMP
+    echo id (IE2 uses id + 1).
+    """
     src = src_ip or _local_src_ip(target)
     plan: list[dict[str, Any]] = []
     base_sport = random.randint(40000, 50000)
-    base_seq = random.randint(0, 0x7FFFFFFF)
+    base_seq = random.randint(1, 0xFFFFFFFE)
+    tcp_ack = random.randint(1, 0xFFFFFFFE)
     base_ipid = random.randint(1, 0xFFFF)
+    icmp_id = random.randint(1, 0xFFFE)
 
-    ordered = list(SEQ_PROBES) + [ECN_PROBE] + list(T_PROBES) + list(ICMP_PROBES) + [UDP_PROBE]
-    for i, pdef in enumerate(ordered):
+    ie_index = 0
+    for i, pdef in enumerate(all_probe_defs()):
         pkt = build_probe(
             pdef,
             src_ip=src,
@@ -97,14 +104,22 @@ def build_send_plan(
             closed_tcp=closed_tcp,
             closed_udp=closed_udp,
             ip_id=(base_ipid + i) & 0xFFFF,
-            tcp_seq=(base_seq + i * 1000) & 0xFFFFFFFF,
+            tcp_seq=(base_seq + i) & 0xFFFFFFFF,
             tcp_sport=base_sport + i,
+            tcp_ack=tcp_ack,
+            icmp_id=(icmp_id + ie_index) & 0xFFFF,
         )
+        if pdef.kind == "icmp":
+            ie_index += 1
+        # Probes in a "batch" are sent back to back on a fixed clock (SEQ:
+        # exactly SEQ_GAP_SEC apart, as the method requires for ISR/SP/TS).
+        batch = pdef.kind if pdef.kind in ("syn_seq", "icmp") else None
         gap = SEQ_GAP_SEC if pdef.kind == "syn_seq" else INTER_GROUP_GAP_SEC
         plan.append(
             {
                 "name": pdef.name,
                 "kind": pdef.kind,
+                "batch": batch,
                 "gap_before_sec": 0.0 if i == 0 else gap,
                 "packet": pkt,
                 "sent_meta": _describe_packet(pkt),
@@ -118,6 +133,22 @@ def _send_and_recv(pkt: Any, timeout: float) -> Any | None:
     from scapy.all import sr1  # type: ignore
 
     return sr1(pkt, timeout=timeout, verbose=0)
+
+
+def _send_batch(pkts: list[Any], inter: float, timeout: float) -> list[tuple[float | None, Any | None]]:
+    """Send *pkts* on a fixed *inter* clock; return (sent_time, reply) per packet."""
+    from scapy.all import sr  # type: ignore
+
+    ans, _unans = sr(pkts, inter=inter, timeout=timeout, verbose=0)
+    out: list[tuple[float | None, Any | None]] = []
+    for p in pkts:
+        hit = None
+        for snd, rcv in ans:
+            if bytes(snd) == bytes(p):
+                hit = (float(getattr(snd, "sent_time", 0) or 0) or None, rcv)
+                break
+        out.append(hit or (float(getattr(p, "sent_time", 0) or 0) or None, None))
+    return out
 
 
 def run_once(
@@ -141,39 +172,57 @@ def run_once(
     )
     exchanges: list[dict[str, Any]] = []
     t0 = time.monotonic()
+    t0_wall = time.time()
 
-    for item in plan:
+    i = 0
+    while i < len(plan):
+        item = plan[i]
+        group = [item]
+        if item["batch"]:
+            while i + len(group) < len(plan) and plan[i + len(group)]["batch"] == item["batch"]:
+                group.append(plan[i + len(group)])
         gap = item["gap_before_sec"]
         if gap and not dry_run:
             time.sleep(gap)
-        elif gap and dry_run:
-            pass
-
-        sent_at = time.monotonic() - t0
-        sent_parsed = parse_reply(item["packet"])
-        record: dict[str, Any] = {
-            "name": item["name"],
-            "kind": item["kind"],
-            "gap_before_sec": gap,
-            "sent_at_offset_sec": round(sent_at, 4),
-            "sent": item["sent_meta"],
-            "sent_parsed": sent_parsed,
-            "reply": None,
-            "reply_parsed": None,
-            "timeout": False,
-        }
 
         if dry_run:
-            record["dry_run"] = True
+            results = [(None, None)] * len(group)
+        elif len(group) > 1:
+            inter = SEQ_GAP_SEC if item["batch"] == "syn_seq" else 0.0
+            results = _send_batch([g["packet"] for g in group], inter, RECV_TIMEOUT_SEC)
         else:
-            reply = _send_and_recv(item["packet"], RECV_TIMEOUT_SEC)
-            if reply is None:
+            sent_wall = time.time()
+            results = [(sent_wall, _send_and_recv(item["packet"], RECV_TIMEOUT_SEC))]
+
+        for k, (g, (sent_wall, reply)) in enumerate(zip(group, results)):
+            if sent_wall is not None:
+                sent_at = sent_wall - t0_wall
+            elif dry_run and item["batch"] == "syn_seq":
+                sent_at = (time.monotonic() - t0) + k * SEQ_GAP_SEC
+            else:
+                sent_at = time.monotonic() - t0
+            record: dict[str, Any] = {
+                "name": g["name"],
+                "kind": g["kind"],
+                "gap_before_sec": g["gap_before_sec"] if k == 0 else (SEQ_GAP_SEC if g["kind"] == "syn_seq" else 0.0),
+                # Actual send time; derive.py uses these (not nominal gaps)
+                # for ISR / SP / TS, as the method describes.
+                "sent_at_offset_sec": round(sent_at, 6),
+                "sent": g["sent_meta"],
+                "sent_parsed": parse_reply(g["packet"]),
+                "reply": None,
+                "reply_parsed": None,
+                "timeout": False,
+            }
+            if dry_run:
+                record["dry_run"] = True
+            elif reply is None:
                 record["timeout"] = True
             else:
                 record["reply"] = _describe_packet(reply)
                 record["reply_parsed"] = parse_reply(reply)
-
-        exchanges.append(record)
+            exchanges.append(record)
+        i += len(group)
 
     return {
         "run_id": run_id,
@@ -189,6 +238,7 @@ def run_once(
             "closed_udp": closed_udp,
         },
         "dry_run": dry_run,
+        "probe_method_doc": METHOD_DOC_URL,
         "probe_plan": probe_plan_summary(),
         "exchanges": exchanges,
     }

@@ -104,6 +104,25 @@ references come from the Azure lab.
   From tool_version 0.2.0, each parsed TCP packet also carries `flags_bits`
   (the raw flag byte, including ECE 0x40 and CWR 0x80). The field is
   additive: older runs without it still derive, from the flag letters.
+- From tool_version 0.3.0 the probe set and the response tests follow the
+  published method description, <https://nmap.org/book/osdetect-methods.html>,
+  written from that text only (no nmap source or database content): the six
+  SEQ probes go out 100 ms apart with the documented windows and option
+  orders, all TCP probes share one random non-zero ACK (ECN uses ACK 0, the
+  documented urgent pointer and reserved bit), IE1/IE2 and U1 carry the
+  documented codes, TOS, sequence numbers, IP ID and payloads, and each
+  exchange records its real send time (`sent_at_offset_sec`). ICMP
+  unreachable replies also record the quoted IP/UDP fields used by U1's
+  RIPL/RID/RIPCK/RUCK/RUD. Where the page is silent (DF on the SEQ, ECN, IE2
+  and U1 probes; which reserved bit the ECN probe sets), the choice matches
+  what the oracle put on the wire, noted in `probespec.py`. Probe TTL stays 64.
+- `derive.py` computes GCD/ISR/SP/TI/CI/II/SS/TS, O/W, DFI, CD, Q, T/TG and
+  the U1 tests by the page's rules. A test the method omits (too few
+  replies, or no rule fits, e.g. a noisy II) is left out of the line rather
+  than filled in. Option strings use the `T<a><b>` timestamp form (`T11`)
+  that `personality.c` parses. Runs captured before 0.3.0 still derive (the
+  values that depend only on replies are recomputed from the recorded hex),
+  but `build_db.py` refuses them because their probes differed.
 - `derive.py` prints a draft `Fingerprint …` block in honeyd syntax, with a
   comment header recording run ids and the operator-supplied OS name/build,
   and flags fields that vary across runs.
