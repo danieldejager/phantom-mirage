@@ -8,33 +8,76 @@ config that still points at the bundled `nmap-os-db`.
 All three scripts are offline. They open no sockets and send no packets.
 They change nothing outside the output paths you give them.
 
-**Status:** this change ships the tooling, the tests and the SYNTHETIC
-fixtures only. It does **not** create `fingerprints/phantom-mirage-os.db`,
-because no persona has passed scoring yet. An empty or placeholder file
-would be one more thing to install, and it would claim nothing useful. The
-file is added later from real, scored runs. The bundled `nmap-os-db` and the
-shipped configs are not changed.
+**Status:** `fingerprints/phantom-mirage-os.db` now ships with four
+personas built from real lab captures (see "Shipped personas" below). The
+bundled `nmap-os-db` and the shipped configs are not changed, and nothing
+selects the new file by default yet.
+
+## Shipped personas
+
+| Persona | Target | Captures | Open port |
+|---|---|---|---|
+| `ubuntu2404` | Ubuntu 24.04, firewall on | 1 (3 probe runs) | tcp 22 |
+| `ws2022-fwoff` | Windows Server 2022, firewall off | 1 (3 probe runs) | tcp 135 |
+| `ws2019-fwoff` | Windows Server 2019, firewall off | 2, second after a restart (6 probe runs) | tcp 135 |
+| `ws2025-fwoff` | Windows Server 2025, firewall off | 2, second after a restart (6 probe runs) | tcp 135 |
+
+Each capture is 3 or more `probe.py` 0.3.2 runs. The raw captures are not
+in the repository, because they hold lab host names and addresses.
+
+### Where the persona to lab run mapping lives
+
+The shipped file and sidecars carry no lab identifiers: no lab run numbers,
+no run directory names, no probe run UUIDs, no probe host kernel or cloud
+flavour, no nmap or p0f version strings. Each sidecar lists its input run
+files only by label (`c1r1`, `c1r2`, ...) and sha256, so a holder of the
+captures can still verify them.
+
+The mapping from persona to lab run directories is internal and is kept
+**outside the repository**, in a local-only sources file (one line per
+persona: `<persona>: <run dir> [<run dir> ...]`). `build_shipped_db.py`
+reads it from `--sources FILE`, else `$PM_SOURCES`, else
+`<captures-root>/phantom-mirage-sources.txt`. The run ids for the current
+file are recorded in the description of PR #161. `fingerprints/personas.txt`
+(the include list) stays in the repository.
+
+```sh
+python3 build_shipped_db.py --captures-root /path/to/captures          # rewrite fingerprints/
+python3 build_shipped_db.py --captures-root /path/to/captures --check  # compare, exit 1 on any byte difference
+```
+
+The output is byte reproducible: same inputs, same bytes, whatever the input
+order or location. With `PM_CAPTURE_ROOT` set, the test suite runs the
+`--check` rebuild too.
+
+Each Windows persona records its open port in its own header
+(`#@ ports: open_tcp=135 ...`), in its sidecar (`ports`), and in its run
+directory name (`-p135`). The port is not hard coded anywhere else.
 
 ## Inputs (and nothing else)
 
-For one lab run directory `run-<id>-<attempt>-fw<on|off>/`, the generator
-reads:
+For each lab run directory `run-<id>-<attempt>-fw<on|off>[-restart][-p<port>]/`
+(one capture), the generator reads:
 
 - the `run-*.json` files written by `probe.py` (at least 3)
 - `tool-versions.txt`, written by the capture script
-- the directory name, which gives the firewall state
+- the directory name, which gives the firewall state and, when present,
+  the restart flag and the open port
 
 It never opens `nmap.xml`, `nmap.txt`, `p0f.log`, `personality.txt`,
 `derive-report.json`, or any nmap-os-db, p0f or Satori data. The tests plant
 marker files with those names and check two things: the marker files are
 never opened, and no marker text appears in the output. The `nmap_os_db=`
-line of `tool-versions.txt` is dropped from the provenance.
+line of `tool-versions.txt` is dropped from the provenance, and so are
+the lab host data in it (`ip`, `vm`, `probe_host`, `kernel`) and the
+oracle tool versions (`nmap_version`, `nmap_pkg`, `p0f_version`).
 
 ## Usage
 
 ```sh
-# one block (+ sidecar) per run directory
+# one block (+ sidecar) per persona, from one or more captures
 python3 build_db.py block path/to/ws2022/run-123-1-fwon -o blocks/
+python3 build_db.py block run-1-1-fwoff-p135 run-2-1-fwoff-restart-p135 -o blocks/
 #   or explicitly:
 python3 build_db.py block --runs a.json b.json c.json \
     --tool-versions tool-versions.txt --run-name run-123-1-fwon -o blocks/
@@ -90,9 +133,18 @@ line uses only the fields that `parse_ecn` accepts: `R DF T TG W O CC Q`.
 The file begins with a fixed comment header and a
 `#@ db-personas: a,b,...` line.
 
-Header keys, in order: `persona`, `target`, `firewall`, `lab-run`,
-`probe-runs`, `probe-tool`, `captured-utc`, `tool-source-commit`,
-`tool-versions-sha256`, `generator`, `ranges`.
+Header keys, in order: `persona`, `target`, `os-build` (omitted when the
+build string names the lab hosting, as for the Ubuntu cloud kernel),
+`firewall`, `ports`, `captures` (count), `probe-runs` (count), `probe-tool`
+(probe.py and its version), `captured-utc`, `tool-source-commit`,
+`tool-versions-sha256`, `generator` (build_db.py and its own version, 1.0.0,
+separate from the probe version), `derive` (derive.py version, the last
+git commit that touched it, and its sha256; derive.py 0.3.2 before and
+after #160 share a version string, so the hash tells them apart),
+`sp-isr-method`, `ranges`, then one `limit` line per known limit (a persona
+built from a single capture, plus any line from `fingerprints/limits.txt`,
+`<persona>: <one line>`, which `build_shipped_db.py` appends in file order). Keys with several captures hold comma separated lists in capture
+order.
 
 ## Provenance sidecar
 
@@ -100,9 +152,13 @@ Header keys, in order: `persona`, `target`, `firewall`, `lab-run`,
 an indent of 2. It records:
 
 - the persona, generator and version
-- the target and the lab run (id, attempt, firewall)
-- each input run file with its basename, run_id and sha256
-- the sha256 of `tool-versions.txt` and its parsed values (without `nmap_os_db`)
+- the target (with OS build, patch and edition when recorded) and the ports
+- per capture: a label (`c1`, `c2`), the restart flag, each input run file
+  by label and sha256, and the sha256 of `tool-versions.txt` with its parsed
+  values, without `nmap_os_db`, `ip`, `vm`, `probe_host`, `kernel`,
+  `nmap_version`, `nmap_pkg`, `p0f_version` and any value naming the lab
+  hosting (such as `-azure`)
+- the SP/ISR method and the known limits
 - the rules applied
 - the raw derived fields of each run, before any rule
 - the sha256 of the block
@@ -124,7 +180,11 @@ The generator refuses, with a non-zero exit and nothing written, on any of:
   0.3.0 the probes did not
   match the published probe set, so O3, the ECN options and T4/T6 `S` were
   measured against different packets; re-capture)
-- a duplicate `run_id`
+- a duplicate `run_id`, or the same capture given twice
+- captures that disagree on persona, target, firewall, ports, probe version
+  or target OS build, patch or edition
+- a `-p<port>` suffix that differs from the runs' open TCP port, or a
+  `-restart` suffix that differs from `restart=` in `tool-versions.txt`
 - an unknown target
 - a run directory name without `-fwon` or `-fwoff`
 - no `firewall=` in `tool-versions.txt`, or a value that differs from the directory name
@@ -136,11 +196,15 @@ The generator refuses, with a non-zero exit and nothing written, on any of:
 
 The rules are deliberately minimal:
 
-- `SEQ.SP` and `SEQ.ISR`: when the runs differ, the generator writes the
-  `min-max` hex range of the runs (for example `SP=50-56`). `personality.c`
+- `SEQ.SP` and `SEQ.ISR`: these are statistics over the 6 SEQ probes of
+  each run (ISR is 8*log2 of the mean ISN rate, SP is 8*log2 of the sample
+  (n-1) standard deviation of those rates, divided by GCD when GCD > 9).
+  When the runs of all captures differ, the generator writes the `min-max`
+  hex range over every run (for example `SP=50-56`). The method is written
+  to `#@ sp-isr-method:` and to the sidecar. `personality.c`
   accepts that syntax. This matches gate F5 of the scoring sheet, where the
   numeric SEQ values must fall inside the control's three-run range.
-- Every other field must be identical in every run, including `GCD`,
+- Every other field must be identical in every run of every capture, including `GCD`,
   `TI/CI/II`, `SS`, `TS`, options, windows, T1-T7, U1 and IE. Otherwise the
   build is refused. Each range the generator uses is listed in
   `#@ ranges:` and in `rules_applied`.
@@ -168,6 +232,17 @@ bundled-name uses do not fail the check. A malformed list (bad syntax, an
 unknown persona, a duplicate) exits 2.
 
 ## Known limits
+
+- `ws2022-fwoff` is built from a single capture, so its `W6=FFDC` (65500,
+  where ws2025 gives 65535) has not been reproduced after a restart. This is
+  marked by a `#@ limit:` line.
+- `ubuntu2404` is also a single capture and ships `TS=22`. A second capture
+  after a restart had one run with `SEQ.TS=23` (6 runs across both captures:
+  5 read 22, 1 read 23), so the generator refuses to merge them. The decoy
+  check allows TS 22 and 23. This is stated in a `#@ limit:` line from
+  `fingerprints/limits.txt`. No TS range is used.
+- Firewall-on Windows personas (`ws20xx-fwon`) are out of scope for this
+  file. Windows 11 comes later.
 
 - ECN `CC` (scoring gate F13) follows nmap's definition for the reply to the
   ECN probe (SYN with ECE+CWR): `Y` = ECE only, `N` = neither, `S` = ECE and

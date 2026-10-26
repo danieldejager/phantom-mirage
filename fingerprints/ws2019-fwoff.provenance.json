@@ -1,0 +1,2183 @@
+{
+  "block_sha256": "3633c696c2aedc631dcda4b9ff9d0869e7c72fd7ef7beb844b09a736af2e648b",
+  "captures": [
+    {
+      "capture": "c1",
+      "inputs": {
+        "runs": [
+          {
+            "run": "c1r1",
+            "sha256": "a4f7ef66fdf024e3c5209acff746264e0188737c2afd6b853cfd9eee0dd11dec"
+          },
+          {
+            "run": "c1r2",
+            "sha256": "de32e7e9e3b27b6f2351233e7f67878a68509edc21867de946c9d690cc55c96e"
+          },
+          {
+            "run": "c1r3",
+            "sha256": "f6796370c192ed90777929e0eb131d5ddf6cb45dfcc2ea34cde4adbbbcf07c9c"
+          }
+        ],
+        "tool_versions_sha256": "8fdd396b65b4f436d3ef6082d2f7a74e94d37b232100d28214c9873c78126a1a"
+      },
+      "restart": false,
+      "tool_versions": {
+        "captured_utc": "2026-10-26T11:54:15Z",
+        "closed_tcp": "1",
+        "closed_udp": "40000",
+        "firewall": "off",
+        "libpcap_version": "libpcap version 1.10.4 (with TPACKET_V3)",
+        "open_tcp": "135",
+        "os_release": "Ubuntu 24.04.5 LTS",
+        "pcap_bytes": "206422",
+        "python_version": "Python 3.12.3",
+        "restart": "0",
+        "run_gap_s": "300",
+        "runs": "3",
+        "scapy_version": "2.8.0",
+        "target": "ws2019",
+        "target_boot_utc": "2026-10-26T10-56-02Z",
+        "target_os_build": "10.0.17763.9376",
+        "target_os_edition": "ServerDatacenter",
+        "target_os_patch": "KB5126651",
+        "target_updates": "Stopped-Disabled",
+        "tcpdump_version": "tcpdump version 4.99.4",
+        "tool_source_branch": "master",
+        "tool_source_commit": "f21d16587f719fbaefbf94a7ddd36960c75b27e6",
+        "tool_source_repo": "danieldejager/phantom-mirage"
+      }
+    },
+    {
+      "capture": "c2",
+      "inputs": {
+        "runs": [
+          {
+            "run": "c2r1",
+            "sha256": "cb1dc6836cc5d09ed098cb3c03c9391b79203e901b13d6c6d0147e5b237cccc3"
+          },
+          {
+            "run": "c2r2",
+            "sha256": "0c1362dd3ed060ac87a8cba9d840063189373afdaab7de8fdf1f0e9fe5bf5944"
+          },
+          {
+            "run": "c2r3",
+            "sha256": "ef940e8e65824f2cdf9c74b7fcbeda38652a28d4de749eb396de46337de43c37"
+          }
+        ],
+        "tool_versions_sha256": "04cb120811ea9723ebf8565536ef108848f8ec78c2e2fd3bd6dc05567a2f42bc"
+      },
+      "restart": true,
+      "tool_versions": {
+        "captured_utc": "2026-10-26T12:40:36Z",
+        "closed_tcp": "1",
+        "closed_udp": "40000",
+        "firewall": "off",
+        "libpcap_version": "libpcap version 1.10.4 (with TPACKET_V3)",
+        "open_tcp": "135",
+        "os_release": "Ubuntu 24.04.5 LTS",
+        "pcap_bytes": "207462",
+        "python_version": "Python 3.12.3",
+        "restart": "1",
+        "run_gap_s": "300",
+        "runs": "3",
+        "scapy_version": "2.8.0",
+        "target": "ws2019",
+        "target_boot_utc": "2026-10-26T12-24-04Z",
+        "target_os_build": "10.0.17763.9376",
+        "target_os_edition": "ServerDatacenter",
+        "target_os_patch": "KB5126651",
+        "target_updates": "Stopped-Disabled",
+        "tcpdump_version": "tcpdump version 4.99.4",
+        "tool_source_branch": "master",
+        "tool_source_commit": "f21d16587f719fbaefbf94a7ddd36960c75b27e6",
+        "tool_source_repo": "danieldejager/phantom-mirage"
+      }
+    }
+  ],
+  "derive": {
+    "commit": "4c742c28a59084a6308163d6ab9f0659e7363b81",
+    "sha256": "deb602474dedf13457d265fac7c291fd9907f8107dc9e415f5a8a00819b1ef0b",
+    "version": "0.3.2"
+  },
+  "derive_report": {
+    "fields": {
+      "ECN.A": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "S+",
+          "S+",
+          "S+",
+          "S+",
+          "S+",
+          "S+"
+        ]
+      },
+      "ECN.CC": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "ECN.DF": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "ECN.F": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "EAS",
+          "EAS",
+          "EAS",
+          "EAS",
+          "EAS",
+          "EAS"
+        ]
+      },
+      "ECN.O": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS"
+        ]
+      },
+      "ECN.Q": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "ECN.R": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "ECN.S": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "O",
+          "O",
+          "O",
+          "O",
+          "O",
+          "O"
+        ]
+      },
+      "ECN.T": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "ECN.TG": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "ECN.W": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "FFFF",
+          "FFFF",
+          "FFFF",
+          "FFFF",
+          "FFFF",
+          "FFFF"
+        ]
+      },
+      "IE.CD": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z",
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "IE.DFI": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N",
+          "N",
+          "N",
+          "N"
+        ]
+      },
+      "IE.R": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "IE.T": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "IE.TG": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "OPS.O1": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS"
+        ]
+      },
+      "OPS.O2": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS"
+        ]
+      },
+      "OPS.O3": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "M582NW8",
+          "M582NW8",
+          "M582NW8",
+          "M582NW8",
+          "M582NW8",
+          "M582NW8"
+        ]
+      },
+      "OPS.O4": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS"
+        ]
+      },
+      "OPS.O5": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS"
+        ]
+      },
+      "OPS.O6": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "M582NNS",
+          "M582NNS",
+          "M582NNS",
+          "M582NNS",
+          "M582NNS",
+          "M582NNS"
+        ]
+      },
+      "SEQ.CI": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "I",
+          "I",
+          "I",
+          "I",
+          "I",
+          "I"
+        ]
+      },
+      "SEQ.GCD": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "SEQ.II": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "I",
+          "I",
+          "I",
+          "I",
+          "I",
+          "I"
+        ]
+      },
+      "SEQ.ISR": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": false,
+        "values": [
+          273,
+          268,
+          263,
+          271,
+          269,
+          269
+        ]
+      },
+      "SEQ.SP": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": false,
+        "values": [
+          268,
+          259,
+          262,
+          266,
+          265,
+          261
+        ]
+      },
+      "SEQ.SS": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "S",
+          "S",
+          "S",
+          "S",
+          "S",
+          "S"
+        ]
+      },
+      "SEQ.TI": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "I",
+          "I",
+          "I",
+          "I",
+          "I",
+          "I"
+        ]
+      },
+      "SEQ.TS": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "U",
+          "U",
+          "U",
+          "U",
+          "U",
+          "U"
+        ]
+      },
+      "T1.A": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "S+",
+          "S+",
+          "S+",
+          "S+",
+          "S+",
+          "S+"
+        ]
+      },
+      "T1.DF": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T1.F": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "AS",
+          "AS",
+          "AS",
+          "AS",
+          "AS",
+          "AS"
+        ]
+      },
+      "T1.O": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS",
+          "M582NW8NNS"
+        ]
+      },
+      "T1.Q": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "T1.R": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T1.S": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "O",
+          "O",
+          "O",
+          "O",
+          "O",
+          "O"
+        ]
+      },
+      "T1.T": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T1.TG": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T1.W": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "FFFF",
+          "FFFF",
+          "FFFF",
+          "FFFF",
+          "FFFF",
+          "FFFF"
+        ]
+      },
+      "T2.A": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "S",
+          "S",
+          "S",
+          "S",
+          "S",
+          "S"
+        ]
+      },
+      "T2.DF": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T2.F": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "AR",
+          "AR",
+          "AR",
+          "AR",
+          "AR",
+          "AR"
+        ]
+      },
+      "T2.O": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "T2.Q": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "T2.R": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T2.S": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z",
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "T2.T": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T2.TG": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T2.W": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "T3.R": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N",
+          "N",
+          "N",
+          "N"
+        ]
+      },
+      "T4.A": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "O",
+          "O",
+          "O",
+          "O",
+          "O",
+          "O"
+        ]
+      },
+      "T4.DF": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T4.F": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "R",
+          "R",
+          "R",
+          "R",
+          "R",
+          "R"
+        ]
+      },
+      "T4.O": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "T4.Q": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "T4.R": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T4.S": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "A",
+          "A",
+          "A",
+          "A",
+          "A",
+          "A"
+        ]
+      },
+      "T4.T": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T4.TG": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T4.W": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "T5.A": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "S+",
+          "S+",
+          "S+",
+          "S+",
+          "S+",
+          "S+"
+        ]
+      },
+      "T5.DF": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T5.F": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "AR",
+          "AR",
+          "AR",
+          "AR",
+          "AR",
+          "AR"
+        ]
+      },
+      "T5.O": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "T5.Q": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "T5.R": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T5.S": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z",
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "T5.T": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T5.TG": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T5.W": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "T6.A": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "O",
+          "O",
+          "O",
+          "O",
+          "O",
+          "O"
+        ]
+      },
+      "T6.DF": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T6.F": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "R",
+          "R",
+          "R",
+          "R",
+          "R",
+          "R"
+        ]
+      },
+      "T6.O": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "T6.Q": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "T6.R": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T6.S": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "A",
+          "A",
+          "A",
+          "A",
+          "A",
+          "A"
+        ]
+      },
+      "T6.T": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T6.TG": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T6.W": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "T7.A": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "S+",
+          "S+",
+          "S+",
+          "S+",
+          "S+",
+          "S+"
+        ]
+      },
+      "T7.DF": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T7.F": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "AR",
+          "AR",
+          "AR",
+          "AR",
+          "AR",
+          "AR"
+        ]
+      },
+      "T7.O": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "T7.Q": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      },
+      "T7.R": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T7.S": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z",
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "T7.T": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T7.TG": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "T7.W": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "U1.DF": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N",
+          "N",
+          "N",
+          "N"
+        ]
+      },
+      "U1.IPL": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "164",
+          "164",
+          "164",
+          "164",
+          "164",
+          "164"
+        ]
+      },
+      "U1.R": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "U1.RID": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G",
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RIPCK": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G",
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RIPL": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G",
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RUCK": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G",
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RUD": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G",
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.T": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "U1.TG": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "80",
+          "80",
+          "80",
+          "80",
+          "80",
+          "80"
+        ]
+      },
+      "U1.UN": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "WIN.W1": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          65535,
+          65535,
+          65535,
+          65535,
+          65535,
+          65535
+        ]
+      },
+      "WIN.W2": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          65535,
+          65535,
+          65535,
+          65535,
+          65535,
+          65535
+        ]
+      },
+      "WIN.W3": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          65535,
+          65535,
+          65535,
+          65535,
+          65535,
+          65535
+        ]
+      },
+      "WIN.W4": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          65535,
+          65535,
+          65535,
+          65535,
+          65535,
+          65535
+        ]
+      },
+      "WIN.W5": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          65535,
+          65535,
+          65535,
+          65535,
+          65535,
+          65535
+        ]
+      },
+      "WIN.W6": {
+        "sources": [
+          "c1r1",
+          "c1r2",
+          "c1r3",
+          "c2r1",
+          "c2r2",
+          "c2r3"
+        ],
+        "stable": true,
+        "values": [
+          65392,
+          65392,
+          65392,
+          65392,
+          65392,
+          65392
+        ]
+      }
+    }
+  },
+  "generator": {
+    "name": "fingerprint-lab/build_db.py",
+    "version": "1.0.0"
+  },
+  "limits": [],
+  "persona": "ws2019-fwoff",
+  "ports": {
+    "closed_tcp": 1,
+    "closed_udp": 40000,
+    "open_tcp": 135
+  },
+  "rules_applied": {
+    "SEQ.ISR": "range 107-111 (min-max of runs)",
+    "SEQ.SP": "range 103-10C (min-max of runs)"
+  },
+  "sp_isr_method": "per probe run: derive.py 0.3.2 _seq_metrics (ISR = round(8*log2(mean ISN rate)), SP = round(8*log2(sample (n-1) stddev of per-probe ISN rates, divided by GCD when GCD>9))); across all probe runs of all captures: min-max hex range",
+  "target": {
+    "description": "Windows Server 2019",
+    "family": "windows",
+    "firewall": "off",
+    "key": "ws2019",
+    "os_build": "10.0.17763.9376",
+    "os_edition": "ServerDatacenter",
+    "os_patch": "KB5126651"
+  }
+}

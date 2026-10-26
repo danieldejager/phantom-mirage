@@ -1,14 +1,18 @@
 #@ persona: ubuntu2404
 #@ target: ubuntu2404 (Ubuntu 24.04)
 #@ firewall: on
-#@ lab-run: 900002 attempt 1
-#@ probe-runs: synthetic-ubuntu2404-0001,synthetic-ubuntu2404-0002,synthetic-ubuntu2404-0003
+#@ ports: open_tcp=22 closed_tcp=1 closed_udp=40000
+#@ captures: 1
+#@ probe-runs: 3
 #@ probe-tool: fingerprint-lab/probe.py 0.3.2
 #@ captured-utc: 2000-01-01T00:00:00Z
 #@ tool-source-commit: 0000000000000000000000000000000000000000
 #@ tool-versions-sha256: fcbd9e4f23635ed1f3b9930f3861600f74e08a01b96bcd8766c4cf192ce3fd4a
-#@ generator: fingerprint-lab/build_db.py 0.3.2
+#@ generator: fingerprint-lab/build_db.py 1.0.0
+#@ derive: fingerprint-lab/derive.py 0.3.2 commit 4c742c28a59084a6308163d6ab9f0659e7363b81 sha256 deb602474dedf13457d265fac7c291fd9907f8107dc9e415f5a8a00819b1ef0b
+#@ sp-isr-method: min-max range over all probe runs (see sidecar)
 #@ ranges: none
+#@ limit: single capture: every field rests on one capture (3 probe runs, one boot); no restart capture to confirm it
 Fingerprint ubuntu2404
 SEQ(SP=17%GCD=3E8%ISR=92%TI=I%CI=Z%II=I%SS=O%TS=A)
 OPS(O1=M5B4ST11NW7%O2=M5B4ST11NW7%O3=M5B4ST11NW7%O4=M5B4ST11NW7%O5=M5B4ST11NW7%O6=M5B4ST11NW7)

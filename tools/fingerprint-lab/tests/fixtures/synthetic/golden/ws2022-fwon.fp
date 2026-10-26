@@ -1,14 +1,18 @@
 #@ persona: ws2022-fwon
 #@ target: ws2022 (Windows Server 2022)
 #@ firewall: on
-#@ lab-run: 900001 attempt 1
-#@ probe-runs: synthetic-ws2022-0001,synthetic-ws2022-0002,synthetic-ws2022-0003
+#@ ports: open_tcp=3389 closed_tcp=1 closed_udp=40000
+#@ captures: 1
+#@ probe-runs: 3
 #@ probe-tool: fingerprint-lab/probe.py 0.3.2
 #@ captured-utc: 2000-01-01T00:00:00Z
 #@ tool-source-commit: 0000000000000000000000000000000000000000
 #@ tool-versions-sha256: 0b5f0cb44367f1aa1baed66158e12bb728039ae82a2738b1a28dedfabf80420e
-#@ generator: fingerprint-lab/build_db.py 0.3.2
+#@ generator: fingerprint-lab/build_db.py 1.0.0
+#@ derive: fingerprint-lab/derive.py 0.3.2 commit 4c742c28a59084a6308163d6ab9f0659e7363b81 sha256 deb602474dedf13457d265fac7c291fd9907f8107dc9e415f5a8a00819b1ef0b
+#@ sp-isr-method: min-max range over all probe runs (see sidecar)
 #@ ranges: SEQ.ISR range 95-97 (min-max of runs), SEQ.SP range 1C-22 (min-max of runs)
+#@ limit: single capture: every field rests on one capture (3 probe runs, one boot); no restart capture to confirm it
 Fingerprint ws2022-fwon
 SEQ(SP=1C-22%GCD=3E8%ISR=95-97%TI=I%CI=Z%II=I%SS=O%TS=U)
 OPS(O1=M5B4NW8NNS%O2=M5B4NW8NNS%O3=M5B4NW8NNS%O4=M5B4NW8NNS%O5=M5B4NW8NNS%O6=M5B4NW8NNS)
