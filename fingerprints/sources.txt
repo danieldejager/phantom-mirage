@@ -1,0 +1,9 @@
+# Capture run dirs each shipped persona is built from (issue #150).
+# One line per persona:  <persona>: <run dir name> [<run dir name> ...]
+# Dir names only; the captures themselves live outside this repo (lab
+# artifacts). The open TCP port of each persona is taken from the captures
+# (-p<port> suffix, tool-versions.txt and the run JSONs must agree).
+ubuntu2404: run-40274255117-1-fwon
+ws2022-fwoff: run-40301571937-1-fwoff-p135
+ws2019-fwoff: run-40316625491-1-fwoff-p135 run-40321836463-1-fwoff-restart-p135
+ws2025-fwoff: run-40340734957-1-fwoff-p135 run-40348380922-1-fwoff-restart-p135

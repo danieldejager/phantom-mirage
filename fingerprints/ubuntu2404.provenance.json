@@ -1,0 +1,1380 @@
+{
+  "block_sha256": "4282f1eec1cf5e2766d175857aa5210a3cdc3c31ca69c9530d22870d153ff3ce",
+  "captures": [
+    {
+      "inputs": {
+        "runs": [
+          {
+            "file": "run-724d12c7-8e9d-405f-aab4-6b9938fdbfb6.json",
+            "run_id": "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+            "sha256": "7592ec47ca2c680fc17a0108c6188bc6b2c1f6d84ef7ed98634dd977c02d34b0"
+          },
+          {
+            "file": "run-c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8.json",
+            "run_id": "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+            "sha256": "778186d123105e3a24c1ceaed4dceba68845c3c2f388e66797ea146750fef3b5"
+          },
+          {
+            "file": "run-d7fdf2b5-3288-4f26-b115-b0d613db42fc.json",
+            "run_id": "d7fdf2b5-3288-4f26-b115-b0d613db42fc",
+            "sha256": "3317ec5586a5ac6a39378fac04f1e82e692c94b00a1284ac13c3ceb4a2942a61"
+          }
+        ],
+        "tool_versions_sha256": "47d915df9f04c6cbacc0d3543c7cd7fa8a67044fdf7c5dee5eb4da6095e2041e"
+      },
+      "lab_run": {
+        "attempt": "1",
+        "dir": "run-40274255117-1-fwon",
+        "restart": false,
+        "run_id": "40274255117"
+      },
+      "tool_versions": {
+        "captured_utc": "2026-10-26T05:40:56Z",
+        "closed_tcp": "1",
+        "closed_udp": "40000",
+        "firewall": "on",
+        "kernel": "7.0.0-1017-azure",
+        "libpcap_version": "libpcap version 1.10.4 (with TPACKET_V3)",
+        "nmap_pkg": "7.94+git20230807.3be01efb1+dfsg-3build2",
+        "nmap_version": "Nmap version 7.94SVN ( https://nmap.org )",
+        "open_tcp": "22",
+        "os_release": "Ubuntu 24.04.5 LTS",
+        "p0f_version": "3.09b-3build2",
+        "pcap_bytes": "186783",
+        "python_version": "Python 3.12.3",
+        "restart": "0",
+        "run_gap_s": "300",
+        "runs": "3",
+        "scapy_version": "2.8.0",
+        "target": "ubuntu2404",
+        "target_boot_utc": "2026-10-26T04-29-56Z",
+        "target_os_build": "ubuntu-24.04-7.0.0-1017-azure",
+        "target_os_edition": "ubuntu",
+        "target_os_patch": "7.0.0-1017.17_24.04.1",
+        "target_updates": "unattended-upgrades-inactive",
+        "tcpdump_version": "tcpdump version 4.99.4",
+        "tool_source_branch": "master",
+        "tool_source_commit": "f21d16587f719fbaefbf94a7ddd36960c75b27e6",
+        "tool_source_repo": "danieldejager/phantom-mirage"
+      }
+    }
+  ],
+  "derive_report": {
+    "fields": {
+      "ECN.A": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "S+",
+          "S+",
+          "S+"
+        ]
+      },
+      "ECN.CC": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "ECN.DF": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "ECN.F": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "EAS",
+          "EAS",
+          "EAS"
+        ]
+      },
+      "ECN.O": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "M582NNSNW9",
+          "M582NNSNW9",
+          "M582NNSNW9"
+        ]
+      },
+      "ECN.Q": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "ECN.R": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "ECN.S": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "O",
+          "O",
+          "O"
+        ]
+      },
+      "ECN.T": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "ECN.TG": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "ECN.W": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "FAF0",
+          "FAF0",
+          "FAF0"
+        ]
+      },
+      "IE.CD": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "S",
+          "S",
+          "S"
+        ]
+      },
+      "IE.DFI": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N"
+        ]
+      },
+      "IE.R": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "IE.T": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "IE.TG": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "OPS.O1": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "M582ST11NW9",
+          "M582ST11NW9",
+          "M582ST11NW9"
+        ]
+      },
+      "OPS.O2": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "M582ST11NW9",
+          "M582ST11NW9",
+          "M582ST11NW9"
+        ]
+      },
+      "OPS.O3": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "M582NNT11NW9",
+          "M582NNT11NW9",
+          "M582NNT11NW9"
+        ]
+      },
+      "OPS.O4": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "M582ST11NW9",
+          "M582ST11NW9",
+          "M582ST11NW9"
+        ]
+      },
+      "OPS.O5": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "M582ST11NW9",
+          "M582ST11NW9",
+          "M582ST11NW9"
+        ]
+      },
+      "OPS.O6": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "M582ST11",
+          "M582ST11",
+          "M582ST11"
+        ]
+      },
+      "SEQ.CI": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "SEQ.GCD": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          1,
+          1,
+          1
+        ]
+      },
+      "SEQ.II": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "I",
+          "I",
+          "I"
+        ]
+      },
+      "SEQ.ISR": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": false,
+        "values": [
+          268,
+          266,
+          268
+        ]
+      },
+      "SEQ.SP": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": false,
+        "values": [
+          264,
+          266,
+          271
+        ]
+      },
+      "SEQ.SS": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          null,
+          null,
+          null
+        ]
+      },
+      "SEQ.TI": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "SEQ.TS": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "22",
+          "22",
+          "22"
+        ]
+      },
+      "T1.A": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "S+",
+          "S+",
+          "S+"
+        ]
+      },
+      "T1.DF": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T1.F": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "AS",
+          "AS",
+          "AS"
+        ]
+      },
+      "T1.O": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "M582ST11NW9",
+          "M582ST11NW9",
+          "M582ST11NW9"
+        ]
+      },
+      "T1.Q": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T1.R": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T1.S": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "O",
+          "O",
+          "O"
+        ]
+      },
+      "T1.T": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "T1.TG": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "T1.W": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "FE88",
+          "FE88",
+          "FE88"
+        ]
+      },
+      "T2.R": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N"
+        ]
+      },
+      "T3.R": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N"
+        ]
+      },
+      "T4.A": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "T4.DF": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T4.F": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "R",
+          "R",
+          "R"
+        ]
+      },
+      "T4.O": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T4.Q": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T4.R": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T4.S": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "A",
+          "A",
+          "A"
+        ]
+      },
+      "T4.T": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "T4.TG": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "T4.W": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "T5.A": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "S+",
+          "S+",
+          "S+"
+        ]
+      },
+      "T5.DF": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T5.F": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "AR",
+          "AR",
+          "AR"
+        ]
+      },
+      "T5.O": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T5.Q": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T5.R": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T5.S": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "T5.T": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "T5.TG": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "T5.W": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "T6.A": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "T6.DF": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T6.F": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "R",
+          "R",
+          "R"
+        ]
+      },
+      "T6.O": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T6.Q": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T6.R": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T6.S": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "A",
+          "A",
+          "A"
+        ]
+      },
+      "T6.T": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "T6.TG": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "T6.W": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "T7.A": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "S+",
+          "S+",
+          "S+"
+        ]
+      },
+      "T7.DF": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T7.F": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "AR",
+          "AR",
+          "AR"
+        ]
+      },
+      "T7.O": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T7.Q": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "T7.R": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "T7.S": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Z",
+          "Z",
+          "Z"
+        ]
+      },
+      "T7.T": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "T7.TG": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "T7.W": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "U1.DF": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "N",
+          "N",
+          "N"
+        ]
+      },
+      "U1.IPL": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "164",
+          "164",
+          "164"
+        ]
+      },
+      "U1.R": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "Y",
+          "Y",
+          "Y"
+        ]
+      },
+      "U1.RID": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RIPCK": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RIPL": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RUCK": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.RUD": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "G",
+          "G",
+          "G"
+        ]
+      },
+      "U1.T": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "U1.TG": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "40",
+          "40",
+          "40"
+        ]
+      },
+      "U1.UN": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "WIN.W1": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          65160,
+          65160,
+          65160
+        ]
+      },
+      "WIN.W2": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          65160,
+          65160,
+          65160
+        ]
+      },
+      "WIN.W3": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          65160,
+          65160,
+          65160
+        ]
+      },
+      "WIN.W4": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          65160,
+          65160,
+          65160
+        ]
+      },
+      "WIN.W5": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          65160,
+          65160,
+          65160
+        ]
+      },
+      "WIN.W6": {
+        "sources": [
+          "724d12c7-8e9d-405f-aab4-6b9938fdbfb6",
+          "c3c8685d-6e30-4cdd-bff6-e4c4c48b93e8",
+          "d7fdf2b5-3288-4f26-b115-b0d613db42fc"
+        ],
+        "stable": true,
+        "values": [
+          65160,
+          65160,
+          65160
+        ]
+      }
+    }
+  },
+  "generator": {
+    "name": "fingerprint-lab/build_db.py",
+    "version": "0.3.2"
+  },
+  "limits": [
+    "single capture: every field rests on one lab run (40274255117, 3 probe runs, one boot); no restart capture to confirm it"
+  ],
+  "persona": "ubuntu2404",
+  "ports": {
+    "closed_tcp": 1,
+    "closed_udp": 40000,
+    "open_tcp": 22
+  },
+  "rules_applied": {
+    "SEQ.ISR": "range 10A-10C (min-max of runs)",
+    "SEQ.SP": "range 108-10F (min-max of runs)"
+  },
+  "sp_isr_method": "per probe run: derive.py 0.3.2 _seq_metrics (ISR = round(8*log2(mean ISN rate)), SP = round(8*log2(sample (n-1) stddev of per-probe ISN rates, divided by GCD when GCD>9))); across all probe runs of all captures: min-max hex range",
+  "target": {
+    "description": "Ubuntu 24.04",
+    "family": "linux",
+    "firewall": "on",
+    "key": "ubuntu2404",
+    "os_build": "ubuntu-24.04-7.0.0-1017-azure",
+    "os_edition": "ubuntu",
+    "os_patch": "7.0.0-1017.17_24.04.1"
+  }
+}

@@ -21,6 +21,16 @@ The kinds above are reported, never fatal. One kind FAILS the check:
                      moved to our database and the shipped config still uses
                      the old name.
 
+A second kind FAILS the check:
+
+  OUR_PERSONA_ON_BUNDLED_DB a shipped file that selects one of OUR personas
+                     (`personality "<persona>"`, persona in build_db
+                     PERSONA_ORDER) and on any line names nmap-os-db, starts
+                     the sensor without -p, or passes -p a file other than
+                     phantom-mirage-os.db. Our personas exist only in our
+                     file, so such a config either fails to load or would be
+                     served from the bundled third-party file.
+
 moved-personas.txt has one `<bundled name> => <our persona>` per line; `#`
 starts a comment. Our persona must be one of build_db.PERSONA_ORDER.
 
@@ -68,7 +78,9 @@ def _files(root: Path) -> list[Path]:
 
 
 MOVED_DEFAULT = _HERE / "moved-personas.txt"
-FAIL_KINDS = {"MOVED_PERSONA_DRIFT"}
+FAIL_KINDS = {"MOVED_PERSONA_DRIFT", "OUR_PERSONA_ON_BUNDLED_DB"}
+OUR_DB_NAME = "phantom-mirage-os.db"
+P_ARG_RE = re.compile(r"(?:^|\s)-p\s+(\S+)")
 
 
 class MovedListError(ValueError):
@@ -104,6 +116,7 @@ def scan(root: Path, moved: dict[str, str] | None = None) -> list[tuple[str, int
         except (UnicodeDecodeError, OSError):
             continue
         rel = f.relative_to(root).as_posix()
+        ours = sorted({n for n in PERS_RE.findall(text) if n in PERSONA_ORDER})
         for n, line in enumerate(text.splitlines(), start=1):
             s = line.strip()
             if DB_RE.search(s):
@@ -116,6 +129,19 @@ def scan(root: Path, moved: dict[str, str] | None = None) -> list[tuple[str, int
                     found.append((rel, n, "MOVED_PERSONA_DRIFT", f"{name} (moved to {moved[name]})"))
                 elif name not in PERSONA_ORDER:
                     found.append((rel, n, "PERSONA_NOT_OURS", name))
+            if ours and not s.startswith("#"):
+                bad = None
+                if DB_RE.search(s):
+                    bad = "names the bundled nmap-os-db"
+                elif any(k == "DEFAULT_PERS_FILE" and r == rel and ln == n for r, ln, k, _ in found):
+                    bad = "starts the sensor without -p (default nmap-os-db)"
+                else:
+                    for arg in P_ARG_RE.findall(s):
+                        if BIN_RE.search(s) and Path(arg.strip("'\"")).name != OUR_DB_NAME:
+                            bad = f"-p {arg} is not {OUR_DB_NAME}"
+                if bad:
+                    found.append((rel, n, "OUR_PERSONA_ON_BUNDLED_DB",
+                                  f"{','.join(ours)}: {bad}"))
     return sorted(found)
 
 
@@ -139,7 +165,8 @@ def main(argv: list[str] | None = None) -> int:
     summary = ", ".join(f"{k}={sum(1 for x in found if x[2] == k)}" for k in kinds) or "none"
     print(f"check_config_refs.py: {len(found)} finding(s): {summary}", file=sys.stderr)
     failed = [f for f in found if f[2] in FAIL_KINDS]
-    print(f"check_config_refs.py: {len(failed)} failure(s) for {len(moved)} moved persona(s)",
+    print(f"check_config_refs.py: {len(failed)} failure(s) for {len(moved)} moved persona(s) "
+          "and our-persona configs",
           file=sys.stderr)
     return 1 if (failed or (a.strict and found)) else 0
 

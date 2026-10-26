@@ -1,5 +1,51 @@
 {
-  "block_sha256": "369e71510717a8f3d6d6c437a26fdf128fe3e89a9f2105902ec90225a94dc8e5",
+  "block_sha256": "d17b2486005febf2aaca258c1b9e55fbc2cac75bff95e0a3578c53649aba68a1",
+  "captures": [
+    {
+      "inputs": {
+        "runs": [
+          {
+            "file": "run-synthetic-ws2022-0001.json",
+            "run_id": "synthetic-ws2022-0001",
+            "sha256": "137e902de6b5e7a3d9a51a220e0cd8a1cf4503891f7d9ca656c719ad289ae758"
+          },
+          {
+            "file": "run-synthetic-ws2022-0002.json",
+            "run_id": "synthetic-ws2022-0002",
+            "sha256": "de3b9434b094644a5089dc66bcd733b6db57c6c770ed4d100ab1fafe7e2e4d3d"
+          },
+          {
+            "file": "run-synthetic-ws2022-0003.json",
+            "run_id": "synthetic-ws2022-0003",
+            "sha256": "dcd365018eed8f723a18289e18e3c80ff4242c37c2a311ff62538d8c419d2d0f"
+          }
+        ],
+        "tool_versions_sha256": "0b5f0cb44367f1aa1baed66158e12bb728039ae82a2738b1a28dedfabf80420e"
+      },
+      "lab_run": {
+        "attempt": "1",
+        "dir": "run-900001-1-fwon",
+        "restart": false,
+        "run_id": "900001"
+      },
+      "tool_versions": {
+        "captured_utc": "2000-01-01T00:00:00Z",
+        "closed_tcp": "1",
+        "closed_udp": "40000",
+        "firewall": "on",
+        "kernel": "0.0.0-synthetic",
+        "nmap_version": "Nmap version 0.0 (synthetic)",
+        "open_tcp": "3389",
+        "os_release": "SYNTHETIC example data",
+        "pcap_bytes": "0",
+        "python_version": "Python 3.0.0 (synthetic)",
+        "runs": "3",
+        "scapy_version": "0.0.0-synthetic",
+        "target": "ws2022",
+        "tool_source_commit": "0000000000000000000000000000000000000000"
+      }
+    }
+  ],
   "derive_report": {
     "fields": {
       "ECN.A": {
@@ -1295,59 +1341,27 @@
     "name": "fingerprint-lab/build_db.py",
     "version": "0.3.2"
   },
-  "inputs": {
-    "runs": [
-      {
-        "file": "run-synthetic-ws2022-0001.json",
-        "run_id": "synthetic-ws2022-0001",
-        "sha256": "137e902de6b5e7a3d9a51a220e0cd8a1cf4503891f7d9ca656c719ad289ae758"
-      },
-      {
-        "file": "run-synthetic-ws2022-0002.json",
-        "run_id": "synthetic-ws2022-0002",
-        "sha256": "de3b9434b094644a5089dc66bcd733b6db57c6c770ed4d100ab1fafe7e2e4d3d"
-      },
-      {
-        "file": "run-synthetic-ws2022-0003.json",
-        "run_id": "synthetic-ws2022-0003",
-        "sha256": "dcd365018eed8f723a18289e18e3c80ff4242c37c2a311ff62538d8c419d2d0f"
-      }
-    ],
-    "tool_versions_sha256": "0b5f0cb44367f1aa1baed66158e12bb728039ae82a2738b1a28dedfabf80420e"
-  },
-  "lab_run": {
-    "attempt": "1",
-    "dir": "run-900001-1-fwon",
-    "run_id": "900001"
-  },
+  "limits": [
+    "single capture: every field rests on one lab run (900001, 3 probe runs, one boot); no restart capture to confirm it"
+  ],
   "persona": "ws2022-fwon",
+  "ports": {
+    "closed_tcp": 1,
+    "closed_udp": 40000,
+    "open_tcp": 3389
+  },
   "rules_applied": {
     "SEQ.ISR": "range 95-97 (min-max of runs)",
     "SEQ.SP": "range 1C-22 (min-max of runs)"
   },
+  "sp_isr_method": "per probe run: derive.py 0.3.2 _seq_metrics (ISR = round(8*log2(mean ISN rate)), SP = round(8*log2(sample (n-1) stddev of per-probe ISN rates, divided by GCD when GCD>9))); across all probe runs of all captures: min-max hex range",
   "target": {
     "description": "Windows Server 2022",
     "family": "windows",
     "firewall": "on",
-    "key": "ws2022"
-  },
-  "tool_versions": {
-    "captured_utc": "2000-01-01T00:00:00Z",
-    "closed_tcp": "1",
-    "closed_udp": "40000",
-    "firewall": "on",
-    "ip": "10.0.0.22",
-    "kernel": "0.0.0-synthetic",
-    "nmap_version": "Nmap version 0.0 (synthetic)",
-    "open_tcp": "3389",
-    "os_release": "SYNTHETIC example data",
-    "pcap_bytes": "0",
-    "probe_host": "SYNTHETIC-EXAMPLE",
-    "python_version": "Python 3.0.0 (synthetic)",
-    "runs": "3",
-    "scapy_version": "0.0.0-synthetic",
-    "target": "ws2022",
-    "tool_source_commit": "0000000000000000000000000000000000000000",
-    "vm": "SYNTHETIC-ws2022"
+    "key": "ws2022",
+    "os_build": null,
+    "os_edition": null,
+    "os_patch": null
   }
 }
