@@ -2,7 +2,7 @@
   "run_id": "synthetic-ubuntu2404-0002",
   "run_index": 0,
   "tool": "fingerprint-lab/probe.py",
-  "tool_version": "0.3.0",
+  "tool_version": "0.3.1",
   "timestamp": "2000-01-01T00:00:00Z (SYNTHETIC)",
   "cmdline": [
     "SYNTHETIC",
@@ -26,7 +26,7 @@
       "timeout": false,
       "sent_parsed": {
         "l4": "tcp",
-        "seq": 1001,
+        "seq": 3433402525,
         "ack": 20480,
         "ip_df": false,
         "ip_ttl": 64
@@ -34,7 +34,7 @@
       "reply_parsed": {
         "l4": "tcp",
         "seq": 536870912,
-        "ack": 1002,
+        "ack": 3433402526,
         "window": 64240,
         "flags": "SA",
         "options": "M5B4ST11NW7",
@@ -78,7 +78,7 @@
       "timeout": false,
       "sent_parsed": {
         "l4": "tcp",
-        "seq": 1002,
+        "seq": 1371472985,
         "ack": 20480,
         "ip_df": false,
         "ip_ttl": 64
@@ -86,7 +86,7 @@
       "reply_parsed": {
         "l4": "tcp",
         "seq": 536900912,
-        "ack": 1003,
+        "ack": 1371472986,
         "window": 64240,
         "flags": "SA",
         "options": "M5B4ST11NW7",
@@ -130,7 +130,7 @@
       "timeout": false,
       "sent_parsed": {
         "l4": "tcp",
-        "seq": 1003,
+        "seq": 2741523029,
         "ack": 20480,
         "ip_df": false,
         "ip_ttl": 64
@@ -138,7 +138,7 @@
       "reply_parsed": {
         "l4": "tcp",
         "seq": 536931912,
-        "ack": 1004,
+        "ack": 2741523030,
         "window": 64240,
         "flags": "SA",
         "options": "M5B4ST11NW7",
@@ -182,7 +182,7 @@
       "timeout": false,
       "sent_parsed": {
         "l4": "tcp",
-        "seq": 1004,
+        "seq": 164889085,
         "ack": 20480,
         "ip_df": false,
         "ip_ttl": 64
@@ -190,7 +190,7 @@
       "reply_parsed": {
         "l4": "tcp",
         "seq": 536960912,
-        "ack": 1005,
+        "ack": 164889086,
         "window": 64240,
         "flags": "SA",
         "options": "M5B4ST11NW7",
@@ -234,7 +234,7 @@
       "timeout": false,
       "sent_parsed": {
         "l4": "tcp",
-        "seq": 1005,
+        "seq": 3197499158,
         "ack": 20480,
         "ip_df": false,
         "ip_ttl": 64
@@ -242,7 +242,7 @@
       "reply_parsed": {
         "l4": "tcp",
         "seq": 536990912,
-        "ack": 1006,
+        "ack": 3197499159,
         "window": 64240,
         "flags": "SA",
         "options": "M5B4ST11NW7",
@@ -286,7 +286,7 @@
       "timeout": false,
       "sent_parsed": {
         "l4": "tcp",
-        "seq": 1006,
+        "seq": 2822666102,
         "ack": 20480,
         "ip_df": false,
         "ip_ttl": 64
@@ -294,7 +294,7 @@
       "reply_parsed": {
         "l4": "tcp",
         "seq": 537020912,
-        "ack": 1007,
+        "ack": 2822666103,
         "window": 64240,
         "flags": "SA",
         "options": "M5B4ST11NW7",
@@ -408,7 +408,7 @@
       "timeout": false,
       "sent_parsed": {
         "l4": "tcp",
-        "seq": 2000,
+        "seq": 4028885409,
         "ack": 0,
         "ip_df": false,
         "ip_ttl": 64
@@ -416,7 +416,7 @@
       "reply_parsed": {
         "l4": "tcp",
         "seq": 536870912,
-        "ack": 2001,
+        "ack": 4028885410,
         "window": 64240,
         "flags": "SA",
         "options": "M5B4ST11NW7",
@@ -460,7 +460,7 @@
       "timeout": true,
       "sent_parsed": {
         "l4": "tcp",
-        "seq": 3000,
+        "seq": 2521111002,
         "ack": 20480,
         "ip_df": true,
         "ip_ttl": 64
@@ -475,7 +475,7 @@
       "timeout": true,
       "sent_parsed": {
         "l4": "tcp",
-        "seq": 3000,
+        "seq": 4257610155,
         "ack": 20480,
         "ip_df": false,
         "ip_ttl": 64
@@ -490,7 +490,7 @@
       "timeout": false,
       "sent_parsed": {
         "l4": "tcp",
-        "seq": 3000,
+        "seq": 1311226857,
         "ack": 20480,
         "ip_df": true,
         "ip_ttl": 64
@@ -518,7 +518,7 @@
       "timeout": false,
       "sent_parsed": {
         "l4": "tcp",
-        "seq": 3000,
+        "seq": 390255437,
         "ack": 20480,
         "ip_df": false,
         "ip_ttl": 64
@@ -526,7 +526,7 @@
       "reply_parsed": {
         "l4": "tcp",
         "seq": 0,
-        "ack": 3001,
+        "ack": 390255438,
         "window": 0,
         "flags": "RA",
         "options": "",
@@ -546,7 +546,7 @@
       "timeout": false,
       "sent_parsed": {
         "l4": "tcp",
-        "seq": 3000,
+        "seq": 260836095,
         "ack": 20480,
         "ip_df": true,
         "ip_ttl": 64
@@ -574,7 +574,7 @@
       "timeout": false,
       "sent_parsed": {
         "l4": "tcp",
-        "seq": 3000,
+        "seq": 3682443389,
         "ack": 20480,
         "ip_df": false,
         "ip_ttl": 64
@@ -582,7 +582,7 @@
       "reply_parsed": {
         "l4": "tcp",
         "seq": 0,
-        "ack": 3001,
+        "ack": 3682443390,
         "window": 0,
         "flags": "RA",
         "options": "",

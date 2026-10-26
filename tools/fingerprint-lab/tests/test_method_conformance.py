@@ -131,9 +131,42 @@ def test_seq_metrics_hex_above_ff():
 def test_noted_deviations_are_documented():
     """Page-vs-wire deviations must be marked and quote the page."""
     src = (LAB / "probespec.py").read_text()
-    assert src.count("# NOTED DEVIATION") == 2  # ECN reserved bit, IE2 DF
-    assert "immediately precedes the" in src and "The second ping query is similar" in src
+    assert src.count("# NOTED DEVIATION") == 1  # ECN reserved bit
+    assert "immediately precedes the" in src and "probe follows the wire" in src
+    # SEQ1-6, IE2, U1, ECN: DF copied from the wire where the page is silent
+    assert src.count("observed on the wire, page silent") >= 4
     p = _plan()
     tcp = bytes(p["ECN"][scapy.TCP])
     assert tcp[12] & 0x0F == 0x08 and not tcp[12] & 0x01  # wire: first reserved bit
     assert not p["IE2"].flags.DF
+
+
+def _seqs(plan):
+    return [scapy.IP(bytes(x["packet"]))[scapy.TCP].seq for x in plan
+            if scapy.TCP in scapy.IP(bytes(x["packet"]))]
+
+
+def _mk():
+    return build_send_plan(target="10.0.0.21", open_tcp=22, closed_tcp=1, closed_udp=40000,
+                           src_ip="10.0.0.5")
+
+
+def test_tcp_seq_random_per_probe_not_base_plus_i():
+    for _ in range(20):
+        s = _seqs(_mk())
+        assert len(s) == 13 and len(set(s)) == 13
+        offs = [(v - s[0]) & 0xFFFFFFFF for v in s]
+        assert offs != list(range(13))  # not base + i
+        # no consecutive pair is off by one (the old base + i shape)
+        assert sum((s[k + 1] - s[k]) & 0xFFFFFFFF == 1 for k in range(12)) < 2
+
+
+def test_tcp_seq_differs_across_runs():
+    assert set(_seqs(_mk())).isdisjoint(_seqs(_mk()))
+
+
+def test_ack_shared_nonzero_ecn_zero():
+    p = {x["name"]: scapy.IP(bytes(x["packet"])) for x in _mk()}
+    acks = {n: q[scapy.TCP].ack for n, q in p.items() if scapy.TCP in q}
+    assert acks.pop("ECN") == 0
+    assert len(set(acks.values())) == 1 and 0 not in acks.values()

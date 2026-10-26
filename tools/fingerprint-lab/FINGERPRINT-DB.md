@@ -117,7 +117,9 @@ The generator refuses, with a non-zero exit and nothing written, on any of:
 - a missing `tool-versions.txt`
 - a dry run, flagged at the top level or on any exchange
 - runs that disagree on `target`, `ports` or `tool_version`, or are missing them
-- runs captured with a `probe.py` older than 0.3.0 (their probes did not
+- runs captured with a `probe.py` older than 0.3.1 (0.3.0 probes used
+  base + index sequence numbers rather than a random one per probe; before
+  0.3.0 the probes did not
   match the published probe set, so O3, the ECN options and T4/T6 `S` were
   measured against different packets; re-capture)
 - a duplicate `run_id`

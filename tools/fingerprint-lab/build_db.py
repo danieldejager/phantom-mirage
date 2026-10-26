@@ -146,7 +146,7 @@ def load_inputs(
     return {"tv": tv, "tv_sha256": _sha256(tv_bytes), "runs": docs, "run_name": run_name}
 
 
-MIN_PROBE_VERSION = "0.3.0"
+MIN_PROBE_VERSION = "0.3.1"
 
 
 def _vtuple(v: str) -> tuple[int, ...]:
@@ -174,7 +174,8 @@ def validate(inp: dict[str, Any]) -> dict[str, Any]:
         if len(vals) != 1 or any(d.get(key) in (None, "", {}) for d in docs):
             raise BuildError(f"run JSONs disagree on or lack {key!r}: {sorted(vals)}")
 
-    # Probe shapes changed in 0.3.0 (option order, ack, DF, ECN/IE/U1 fields
+    # Probe shapes changed in 0.3.0 (option order, ack, DF, ECN/IE/U1 fields)
+    # and again in 0.3.1 (per-probe random TCP sequence numbers
     # per the published method). Older captures measured different probes,
     # so they must not be turned into shipped entries.
     pv = str(docs[0].get("tool_version"))

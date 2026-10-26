@@ -120,7 +120,9 @@ references come from the Azure lab.
   the U1 tests by the page's rules. A test the method omits (too few
   replies, or no rule fits, e.g. a noisy II) is left out of the line rather
   than filled in. Option strings use the `T<a><b>` timestamp form (`T11`)
-  that `personality.c` parses. Runs captured before 0.3.0 still derive (the
+  that `personality.c` parses. From 0.3.1 every TCP probe carries its own
+  random 32-bit sequence number (0.3.0 used one base plus the probe index);
+  the shared random ACK is unchanged. Runs captured before 0.3.1 still derive (the
   values that depend only on replies are recomputed from the recorded hex),
   but `build_db.py` refuses them because their probes differed.
 - `derive.py` prints a draft `Fingerprint …` block in honeyd syntax, with a
