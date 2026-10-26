@@ -51,6 +51,22 @@ def read_sources(path: Path) -> dict[str, list[str]]:
     return out
 
 
+def read_limits(path: Path) -> dict[str, list[str]]:
+    """fingerprints/limits.txt: '<persona>: <one line>' per extra '#@ limit:'
+    line, in file order. Must hold no lab run numbers or UUIDs."""
+    out: dict[str, list[str]] = {}
+    if not path.is_file():
+        return out
+    for n, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        persona, sep, text = raw.partition(":")
+        if not sep or persona.strip() not in build_db.PERSONA_ORDER or not text.strip():
+            raise BuildError(f"{path.name}:{n}: expected '<persona>: <limit text>'")
+        out.setdefault(persona.strip(), []).append(text.strip())
+    return out
+
+
 def default_sources(root: Path) -> Path:
     env = os.environ.get("PM_SOURCES")
     return Path(env) if env else root / "phantom-mirage-sources.txt"
@@ -76,6 +92,7 @@ def build(root: Path, out: Path, sources_file: Path | None = None) -> list[str]:
         raise BuildError(f"sources file {sources_file} not found (local only; see FINGERPRINT-DB.md)")
     sources = read_sources(sources_file)
     include = build_db.read_name_list(FP_DIR / "personas.txt")
+    notes = read_limits(FP_DIR / "limits.txt")
     blocks = []
     written = []
     for persona in [p for p in build_db.PERSONA_ORDER if p in sources]:
@@ -83,7 +100,7 @@ def build(root: Path, out: Path, sources_file: Path | None = None) -> list[str]:
         for name in sources[persona]:
             d = find_dir(root, name)
             inps.append(build_db.load_inputs(sorted(d.glob("run-*.json")), d / "tool-versions.txt", d.name))
-        got, block, sidecar = build_db.build_block(inps)
+        got, block, sidecar = build_db.build_block(inps, notes.get(persona, []))
         if got != persona:
             raise BuildError(f"sources file lists {persona}, but those captures are {got}")
         blocks.append(block)

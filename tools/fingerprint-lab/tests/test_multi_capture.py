@@ -353,3 +353,34 @@ def test_synthetic_build_has_no_lab_identifiers(tmp_path):
         t = p.read_text()
         assert "lab_run" not in t and "lab-run" not in t and "synthetic-ws2022-000" not in t
         assert not LEAKS["UUID"].search(t) and "run-9000" not in t, p.name
+
+
+def test_shipped_records_derive_provenance_and_input_hashes():
+    import build_db as bd
+    text = (FP / "phantom-mirage-os.db").read_text()
+    assert text.count(f"#@ derive: fingerprint-lab/derive.py {bd.DERIVE['version']} commit "
+                      f"{bd.DERIVE['commit']} sha256 {bd.DERIVE['sha256']}\n") == len(SHIPPED)
+    for name in SHIPPED:
+        side = json.loads((FP / f"{name}.provenance.json").read_text())
+        assert side["derive"] == bd.DERIVE
+        for c in side["captures"]:
+            assert re.fullmatch(r"[0-9a-f]{64}", c["inputs"]["tool_versions_sha256"])
+            assert c["inputs"]["runs"] and all(re.fullmatch(r"[0-9a-f]{64}", r["sha256"])
+                                               for r in c["inputs"]["runs"])
+
+
+def test_ubuntu_ts_limit_line():
+    b = _blocks()["ubuntu2404"]
+    assert re.search(r"(^|%)TS=22($|%|\))", b["groups"]["SEQ"]), b["groups"]["SEQ"]
+    text = (FP / "phantom-mirage-os.db").read_text()
+    assert ("#@ limit: TS=22 comes from this capture only; an after-restart capture was not merged "
+            "because one of its runs read TS=23 (6 runs seen across both captures: 5 read TS=22, "
+            "1 read TS=23); the decoy check allows TS 22 and 23\n") in text
+
+
+def test_extra_limit_must_be_one_line(tmp_path):
+    inp = build_db.load_inputs(sorted(WS.glob("run-*.json")), WS / "tool-versions.txt", WS.name)
+    with pytest.raises(build_db.BuildError):
+        build_db.build_block(inp, ["a\nb"])
+    _, block, _ = build_db.build_block(inp, ["note one"])
+    assert "#@ limit: note one\nFingerprint " in block

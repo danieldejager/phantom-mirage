@@ -40,6 +40,25 @@ from derive import FieldObs, derive, render_personality  # noqa: E402
 GENERATOR = "fingerprint-lab/build_db.py"
 # The generator has its own version, separate from the probe/derive version.
 GENERATOR_VERSION = "1.0.0"
+
+
+def _derive_provenance() -> dict[str, str]:
+    """sha256 of the derive.py in use, and the last git commit that touched
+    it (stable across unrelated commits; 'unknown' outside a git checkout).
+    derive.py 0.3.2 before and after #160 share a version string, so the
+    file hash is what tells them apart."""
+    import subprocess
+    path = _HERE / "derive.py"
+    sha = hashlib.sha256(path.read_bytes()).hexdigest()
+    try:
+        commit = subprocess.run(["git", "log", "-1", "--format=%H", "--", "derive.py"], cwd=_HERE,
+                                capture_output=True, text=True, timeout=10).stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        commit = "unknown"
+    return {"version": __version__, "commit": commit, "sha256": sha}
+
+
+DERIVE = _derive_provenance()
 MIN_RUNS = 3
 
 # Capture target key -> (os family, description used in provenance only).
@@ -312,7 +331,8 @@ def _public_build(tv: dict[str, str]) -> tuple[str | None, str | None]:
     return b, pt
 
 
-def build_block(inps: list[dict[str, Any]] | dict[str, Any]) -> tuple[str, str, str]:
+def build_block(inps: list[dict[str, Any]] | dict[str, Any],
+                extra_limits: list[str] | None = None) -> tuple[str, str, str]:
     """Return (persona, block_text, sidecar_json_text).
 
     *inps* is one load_inputs() result per capture run dir. Several captures
@@ -370,12 +390,17 @@ def build_block(inps: list[dict[str, Any]] | dict[str, Any]) -> tuple[str, str, 
 
     tv0 = inps[0]["tv"]
     ports = meta["ports"]
-    limits = []
+    limits: list[str] = []
     if len(inps) == 1:
         limits.append(
             f"single capture: every field rests on one capture ({len(docs)} probe runs, "
             f"one boot); no restart capture to confirm it"
         )
+
+    for x in extra_limits or []:
+        if "\n" in x or not x.strip():
+            raise BuildError("a limit note must be one non-empty line")
+        limits.append(x.strip())
 
     def _uniq(key):
         return ",".join(dict.fromkeys(i["tv"].get(key, "unknown") for i in inps))
@@ -396,6 +421,8 @@ def build_block(inps: list[dict[str, Any]] | dict[str, Any]) -> tuple[str, str, 
         f"#@ tool-source-commit: {_uniq('tool_source_commit')}",
         f"#@ tool-versions-sha256: {','.join(i['tv_sha256'] for i in inps)}",
         f"#@ generator: {GENERATOR} {GENERATOR_VERSION}",
+        f"#@ derive: fingerprint-lab/derive.py {DERIVE['version']} commit {DERIVE['commit']} "
+        f"sha256 {DERIVE['sha256']}",
         "#@ sp-isr-method: min-max range over all probe runs (see sidecar)",
         f"#@ ranges: {', '.join(f'{k} {v}' for k, v in rules.items()) or 'none'}",
     ] + [f"#@ limit: {x}" for x in limits]
@@ -419,6 +446,7 @@ def build_block(inps: list[dict[str, Any]] | dict[str, Any]) -> tuple[str, str, 
         ],
         "limits": limits,
         "sp_isr_method": SP_ISR_METHOD,
+        "derive": dict(DERIVE),
         "rules_applied": rules,
         "derive_report": {"fields": report_fields},
         "block_sha256": _sha256(block.encode("utf-8")),

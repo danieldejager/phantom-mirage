@@ -138,9 +138,12 @@ build string names the lab hosting, as for the Ubuntu cloud kernel),
 `firewall`, `ports`, `captures` (count), `probe-runs` (count), `probe-tool`
 (probe.py and its version), `captured-utc`, `tool-source-commit`,
 `tool-versions-sha256`, `generator` (build_db.py and its own version, 1.0.0,
-separate from the probe version), `sp-isr-method`, `ranges`, then one
-`limit` line per known limit (today: a persona built from a single
-capture). Keys with several captures hold comma separated lists in capture
+separate from the probe version), `derive` (derive.py version, the last
+git commit that touched it, and its sha256; derive.py 0.3.2 before and
+after #160 share a version string, so the hash tells them apart),
+`sp-isr-method`, `ranges`, then one `limit` line per known limit (a persona
+built from a single capture, plus any line from `fingerprints/limits.txt`,
+`<persona>: <one line>`, which `build_shipped_db.py` appends in file order). Keys with several captures hold comma separated lists in capture
 order.
 
 ## Provenance sidecar
@@ -233,11 +236,11 @@ unknown persona, a duplicate) exits 2.
 - `ws2022-fwoff` is built from a single capture, so its `W6=FFDC` (65500,
   where ws2025 gives 65535) has not been reproduced after a restart. This is
   marked by a `#@ limit:` line.
-- `ubuntu2404` is also a single capture. A second capture after a restart
-  had one run with `SEQ.TS=23` (the other five runs: `22`), so the two
-  captures disagree and the generator refuses to merge them. Whether Linux
-  `TS` should get a range rule is an open question; until then only the
-  first capture is used.
+- `ubuntu2404` is also a single capture and ships `TS=22`. A second capture
+  after a restart had one run with `SEQ.TS=23` (6 runs across both captures:
+  5 read 22, 1 read 23), so the generator refuses to merge them. The decoy
+  check allows TS 22 and 23. This is stated in a `#@ limit:` line from
+  `fingerprints/limits.txt`. No TS range is used.
 - Firewall-on Windows personas (`ws20xx-fwon`) are out of scope for this
   file. Windows 11 comes later.
 

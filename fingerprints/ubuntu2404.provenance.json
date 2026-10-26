@@ -1,5 +1,5 @@
 {
-  "block_sha256": "03df45953d6d5ff01efdaf00471d3653dd276dc2df8438402e01a56133c3af17",
+  "block_sha256": "2350c37efce157a16cbf1a9e18892da5f209b68365a6024e7a2784586c75818f",
   "captures": [
     {
       "capture": "c1",
@@ -47,6 +47,11 @@
       }
     }
   ],
+  "derive": {
+    "commit": "4c742c28a59084a6308163d6ab9f0659e7363b81",
+    "sha256": "deb602474dedf13457d265fac7c291fd9907f8107dc9e415f5a8a00819b1ef0b",
+    "version": "0.3.2"
+  },
   "derive_report": {
     "fields": {
       "ECN.A": {
@@ -1343,7 +1348,8 @@
     "version": "1.0.0"
   },
   "limits": [
-    "single capture: every field rests on one capture (3 probe runs, one boot); no restart capture to confirm it"
+    "single capture: every field rests on one capture (3 probe runs, one boot); no restart capture to confirm it",
+    "TS=22 comes from this capture only; an after-restart capture was not merged because one of its runs read TS=23 (6 runs seen across both captures: 5 read TS=22, 1 read TS=23); the decoy check allows TS 22 and 23"
   ],
   "persona": "ubuntu2404",
   "ports": {

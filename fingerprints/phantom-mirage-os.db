@@ -17,9 +17,11 @@
 #@ tool-source-commit: f21d16587f719fbaefbf94a7ddd36960c75b27e6
 #@ tool-versions-sha256: 47d915df9f04c6cbacc0d3543c7cd7fa8a67044fdf7c5dee5eb4da6095e2041e
 #@ generator: fingerprint-lab/build_db.py 1.0.0
+#@ derive: fingerprint-lab/derive.py 0.3.2 commit 4c742c28a59084a6308163d6ab9f0659e7363b81 sha256 deb602474dedf13457d265fac7c291fd9907f8107dc9e415f5a8a00819b1ef0b
 #@ sp-isr-method: min-max range over all probe runs (see sidecar)
 #@ ranges: SEQ.ISR range 10A-10C (min-max of runs), SEQ.SP range 108-10F (min-max of runs)
 #@ limit: single capture: every field rests on one capture (3 probe runs, one boot); no restart capture to confirm it
+#@ limit: TS=22 comes from this capture only; an after-restart capture was not merged because one of its runs read TS=23 (6 runs seen across both captures: 5 read TS=22, 1 read TS=23); the decoy check allows TS 22 and 23
 Fingerprint ubuntu2404
 SEQ(SP=108-10F%GCD=1%ISR=10A-10C%TI=Z%CI=Z%II=I%TS=22)
 OPS(O1=M582ST11NW9%O2=M582ST11NW9%O3=M582NNT11NW9%O4=M582ST11NW9%O5=M582ST11NW9%O6=M582ST11)
@@ -47,6 +49,7 @@ IE(R=Y%DFI=N%T=40%TG=40%CD=S)
 #@ tool-source-commit: f21d16587f719fbaefbf94a7ddd36960c75b27e6
 #@ tool-versions-sha256: 7f14e3b700624af92d10d9ffff23d3d4223e8773f5f3c67916b216f173acc658
 #@ generator: fingerprint-lab/build_db.py 1.0.0
+#@ derive: fingerprint-lab/derive.py 0.3.2 commit 4c742c28a59084a6308163d6ab9f0659e7363b81 sha256 deb602474dedf13457d265fac7c291fd9907f8107dc9e415f5a8a00819b1ef0b
 #@ sp-isr-method: min-max range over all probe runs (see sidecar)
 #@ ranges: SEQ.ISR range 108-10A (min-max of runs), SEQ.SP range 102-108 (min-max of runs)
 #@ limit: single capture: every field rests on one capture (3 probe runs, one boot); no restart capture to confirm it
@@ -77,6 +80,7 @@ IE(R=Y%DFI=N%T=80%TG=80%CD=Z)
 #@ tool-source-commit: f21d16587f719fbaefbf94a7ddd36960c75b27e6
 #@ tool-versions-sha256: 8fdd396b65b4f436d3ef6082d2f7a74e94d37b232100d28214c9873c78126a1a,04cb120811ea9723ebf8565536ef108848f8ec78c2e2fd3bd6dc05567a2f42bc
 #@ generator: fingerprint-lab/build_db.py 1.0.0
+#@ derive: fingerprint-lab/derive.py 0.3.2 commit 4c742c28a59084a6308163d6ab9f0659e7363b81 sha256 deb602474dedf13457d265fac7c291fd9907f8107dc9e415f5a8a00819b1ef0b
 #@ sp-isr-method: min-max range over all probe runs (see sidecar)
 #@ ranges: SEQ.ISR range 107-111 (min-max of runs), SEQ.SP range 103-10C (min-max of runs)
 Fingerprint ws2019-fwoff
@@ -106,6 +110,7 @@ IE(R=Y%DFI=N%T=80%TG=80%CD=Z)
 #@ tool-source-commit: f21d16587f719fbaefbf94a7ddd36960c75b27e6
 #@ tool-versions-sha256: 62f723b8607f829cffa672fad5ffa21ab54ebd41f36425bdc900b664c9059c10,0fe60fb329efdd5406c7054e2a94a613435af7ff86f0925649961bf0c770675d
 #@ generator: fingerprint-lab/build_db.py 1.0.0
+#@ derive: fingerprint-lab/derive.py 0.3.2 commit 4c742c28a59084a6308163d6ab9f0659e7363b81 sha256 deb602474dedf13457d265fac7c291fd9907f8107dc9e415f5a8a00819b1ef0b
 #@ sp-isr-method: min-max range over all probe runs (see sidecar)
 #@ ranges: SEQ.ISR range 10B-111 (min-max of runs), SEQ.SP range 100-10D (min-max of runs)
 Fingerprint ws2025-fwoff

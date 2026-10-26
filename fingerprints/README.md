@@ -7,6 +7,7 @@ It is not derived from, and does not include, the bundled `nmap-os-db`.
 Personas: `ubuntu2404`, `ws2022-fwoff`, `ws2019-fwoff`, `ws2025-fwoff`.
 
 - `personas.txt`: the include list, in database order.
+- `limits.txt`: extra `#@ limit:` lines per persona.
 - `<persona>.provenance.json`: provenance sidecar per persona (not loaded).
 
 No lab identifiers are shipped. The mapping from persona to lab capture
