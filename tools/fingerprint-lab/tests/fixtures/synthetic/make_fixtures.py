@@ -81,7 +81,7 @@ def run_doc(run_id, *, ip, open_tcp, ttl, window, options, isn_mults):
                    "sent_at_offset_sec": round(1.3 + 0.2 * k, 6), "timeout": rp is None,
                    "sent_parsed": sent, "reply_parsed": rp})
     return {"run_id": run_id, "run_index": 0, "tool": "fingerprint-lab/probe.py",
-            "tool_version": "0.3.1", "timestamp": "2000-01-01T00:00:00Z (SYNTHETIC)",
+            "tool_version": "0.3.2", "timestamp": "2000-01-01T00:00:00Z (SYNTHETIC)",
             "cmdline": ["SYNTHETIC", "example", "no packets sent"], "target": ip,
             "ports": {"open_tcp": open_tcp, "closed_tcp": 1, "closed_udp": 40000},
             "dry_run": False, "probe_plan": "SYNTHETIC", "exchanges": ex}

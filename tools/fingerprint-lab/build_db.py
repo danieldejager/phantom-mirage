@@ -146,7 +146,7 @@ def load_inputs(
     return {"tv": tv, "tv_sha256": _sha256(tv_bytes), "runs": docs, "run_name": run_name}
 
 
-MIN_PROBE_VERSION = "0.3.1"
+MIN_PROBE_VERSION = "0.3.2"
 
 
 def _vtuple(v: str) -> tuple[int, ...]:
@@ -177,12 +177,15 @@ def validate(inp: dict[str, Any]) -> dict[str, Any]:
     # Probe shapes changed in 0.3.0 (option order, ack, DF, ECN/IE/U1 fields)
     # and again in 0.3.1 (per-probe random TCP sequence numbers
     # per the published method). Older captures measured different probes,
-    # so they must not be turned into shipped entries.
+    # so they must not be turned into shipped entries. 0.3.2 did not change
+    # the probes, but 0.3.1 dropped RST replies to T2/T7 (reply matcher), so
+    # 0.3.1 runs can be missing closed-port results and are refused too.
     pv = str(docs[0].get("tool_version"))
     if _vtuple(pv) < _vtuple(MIN_PROBE_VERSION):
         raise BuildError(
             f"run JSONs were captured with probe.py {pv}; {MIN_PROBE_VERSION} or later is "
-            "required (earlier probes did not match the published probe set; re-capture)"
+            "required (earlier probes did not match the published probe set, and 0.3.1 "
+            "dropped RST replies to T2/T7; re-capture)"
         )
 
     target_key = tv.get("target", "")

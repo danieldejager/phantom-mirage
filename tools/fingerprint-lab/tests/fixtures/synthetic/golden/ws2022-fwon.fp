@@ -3,7 +3,7 @@
 #@ firewall: on
 #@ lab-run: 900001 attempt 1
 #@ probe-runs: synthetic-ws2022-0001,synthetic-ws2022-0002,synthetic-ws2022-0003
-#@ probe-tool: fingerprint-lab/probe.py 0.3.1
+#@ probe-tool: fingerprint-lab/probe.py 0.3.2
 #@ captured-utc: 2000-01-01T00:00:00Z
 #@ tool-source-commit: 0000000000000000000000000000000000000000
 #@ tool-versions-sha256: 0b5f0cb44367f1aa1baed66158e12bb728039ae82a2738b1a28dedfabf80420e
