@@ -57,10 +57,26 @@ def _gcd_list(nums: list[int]) -> int:
 
 
 def _u32_diff(a: int, b: int) -> int:
-    """Doc (GCD): the smaller of the forward and the wrapped-backward difference."""
-    fwd = (b - a) & 0xFFFFFFFF
-    back = (a - b) & 0xFFFFFFFF
-    return min(fwd, back)
+    """Difference from ISN *a* to the next ISN *b*, doc (GCD):
+
+        "If an ISN is lower than the previous one, Nmap looks at both the
+        number of values it would have to subtract from the first value to
+        obtain the second, and the number of values it would have to count up
+        (including wrapping the 32-bit counter back to zero). The smaller of
+        those two values is stored in diff1."
+
+    So a higher (or equal) ISN gives the plain forward difference, even when
+    that is over 2**31; only a lower ISN takes the smaller of the two.
+    The page's second example ("The difference between 0xFFFFFF00 and 0xC000
+    is 0xC0FF") is one below the count-up it describes (0x100000000 -
+    0xFFFFFF00 + 0xC000 = 0xC100); we follow the described rule, which the
+    page's first example (0x20000 then 0x15000 -> 0xB000) also follows.
+    """
+    a &= 0xFFFFFFFF
+    b &= 0xFFFFFFFF
+    if b >= a:
+        return b - a
+    return min(a - b, (b - a) & 0xFFFFFFFF)
 
 
 def _classify_ipid(ids: list[int], *, min_count: int = 2, allow_rd: bool = True) -> str | None:
