@@ -84,12 +84,19 @@ def build_send_plan(
     Probe shapes and order: METHOD_DOC_URL ("Probes Sent"). Per run: one random
     non-zero TCP ack (used by every TCP probe except ECN, whose ack is 0) so
     that the S test (reply seq vs probe ack) is meaningful; one random ICMP
-    echo id (IE2 uses id + 1).
+    echo id (IE2 uses id + 1). Every TCP probe gets its OWN random 32-bit
+    sequence number (not base + i); derive pairs each reply with the probe
+    that elicited it, so nothing relies on a relation between probe seqs.
     """
     src = src_ip or _local_src_ip(target)
     plan: list[dict[str, Any]] = []
     base_sport = random.randint(40000, 50000)
-    base_seq = random.randint(1, 0xFFFFFFFE)
+    n_probes = len(all_probe_defs())
+    seqs: list[int] = []
+    while len(seqs) < n_probes:  # distinct, independent per-probe values
+        v = random.getrandbits(32)
+        if v not in seqs:
+            seqs.append(v)
     tcp_ack = random.randint(1, 0xFFFFFFFE)
     base_ipid = random.randint(1, 0xFFFF)
     icmp_id = random.randint(1, 0xFFFE)
@@ -104,7 +111,7 @@ def build_send_plan(
             closed_tcp=closed_tcp,
             closed_udp=closed_udp,
             ip_id=(base_ipid + i) & 0xFFFF,
-            tcp_seq=(base_seq + i) & 0xFFFFFFFF,
+            tcp_seq=seqs[i],
             tcp_sport=base_sport + i,
             tcp_ack=tcp_ack,
             icmp_id=(icmp_id + ie_index) & 0xFFFF,

@@ -3,11 +3,11 @@
 #@ firewall: on
 #@ lab-run: 900001 attempt 1
 #@ probe-runs: synthetic-ws2022-0001,synthetic-ws2022-0002,synthetic-ws2022-0003
-#@ probe-tool: fingerprint-lab/probe.py 0.3.0
+#@ probe-tool: fingerprint-lab/probe.py 0.3.1
 #@ captured-utc: 2000-01-01T00:00:00Z
 #@ tool-source-commit: 0000000000000000000000000000000000000000
 #@ tool-versions-sha256: 0b5f0cb44367f1aa1baed66158e12bb728039ae82a2738b1a28dedfabf80420e
-#@ generator: fingerprint-lab/build_db.py 0.3.0
+#@ generator: fingerprint-lab/build_db.py 0.3.1
 #@ ranges: SEQ.ISR range 95-97 (min-max of runs), SEQ.SP range 1C-22 (min-max of runs)
 Fingerprint ws2022-fwon
 SEQ(SP=1C-22%GCD=3E8%ISR=95-97%TI=I%CI=Z%II=I%SS=O%TS=U)

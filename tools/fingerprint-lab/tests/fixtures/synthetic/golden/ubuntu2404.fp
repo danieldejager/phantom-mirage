@@ -3,11 +3,11 @@
 #@ firewall: on
 #@ lab-run: 900002 attempt 1
 #@ probe-runs: synthetic-ubuntu2404-0001,synthetic-ubuntu2404-0002,synthetic-ubuntu2404-0003
-#@ probe-tool: fingerprint-lab/probe.py 0.3.0
+#@ probe-tool: fingerprint-lab/probe.py 0.3.1
 #@ captured-utc: 2000-01-01T00:00:00Z
 #@ tool-source-commit: 0000000000000000000000000000000000000000
 #@ tool-versions-sha256: fcbd9e4f23635ed1f3b9930f3861600f74e08a01b96bcd8766c4cf192ce3fd4a
-#@ generator: fingerprint-lab/build_db.py 0.3.0
+#@ generator: fingerprint-lab/build_db.py 0.3.1
 #@ ranges: none
 Fingerprint ubuntu2404
 SEQ(SP=17%GCD=3E8%ISR=92%TI=I%CI=Z%II=I%SS=O%TS=A)

@@ -1,5 +1,5 @@
 {
-  "block_sha256": "4c7aacccd45e46d27190c1abaa63d8a6c20e472a16526fd65ae3276785e889b6",
+  "block_sha256": "dec6b988153c6f1e256952ead1139b6f4f794c43a1d9ab3bc17b84ee0607802a",
   "derive_report": {
     "fields": {
       "ECN.A": {
@@ -1293,24 +1293,24 @@
   },
   "generator": {
     "name": "fingerprint-lab/build_db.py",
-    "version": "0.3.0"
+    "version": "0.3.1"
   },
   "inputs": {
     "runs": [
       {
         "file": "run-synthetic-ubuntu2404-0001.json",
         "run_id": "synthetic-ubuntu2404-0001",
-        "sha256": "b195b15822826edd1713635e181c7ffbb9ebd86993e7f10956f3bae23542f9a4"
+        "sha256": "cdc0c6e5a2366a4695ca00c84914709aa7953bbbf7aec7c3f35fd7a94db6c30e"
       },
       {
         "file": "run-synthetic-ubuntu2404-0002.json",
         "run_id": "synthetic-ubuntu2404-0002",
-        "sha256": "845a76d687a4c204cfa7c4213957eefda696ca808004936049a9e273b5bb7677"
+        "sha256": "4f727306cc0ed187c3f8d48f9901f9d308a6f054adcecd2927a2da0e05f1e2c6"
       },
       {
         "file": "run-synthetic-ubuntu2404-0003.json",
         "run_id": "synthetic-ubuntu2404-0003",
-        "sha256": "aef292490af865eabcb837f8cc8a012b7584ab7acee6396a0138b24ad3be5a33"
+        "sha256": "78461a1b57a0e0da51b4697ff2fa4a6dc61ddbe0b87ddcbb38d1a24ba691c10b"
       }
     ],
     "tool_versions_sha256": "fcbd9e4f23635ed1f3b9930f3861600f74e08a01b96bcd8766c4cf192ce3fd4a"
