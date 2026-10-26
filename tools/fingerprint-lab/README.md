@@ -133,7 +133,8 @@ references come from the Azure lab.
   keep scapy's checks; ICMP matching is unchanged. Probes go out on one L3 socket and each send
   time is the capture timestamp of the outgoing packet (as `sr()` recorded),
   falling back to the clock right after send. Probe packets are
-  unchanged, so `build_db.py` still accepts 0.3.1 runs.
+  unchanged, but `build_db.py` refuses 0.3.1 runs (they can be missing
+  T2/T7 replies); `derive.py` still derives them.
 - `derive.py` prints a draft `Fingerprint …` block in honeyd syntax, with a
   comment header recording run ids and the operator-supplied OS name/build,
   and flags fields that vary across runs.

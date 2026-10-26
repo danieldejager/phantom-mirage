@@ -376,11 +376,11 @@ def test_verify_config_rejects_bad_timestamp_option(tmp_path):
     assert r.returncode != 0
 
 
-@pytest.mark.parametrize("old", ["0.2.0", "0.3.0"])
-def test_refuse_pre_031_probe_runs(tmp_path, capsys, old):
+@pytest.mark.parametrize("old", ["0.2.0", "0.3.0", "0.3.1"])
+def test_refuse_pre_032_probe_runs(tmp_path, capsys, old):
     d = _copy_case(WS, tmp_path)
     _edit_runs(d, lambda doc: doc.__setitem__("tool_version", old))
-    _refused(tmp_path, d, capsys, "0.3.1")
+    _refused(tmp_path, d, capsys, "0.3.2")
 
 
 # ---- config-reference lint ----------------------------------------------
