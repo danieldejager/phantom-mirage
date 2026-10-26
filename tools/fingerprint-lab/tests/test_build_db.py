@@ -98,7 +98,7 @@ def test_sidecar_matches_block_and_inputs():
 
 def test_range_rule_applied_only_to_sp_isr():
     text = (GOLDEN / "ws2022-fwon.fp").read_text()
-    assert "SP=50-56" in text and "ISR=95-97" in text and "GCD=3E8%" in text
+    assert "SP=1C-22" in text and "ISR=95-97" in text and "GCD=3E8%" in text
     assert "#@ ranges: " in text
     assert "#@ ranges: none" in (GOLDEN / "ubuntu2404.fp").read_text()
 
@@ -336,6 +336,50 @@ def test_bundled_only_name_fails_with_our_file(tmp_path):
     r = _verify(_binary(), GOLDEN / "SYNTHETIC-example.db", conf, tmp_path)
     assert r.returncode != 0
     assert "Unknown personality" in r.stdout + r.stderr
+
+
+# A block shaped like the 0.3.0 output for a real Linux target: timestamp
+# option with two digits (T11), NOP-padded O3/ECN strings, SP/ISR above FF,
+# II/SS omitted, S=A on T4/T6 and CD=S. Values are synthetic.
+METHOD_SHAPED = """Fingerprint method-shaped
+SEQ(SP=102%GCD=1%ISR=109%TI=Z%CI=Z%TS=22)
+OPS(O1=M5B4ST11NW7%O2=M5B4ST11NW7%O3=M5B4NNT11NW7%O4=M5B4ST11NW7%O5=M5B4ST11NW7%O6=M5B4ST11)
+WIN(W1=FAF0%W2=FAF0%W3=FAF0%W4=FAF0%W5=FAF0%W6=FAF0)
+ECN(R=Y%DF=Y%T=40%TG=40%W=FAF0%O=M5B4NNSNW7%CC=Y%Q=)
+T1(R=Y%DF=Y%T=40%TG=40%W=FAF0%S=O%A=S+%F=AS%O=M5B4ST11NW7%RD=0%Q=)
+T2(R=N)
+T3(R=N)
+T4(R=Y%DF=Y%T=40%TG=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)
+T5(R=Y%DF=Y%T=40%TG=40%W=0%S=Z%A=S+%F=AR%O=%RD=0%Q=)
+T6(R=Y%DF=Y%T=40%TG=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)
+T7(R=Y%DF=Y%T=40%TG=40%W=0%S=Z%A=S+%F=AR%O=%RD=0%Q=)
+U1(R=Y%DF=N%T=40%TG=40%IPL=164%UN=0%RIPL=G%RID=G%RIPCK=G%RUCK=G%RUD=G)
+IE(R=Y%DFI=N%T=40%TG=40%CD=S)
+"""
+
+
+@pytest.mark.skipif(_binary() is None, reason="no built phantom-mirage (set PHANTOM_MIRAGE_BIN)")
+def test_verify_config_accepts_method_shaped_block(tmp_path):
+    db = tmp_path / "m.db"
+    db.write_text(METHOD_SHAPED)
+    conf = 'create a\nset a personality "method-shaped"\nadd a tcp port 22 open\nbind 10.255.0.1 a\n'
+    r = _verify(_binary(), db, conf, tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+@pytest.mark.skipif(_binary() is None, reason="no built phantom-mirage (set PHANTOM_MIRAGE_BIN)")
+def test_verify_config_rejects_bad_timestamp_option(tmp_path):
+    db = tmp_path / "bad.db"
+    db.write_text(METHOD_SHAPED.replace("O1=M5B4ST11NW7", "O1=M5B4SQNW7"))
+    conf = 'create a\nset a personality "method-shaped"\nbind 10.255.0.1 a\n'
+    r = _verify(_binary(), db, conf, tmp_path)
+    assert r.returncode != 0
+
+
+def test_refuse_pre_030_probe_runs(tmp_path, capsys):
+    d = _copy_case(WS, tmp_path)
+    _edit_runs(d, lambda doc: doc.__setitem__("tool_version", "0.2.0"))
+    _refused(tmp_path, d, capsys, "0.3.0")
 
 
 # ---- config-reference lint ----------------------------------------------

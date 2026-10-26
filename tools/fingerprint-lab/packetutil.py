@@ -13,28 +13,25 @@ from scapy.all import (  # type: ignore
     conf,
 )
 
-from probespec import ProbeDef, TcpOpts
+from probespec import ProbeDef, options_letters
 
 # Quiet scapy verbosity for library use.
 conf.verb = 0
 
+_SCAPY_OPT = {"WS": "WScale", "NOP": "NOP", "MSS": "MSS", "TS": "Timestamp", "SACK": "SAckOK", "EOL": "EOL"}
 
-def _tcp_options(opts: TcpOpts | None) -> list:
-    if opts is None:
-        return []
+
+def _tcp_options(opts) -> list:
+    """Ordered probespec options -> scapy option list (order preserved)."""
     out: list = []
-    if opts.mss is not None:
-        out.append(("MSS", opts.mss))
-    if opts.sackok:
-        out.append(("SAckOK", b""))
-    if opts.timestamp is not None:
-        out.append(("Timestamp", opts.timestamp))
-    for _ in range(opts.nop_count_before_wscale):
-        out.append(("NOP", None))
-    if opts.wscale is not None:
-        out.append(("WScale", opts.wscale))
-    if opts.eol:
-        out.append(("EOL", None))
+    for kind, val in opts or ():
+        name = _SCAPY_OPT[kind]
+        if kind == "SACK":
+            out.append((name, b""))
+        elif kind in ("NOP", "EOL"):
+            out.append((name, None))
+        else:
+            out.append((name, val))
     return out
 
 
@@ -49,8 +46,15 @@ def build_probe(
     ip_id: int,
     tcp_seq: int,
     tcp_sport: int,
+    tcp_ack: int = 0,
+    icmp_id: int = 0,
 ) -> Any:
-    """Build a scapy packet for *pdef*. Does not send."""
+    """Build a scapy packet for *pdef*. Does not send.
+
+    Shapes follow https://nmap.org/book/osdetect-methods.html ("Probes Sent").
+    *tcp_ack* is the run's random non-zero ack (used unless the probe says
+    ack 0, as ECN does); *icmp_id* is the ICMP echo identifier.
+    """
     dst_port = {
         "open_tcp": open_tcp,
         "closed_tcp": closed_tcp,
@@ -58,29 +62,27 @@ def build_probe(
         "n/a": 0,
     }[pdef.dst_port_role]
 
-    ip = IP(src=src_ip, dst=dst_ip, id=ip_id, tos=pdef.tos)
+    ip = IP(src=src_ip, dst=dst_ip, id=(pdef.ip_id if pdef.ip_id is not None else ip_id), tos=pdef.tos)
     if pdef.df:
         ip.flags = "DF"
 
     if pdef.kind in ("syn_seq", "tcp_unusual", "ecn"):
-        flags = pdef.flags or ""
         tcp = TCP(
             sport=tcp_sport,
             dport=dst_port,
             seq=tcp_seq,
-            flags=flags,
+            ack=0 if pdef.ack_zero else tcp_ack,
+            flags=pdef.flags or "",
             window=pdef.window or 0,
+            urgptr=pdef.urgptr,
             options=_tcp_options(pdef.options),
         )
-        if pdef.kind == "ecn":
-            # Reserved bit conventionally set on the ECN probe (bit 0x40 in
-            # the combined reserved/data-offset high nibble area). Scapy
-            # exposes `reserved` on TCP.
-            tcp.reserved = 8  # set high reserved bit
+        tcp.reserved = pdef.reserved
         return ip / tcp
 
     if pdef.kind == "icmp":
-        icmp = ICMP(type=pdef.icmp_type or 8, code=pdef.icmp_code or 0)
+        icmp = ICMP(type=pdef.icmp_type or 8, code=pdef.icmp_code or 0,
+                    id=icmp_id & 0xFFFF, seq=pdef.icmp_seq or 0)
         payload = Raw(b"\x00" * (pdef.icmp_payload_len or 0))
         return ip / icmp / payload
 
@@ -112,30 +114,7 @@ def _flag_bits(tcp: Any) -> int | None:
 
 
 def _options_string(tcp: Any) -> str:
-    """Encode TCP options in a compact letter form used by personality OPS/O*."""
-    letters: list[str] = []
-    for opt in getattr(tcp, "options", []) or []:
-        name = opt[0] if isinstance(opt, tuple) else opt
-        val = opt[1] if isinstance(opt, tuple) and len(opt) > 1 else None
-        if name in ("MSS", "M"):
-            letters.append(f"M{int(val):X}")
-        elif name in ("SAckOK", "SAck", "S"):
-            letters.append("S")
-        elif name in ("Timestamp", "TSval", "T"):
-            if isinstance(val, tuple) and len(val) >= 2:
-                tsval, tsecr = int(val[0]), int(val[1])
-                letters.append("T" if tsecr != 0 else "T0")
-            else:
-                letters.append("T")
-        elif name in ("NOP", "N"):
-            letters.append("N")
-        elif name in ("WScale", "W"):
-            letters.append(f"W{int(val)}")
-        elif name in ("EOL", "E"):
-            letters.append("E")
-        else:
-            letters.append("?")
-    return "".join(letters)
+    return options_letters(getattr(tcp, "options", []) or [])
 
 
 def _jsonable_opt(opt) -> list:
@@ -186,26 +165,29 @@ def parse_reply(pkt: Any) -> dict[str, Any] | None:
                 "options": _options_string(tcp),
                 "options_raw": [_jsonable_opt(o) for o in (tcp.options or [])],
                 "reserved": int(getattr(tcp, "reserved", 0) or 0),
+                # Added in 0.3.0 for the Q (urgent-pointer) quirk.
+                "urgptr": int(tcp.urgptr or 0),
             }
         )
         return out
 
     icmp = pkt.getlayer(ICMP)
     if icmp is not None:
+        raw_icmp = bytes(icmp)
         out.update(
             {
                 "l4": "icmp",
                 "icmp_type": int(icmp.type),
                 "icmp_code": int(icmp.code),
+                # Added in 0.3.0: echo id/seq, and the 4 "unused" header bytes
+                # of an unreachable (UN test).
+                "icmp_id": int.from_bytes(raw_icmp[4:6], "big") if len(raw_icmp) >= 6 else None,
+                "icmp_seq": int.from_bytes(raw_icmp[6:8], "big") if len(raw_icmp) >= 8 else None,
+                "icmp_unused": int.from_bytes(raw_icmp[4:8], "big") if len(raw_icmp) >= 8 else None,
             }
         )
-        # Embedded IP (port unreachable) carries original probe IP-ID quirks.
-        emb = icmp.payload.getlayer(IP) if icmp.payload is not None else None
-        if emb is not None:
-            out["embedded_ip_id"] = int(emb.id)
-            out["embedded_ip_len"] = int(emb.len) if emb.len is not None else None
-            out["embedded_ip_ttl"] = int(emb.ttl)
-            out["embedded_ip_sum_ok"] = None  # filled by caller if checked
+        if int(icmp.type) == 3 and len(raw_icmp) >= 28:
+            out.update(_parse_quoted(raw_icmp[8:]))
         return out
 
     udp = pkt.getlayer(UDP)
@@ -215,6 +197,43 @@ def parse_reply(pkt: Any) -> dict[str, Any] | None:
 
     out["l4"] = "other"
     return out
+
+
+def _parse_quoted(q: bytes) -> dict[str, Any]:
+    """Fields of the probe quoted inside an ICMP unreachable (U1 tests)."""
+    out: dict[str, Any] = {}
+    ihl = (q[0] & 0x0F) * 4
+    if len(q) < 20 or ihl < 20 or len(q) < ihl:
+        return out
+    hdr = q[:ihl]
+    out["embedded_ip_len"] = int.from_bytes(hdr[2:4], "big")
+    out["embedded_ip_id"] = int.from_bytes(hdr[4:6], "big")
+    out["embedded_ip_ttl"] = hdr[8]
+    cks = int.from_bytes(hdr[10:12], "big")
+    out["embedded_ip_sum"] = cks
+    zeroed = hdr[:10] + b"\x00\x00" + hdr[12:]
+    out["embedded_ip_sum_ok"] = cks != 0 and _inet_cksum(zeroed) == cks
+    l4 = q[ihl:]
+    if hdr[9] == 17 and len(l4) >= 8:
+        out["embedded_udp_sum"] = int.from_bytes(l4[6:8], "big")
+        out["embedded_udp_data_hex"] = l4[8:].hex()
+    return out
+
+
+def _inet_cksum(b: bytes) -> int:
+    if len(b) % 2:
+        b += b"\x00"
+    s = sum(int.from_bytes(b[i:i + 2], "big") for i in range(0, len(b), 2))
+    while s >> 16:
+        s = (s & 0xFFFF) + (s >> 16)
+    return (~s) & 0xFFFF
+
+
+def parse_hex(hexstr: str) -> dict[str, Any] | None:
+    """Re-parse a recorded packet (run JSON ``hex``) offline."""
+    if not hexstr:
+        return None
+    return parse_reply(IP(bytes.fromhex(hexstr)))
 
 
 def synthesize_tcp_reply(

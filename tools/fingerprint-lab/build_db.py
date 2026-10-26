@@ -146,6 +146,16 @@ def load_inputs(
     return {"tv": tv, "tv_sha256": _sha256(tv_bytes), "runs": docs, "run_name": run_name}
 
 
+MIN_PROBE_VERSION = "0.3.0"
+
+
+def _vtuple(v: str) -> tuple[int, ...]:
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except ValueError:
+        return (0,)
+
+
 def validate(inp: dict[str, Any]) -> dict[str, Any]:
     tv = inp["tv"]
     meta = parse_run_dir_name(inp["run_name"])
@@ -163,6 +173,16 @@ def validate(inp: dict[str, Any]) -> dict[str, Any]:
         vals = {json.dumps(d.get(key), sort_keys=True) for d in docs}
         if len(vals) != 1 or any(d.get(key) in (None, "", {}) for d in docs):
             raise BuildError(f"run JSONs disagree on or lack {key!r}: {sorted(vals)}")
+
+    # Probe shapes changed in 0.3.0 (option order, ack, DF, ECN/IE/U1 fields
+    # per the published method). Older captures measured different probes,
+    # so they must not be turned into shipped entries.
+    pv = str(docs[0].get("tool_version"))
+    if _vtuple(pv) < _vtuple(MIN_PROBE_VERSION):
+        raise BuildError(
+            f"run JSONs were captured with probe.py {pv}; {MIN_PROBE_VERSION} or later is "
+            "required (earlier probes did not match the published probe set; re-capture)"
+        )
 
     target_key = tv.get("target", "")
     if target_key not in TARGETS:
