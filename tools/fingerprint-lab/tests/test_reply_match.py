@@ -194,3 +194,56 @@ def test_pairing_uses_probe_windows():
     # a reply stamped before its probe's wire time is not paired with it
     res = _run_fake([pkts[2]], [100.2], [100.201], [_reply_at(pkts[2], 100.1999)])
     assert res[0][1] is None
+
+
+# ---- exact-bytes outgoing match (review on #158) ---------------------------
+
+def _cap(pkt, t):
+    c = IP(bytes(pkt))
+    c.time = t
+    return c
+
+
+def test_wire_send_time_exact_match():
+    plan = _plan()
+    pkts = [plan["T2"], plan["T7"]]
+    caps = [_cap(pkts[1], 5.1), _cap(pkts[0], 5.0)]
+    assert probe_mod.wire_send_times(pkts, [9.0, 9.1], caps) == [5.0, 5.1]
+
+
+def test_wire_send_time_ignores_offloaded_l4_checksum_and_padding():
+    probe = _plan()["T7"]
+    raw = bytearray(bytes(probe))
+    raw[20 + 16:20 + 18] = b"\x00\x00"  # unfilled TCP checksum (offload)
+    c = IP(bytes(raw) + b"\x00" * 6)  # plus Ethernet padding
+    c.time = 7.0
+    assert probe_mod.wire_send_times([probe], [9.0], [c]) == [7.0]
+
+
+@pytest.mark.parametrize("mutate", ["flags", "payload", "window"])
+def test_wire_send_time_near_miss_uses_fallback(mutate):
+    probe = _plan()["T7"]
+    near = IP(bytes(probe))  # same id/addrs/ports/seq/ack (first 8+ bytes)
+    if mutate == "flags":
+        near[TCP].flags = "FPUA"
+    elif mutate == "payload":
+        near = near / b"x"
+        near[IP].len = None
+    else:
+        near[TCP].window = (near[TCP].window + 1) & 0xFFFF
+    near[TCP].chksum = None
+    near[IP].chksum = None
+    near = _cap(near, 7.0)
+    nb, pb = bytes(near), bytes(IP(bytes(probe)))
+    for lo, hi in ((4, 6), (9, 10), (12, 20), (20, 28)):  # id, proto, addrs, first 8 L4
+        assert nb[lo:hi] == pb[lo:hi]
+    assert probe_mod.wire_send_times([probe], [9.0], [near]) == [9.0]
+
+
+def test_wire_send_time_duplicate_frames_first_copy_wins_once():
+    plan = _plan()
+    a, b = plan["T6"], plan["T7"]
+    caps = [_cap(a, 1.0), _cap(a, 1.00002), _cap(b, 1.1), _cap(b, 1.10002)]
+    assert probe_mod.wire_send_times([a, b], [9.0, 9.1], caps) == [1.0, 1.1]
+    # the same probe sent twice consumes both copies in order
+    assert probe_mod.wire_send_times([a, a, a], [9.0, 9.1, 9.2], caps) == [1.0, 1.00002, 9.2]

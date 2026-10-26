@@ -205,31 +205,52 @@ def _route_iface(dst: str) -> Any:
     return conf.route.route(dst)[0]
 
 
+def _wire_key(ip_bytes: bytes) -> bytes:
+    """Exact IP packet bytes, trimmed to the IP total length, with the L4
+    checksum field zeroed.
+
+    Why the L4 checksum is ignored: with NIC checksum offload the kernel hands
+    the frame to the NIC (and to the capture tap) before the TCP/UDP checksum
+    is filled in, so a captured OUTGOING packet can carry an unfilled or wrong
+    L4 checksum even though the wire copy is right. Every other byte
+    (IP header incl. its checksum, L4 header, options, payload) must match.
+    """
+    raw = bytearray(ip_bytes)
+    if len(raw) < 20:
+        return bytes(raw)
+    total = int.from_bytes(raw[2:4], "big")
+    if 20 <= total <= len(raw):
+        raw = raw[:total]  # drop Ethernet padding the capture may carry
+    ihl = (raw[0] & 0x0F) * 4
+    off = {6: 16, 17: 6, 1: 2}.get(raw[9])  # TCP, UDP, ICMP checksum offset
+    if off is not None and len(raw) >= ihl + off + 2:
+        raw[ihl + off : ihl + off + 2] = b"\x00\x00"
+    return bytes(raw)
+
+
 def wire_send_times(
     pkts: list[Any], post_send: list[float], captured: list[Any]
 ) -> list[float]:
     """Send time per probe: the capture timestamp of our own outgoing packet
     (what sr() used to record), else the timestamp taken right after send().
 
-    Outgoing packets are found by their IP bytes (src/dst/id/proto plus the
-    L4 header), each captured copy used at most once.
+    A captured frame is matched to a probe by its exact IP bytes as built and
+    sent (see _wire_key for the one exception, the L4 checksum). Captured
+    copies are scanned in arrival order and each is used at most once, so
+    when a frame shows up twice (e.g. on loopback) the first copy wins.
     """
     from scapy.layers.inet import IP  # type: ignore
 
-    def key(ip: Any) -> bytes:
-        raw = bytes(ip)
-        ihl = (raw[0] & 0x0F) * 4
-        # ip id (4:6), proto (9), src/dst (12:20), first 8 L4 bytes; skip
-        # TTL/checksum fields a capture might show rewritten.
-        return raw[4:6] + raw[9:10] + raw[12:20] + raw[ihl : ihl + 8]
-
     pool: list[tuple[bytes, float]] = [
-        (key(c[IP]), float(c.time)) for c in captured if IP in c
+        (_wire_key(bytes(c[IP])), float(c.time)) for c in captured if IP in c
     ]
+    pool.sort(key=lambda kt: kt[1])
     taken: set[int] = set()
     out: list[float] = []
     for p, fallback in zip(pkts, post_send):
-        k = key(p[IP])
+        # bytes() builds the packet (lengths and checksums filled in), i.e.
+        # exactly what the socket put on the wire.
+        k = _wire_key(bytes(p[IP]))
         t = fallback
         for j, (ck, ct) in enumerate(pool):
             if j not in taken and ck == k:
