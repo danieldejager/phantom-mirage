@@ -709,7 +709,14 @@ tcp_personality_seq(struct tcp_con * con, struct template *tmpl, struct personal
 	 * generated so far.
 	 */
 
-	if((con->state == TCP_STATE_LISTEN) && (con->rcv_flags == TH_SYN))
+	/*
+	 * Any SYN without ACK, RST or FIN opens a connection, including
+	 * nmap's ECN probe (SYN|ECE|CWR). Testing for exactly TH_SYN left
+	 * snd_una at ack + 1 (honeyd.c) for that probe, so it answered seq 1.
+	 */
+	if((con->state == TCP_STATE_LISTEN) &&
+	    (con->rcv_flags & TH_SYN) &&
+	    !(con->rcv_flags & (TH_ACK|TH_RST|TH_FIN)))
 	{
 		con->snd_una = get_next_isn(tmpl, person);
 	}

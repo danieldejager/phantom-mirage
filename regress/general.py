@@ -68,6 +68,23 @@ class TCPOpen(regress.Test):
 
         self.packets.append(ip)
 
+class TCPECNSyn(regress.Test):
+    def Setup(self):
+        # nmap's ECN probe is SYN|ECE|CWR. It must get a fresh ISN like a
+        # plain SYN; before the fix the listener reused ack+1, so seq was 1.
+        self.name = "ECN SYN (SYN|ECE|CWR) to open port gets a fresh ISN"
+        self.expect = "gen.output.3"
+
+        payload = TCP(sport=556, dport=80, seq=20000, ack=0,
+                      flags=dnet.TH_SYN | 0x40 | 0x80)
+        ip = IP(src=dnet.ip_aton("192.0.2.254"),
+                dst=dnet.ip_aton("192.18.0.10"),
+                id=5626,
+                p=dnet.IP_PROTO_TCP)
+        ip.data = payload
+        ip.len += len(ip.data)
+        self.packets.append(ip)
+
 # Main
 def usage():
     print("Usage: %s [-dg]" % sys.argv[0])
@@ -92,4 +109,5 @@ reg = regress.regress("general networking tests", "../phantom-mirage", "config.1
 reg.generate = generate
 reg.run(Ping())
 reg.run(TCPOpen())
+reg.run(TCPECNSyn())
 reg.finish()

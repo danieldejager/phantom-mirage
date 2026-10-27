@@ -37,5 +37,5 @@ clean-local:
 EXTRA_DIST = config.1 config.2 detect.py general.py nmap.py \
 	regress.py dnet_compat.py routing.py detect.output.1 detect.output.2 \
 	detect.output.3 detect.output.4 \
-	gen.output.1 gen.output.2 route.output.1 nmap.output.1 \
+	gen.output.1 gen.output.2 gen.output.3 route.output.1 nmap.output.1 \
 	IMPORTANT_NOTES.txt
