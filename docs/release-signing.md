@@ -6,7 +6,7 @@
 files against the release's `SHA256SUMS`. A detached cosign signature over
 that file, `SHA256SUMS.sig`, proves who made the release:
 
-* **No `release/SHA256SUMS.pub` committed (today):** checksums only, and a
+* **No `release/SHA256SUMS.pub` committed:** checksums only, and a
   warning says `SHA256SUMS is unsigned`.
 * **`release/SHA256SUMS.pub` committed on the default branch:** get-mirage.sh
   fetches it, and a release without a valid `SHA256SUMS.sig` is refused
@@ -21,6 +21,8 @@ owner's trusted machine, and no workflow or Actions secret holds it, so
 being able to run workflows here is not enough to sign a release.
 Signatures use no transparency log (`--tlog-upload=false`) and are
 verified with `--insecure-ignore-tlog=true`.
+
+The public key is committed in `release/SHA256SUMS.pub`; v1.7.0-6 is the first signed release.
 
 ### Adding the key (one-off, by the repo owner)
 
