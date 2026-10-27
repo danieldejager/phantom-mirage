@@ -143,3 +143,7 @@ http://www.debian.org/doc/manuals/securing-debian-howto/ch-sec-services.en.html#
 Mon,  5 Jun 2006 23:28:36 +0200
 
 
+
+Decoy ports (#129): the default template opens 21/22/23/80/443/445/3389
+as silent tripwires; see docs/decoy-ports.md to make 21/22/23/80 return
+banners instead.
