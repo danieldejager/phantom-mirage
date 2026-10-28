@@ -10,6 +10,9 @@
 #                      other value is a file path writable by nobody
 #   PHANTOM_MIRAGE_SENSOR_ID   optional: sensor_id in JSON events (default hostname)
 #   PHANTOM_MIRAGE_HEARTBEAT   optional: JSON heartbeat interval in seconds
+#   PHANTOM_MIRAGE_PERSONALITIES  personality file (default: the project's
+#                      own fingerprint database, columbo-v1.db, checked
+#                      against its pinned sha256; a -p argument also overrides)
 #
 # Any arguments are appended to the phantom-mirage command line. Arguments
 # starting with --version/--help/--verify-config are passed straight to
@@ -36,7 +39,17 @@ case "${1:-}" in
 	exec /usr/bin/phantom-mirage "$@" ;;
 esac
 
-set -- -f "$conf" --disable-webserver "$@"
+data=/usr/share/phantom-mirage
+pers=${PHANTOM_MIRAGE_PERSONALITIES:-$data/columbo-v1.db}
+if [ "$pers" = "$data/columbo-v1.db" ]; then
+	( cd "$data" && sha256sum -c --status columbo-v1.db.sha256 ) || {
+		echo "phantom-mirage-entrypoint: $pers does not match its pinned sha256" >&2
+		exit 1
+	}
+fi
+
+# -p first so a -p in the arguments wins (last one is used)
+set -- -f "$conf" -p "$pers" --disable-webserver "$@"
 case "${PHANTOM_MIRAGE_JSON_LOG:-}" in
 "")	;;
 stdout|-) set -- "$@" --json-log=- ;;

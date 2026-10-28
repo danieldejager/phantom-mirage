@@ -262,3 +262,13 @@ for private repositories.
 ## Not done yet
 
 - Python extensions and the web UI (#36).
+
+## Personality file (#150)
+
+The entrypoint passes `-p /usr/share/phantom-mirage/columbo-v1.db`, the
+project's own fingerprint database, after checking it against the pinned
+sha256 in `columbo-v1.db.sha256` (the container exits if it does not
+match). Personas: `ubuntu2404`, `ws2019-fwoff`, `ws2022-fwoff`,
+`ws2025-fwoff`, `win11-fwon`, `win11-fwoff`. Set
+`PHANTOM_MIRAGE_PERSONALITIES=/path/file` or pass `-p /path/file` to use
+another file (for example `/usr/share/phantom-mirage/nmap-os-db`).

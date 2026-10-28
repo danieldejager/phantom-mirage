@@ -143,3 +143,13 @@ http://www.debian.org/doc/manuals/securing-debian-howto/ch-sec-services.en.html#
 Mon,  5 Jun 2006 23:28:36 +0200
 
 
+
+Personality file (#150)
+-----------------------
+The service loads /etc/phantom-mirage/columbo-v1.db, the project's own
+fingerprint database (personas: ubuntu2404, ws2019-fwoff, ws2022-fwoff,
+ws2025-fwoff, win11-fwon, win11-fwoff). pm-start and the init script check
+it against the sha256 pinned in /etc/phantom-mirage/columbo-v1.db.sha256
+and refuse to start on a mismatch. The default config uses "ws2022-fwoff".
+To use another file add "-p /path/file" to OPTIONS in
+/etc/default/phantom-mirage (the last -p wins); nmap-os-db is still shipped.

@@ -22,7 +22,8 @@ override_dh_auto_install:
 	dh_auto_install --destdir=$(D)
 	# Relocate configuration files to /etc/phantom-mirage, keep symlinks
 	mkdir -p $(D)/etc/phantom-mirage
-	for f in nmap.assoc nmap-mac-prefixes nmap-os-db xprobe2.conf pf.os; do \
+	for f in nmap.assoc nmap-mac-prefixes nmap-os-db xprobe2.conf pf.os \
+	    columbo-v1.db columbo-v1.db.sha256; do \
 	  mv $(D)/usr/share/phantom-mirage/$$f $(D)/etc/phantom-mirage/$$f; \
 	  ln -s /etc/phantom-mirage/$$f $(D)/usr/share/phantom-mirage/$$f; \
 	done

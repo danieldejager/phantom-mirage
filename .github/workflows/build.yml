@@ -125,6 +125,7 @@ jobs:
                    usr/share/phantom-mirage/nmap-os-db usr/share/phantom-mirage/xprobe2.conf \
                    usr/share/phantom-mirage/nmap.assoc usr/share/phantom-mirage/pf.os \
                    usr/share/phantom-mirage/nmap-mac-prefixes \
+                   usr/share/phantom-mirage/columbo-v1.db usr/share/phantom-mirage/columbo-v1.db.sha256 \
                    usr/share/phantom-mirage/scripts/lib/names.py \
                    usr/include/honeyd/hooks.h; do
             test -e destdir/$f || { echo "missing $f" >&2; exit 1; }
@@ -201,6 +202,12 @@ jobs:
           # SC1007 (a= b=), SC1090/SC2010/SC2034: intentional patterns
           shellcheck -s sh -S warning -e SC1007,SC1090,SC2010,SC2034 \
             release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh ci/test_install_rollback.sh console/pm-firewall ci/test_decoy_tcp.sh debian/mkconf.sh
+      - name: Default personality file pinned sha256 + parse check (#150)
+        run: |
+          (cd fingerprints && sha256sum -c columbo-v1.db.sha256)
+          grep -qx '38f8d4cbde86b925a35d6157477913f148e7894c189fdfa1deeedbba9a94775f  columbo-v1.db' fingerprints/columbo-v1.db.sha256
+          python3 -m venv /tmp/fpv && /tmp/fpv/bin/pip install -q pytest
+          /tmp/fpv/bin/python -m pytest -q tools/fingerprint-lab/tests/test_columbo_db.py
       - name: Web console unit + server tests (#118)
         run: python3 -W ignore -m unittest discover -v -s console/tests
       - name: ci/test_get_mirage.sh + test_make_run.sh + test_install_rollback.sh (sh and dash)

@@ -20,6 +20,9 @@ pm_load_default "$DEFAULT"
 pm_check "$DEFAULT"
 
 mode=$1
+# Pinned sha256 of the default personality file (#150); PM_ETC for tests
+[ -z "$PM_PRINT_ARGV" ] || [ -n "${PM_ETC:-}" ] || PM_SKIP_FPDB=1
+[ -n "${PM_SKIP_FPDB:-}" ] || pm_check_fpdb "${PM_ETC:-$ETC}"
 case $mode in
 	check)
 		exit 0 ;;
@@ -30,7 +33,7 @@ case $mode in
 		gid=${PM_GID:-$(id -g phantom-mirage)} || pm_fail "user phantom-mirage does not exist"
 		set -- "$DAEMON" -d -f "$ETC/phantom-mirage.conf" \
 			-l /var/log/phantom-mirage/phantom-mirage.log \
-			-p "$ETC/nmap-os-db" -a "$ETC/nmap.assoc" -0 "$ETC/pf.os" \
+			-p "$ETC/columbo-v1.db" -a "$ETC/nmap.assoc" -0 "$ETC/pf.os" \
 			-x "$ETC/xprobe2.conf" -m "$ETC/nmap-mac-prefixes" \
 			-u "$uid" -g "$gid" ;;
 	*)

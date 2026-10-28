@@ -409,7 +409,8 @@ def test_config_refs_real_repo_reports_known_findings():
     if not (REPO / "docker" / "phantom-mirage.conf").exists():
         pytest.skip("not run from a phantom-mirage checkout")
     kinds = {(r, k) for r, _, k, _ in check_config_refs.scan(REPO)}
-    assert ("docker/phantom-mirage.conf", "PERSONA_NOT_OURS") in kinds
+    # docker/phantom-mirage.conf now uses columbo-v1.db personas (#150)
+    assert ("docker/phantom-mirage.conf", "PERSONA_NOT_OURS") not in kinds
     assert ("docker/entrypoint.sh", "DEFAULT_PERS_FILE") in kinds
     assert ("Makefile.am", "NMAP_OS_DB_REF") in kinds
 
@@ -426,7 +427,7 @@ def test_moved_list_shipped_empty_and_today_repo_passes():
     assert check_config_refs.read_moved(check_config_refs.MOVED_DEFAULT) == {}
     if (REPO / "docker" / "phantom-mirage.conf").exists():
         found = check_config_refs.scan(REPO, {})
-        assert sum(1 for f in found if f[2] == "PERSONA_NOT_OURS") >= 29
+        assert sum(1 for f in found if f[2] == "PERSONA_NOT_OURS") >= 28  # 29 before #150 (docker conf)
         assert check_config_refs.main(["--root", str(REPO)]) == 0
 
 

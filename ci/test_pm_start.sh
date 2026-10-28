@@ -46,7 +46,7 @@ same "run argv (sed-edited)" "/usr/bin/phantom-mirage
 -l
 /var/log/phantom-mirage/phantom-mirage.log
 -p
-/etc/phantom-mirage/nmap-os-db
+/etc/phantom-mirage/columbo-v1.db
 -a
 /etc/phantom-mirage/nmap.assoc
 -0
@@ -92,4 +92,15 @@ printf '%s\n' 'INTERFACE=eth0' 'NETWORK=10.1.1.8/29' 'some text' > "$t/junk"
 fails "stray text line" 'line 3: expected KEY=VALUE' "$t/junk"
 printf 'INTERFACE=eth0\r\nNETWORK="10.1.1.8/29"\r\n' > "$t/crlf"
 same "CRLF file" "10.1.1.8/29" "$(pm verify "$t/crlf" | tail -n 1)"
+# pinned sha256 of the default personality file (#150)
+mkdir "$t/etc"; cp fingerprints/columbo-v1.db fingerprints/columbo-v1.db.sha256 "$t/etc/"
+pmetc() { env -i PATH=/usr/bin:/bin PM_LIBDIR="$PWD/debian/scripts" PM_SYSFS_NET="$t/net" \
+    PM_DEFAULT="$t/edited" PM_ETC="$t/etc" ${SH:-/bin/sh} debian/scripts/pm-start check; }
+pmetc && echo "ok: columbo-v1.db matches pinned sha256"
+echo tampered >> "$t/etc/columbo-v1.db"
+rc=0; pmetc 2>"$t/err" || rc=$?
+if [ $rc != 78 ] || ! grep -q 'does not match its pinned sha256' "$t/err"; then
+  echo "FAIL: tampered columbo-v1.db accepted (rc=$rc)"; cat "$t/err"; exit 1
+fi
+echo "ok: tampered columbo-v1.db -> $(cat "$t/err")"
 echo "pm-start test OK"

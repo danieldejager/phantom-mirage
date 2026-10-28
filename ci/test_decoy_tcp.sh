@@ -55,7 +55,7 @@ fi
 # probe CONF EXPECT_OPEN EXPECT_CLOSED: EXPECT_* = OPEN|REFUSED|TIMEOUT
 probe() {
 	"$D/phantom-mirage" -d -f "$1" -i $HV --disable-webserver \
-	  -p "$D/nmap-os-db" -x "$D/xprobe2.conf" -a "$D/nmap.assoc" \
+	  -p "$D/fingerprints/columbo-v1.db" -x "$D/xprobe2.conf" -a "$D/nmap.assoc" \
 	  -0 "$D/pf.os" -m "$D/nmap-mac-prefixes" $NET > "$T/log" 2>&1 &
 	pid=$!
 	sleep 2
