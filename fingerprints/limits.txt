@@ -1,3 +1,4 @@
 # Extra '#@ limit:' lines per persona, added by build_shipped_db.py.
 # One line each: <persona>: <text>. No lab run numbers or UUIDs.
+# win11-fwon and win11-fwoff are imported blocks (fingerprints/imported/); their limit lines are in those files.
 ubuntu2404: TS=22 comes from this capture only; an after-restart capture was not merged because one of its runs read TS=23 (6 runs seen across both captures: 5 read TS=22, 1 read TS=23); the decoy check allows TS 22 and 23

@@ -3,3 +3,5 @@ ubuntu2404
 ws2022-fwoff
 ws2019-fwoff
 ws2025-fwoff
+win11-fwon
+win11-fwoff
