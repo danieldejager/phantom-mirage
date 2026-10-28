@@ -193,7 +193,7 @@ WEBDIR_FILES = \
 
 # TODO: Fix this, half the scripts are missing and this will probably break gzipping
 EXTRA_DIST = $(man_MANS) $(WEBDIR_FILES)		  \
-	acconfig.h $(honeyddata_DATA) LICENSE NOTICE sha1.c			  \
+	$(honeyddata_DATA) LICENSE NOTICE sha1.c			  \
 	compat/sys/tree.h compat/sys/queue.h compat/err.h compat/sha1.h	  \
 	compat/libdnet/dnet.h compat/getopt.h				  \
 	honeyd_overload.c pyextend.c pyextend.h \
