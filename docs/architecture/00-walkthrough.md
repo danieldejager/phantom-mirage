@@ -55,7 +55,7 @@ The key idea is the *template*. A template is a recipe for a kind of host. You t
 
 ```
 create windows                               # a new recipe called "windows"
-set windows personality "OpenBSD 4.0 (x86)"  # which OS it imitates on the wire
+set windows personality "ws2022-fwoff"       # which OS it imitates on the wire
 add windows tcp port 80 "scripts/web.sh"     # port 80 runs a fake web server script
 add windows udp port 53 open                 # port 53 accepts traffic, no service
 set windows default tcp action closed        # every other TCP port refuses

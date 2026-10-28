@@ -12,7 +12,10 @@ set default default icmp action filtered
 
 # Example of a simple host template and its binding
 create windows
-set windows personality "OpenBSD 4.0 (x86)"
+# The default personality file is the six-persona database
+# (fingerprints/columbo-v1.db). Its personas are: ubuntu2404, ws2019-fwoff,
+# ws2022-fwoff, ws2025-fwoff, win11-fwon, win11-fwoff.
+set windows personality "ws2022-fwoff"
 set windows uptime 1728650
 set windows maxfds 35
 add windows tcp port 80 "scripts/web.sh"
@@ -22,6 +25,9 @@ add windows udp port 53 open
 set windows ethernet "dell" 
 set windows default tcp action closed
 
+# The commented personas below (Cisco, NT 4.0, AIX) are not in the
+# six-persona database: they need the legacy personality file
+# (-p nmap-os-db).
 #create router
 #set router personality "Cisco 2514 router (IOS 12.1)"
 #set router default tcp action closed

@@ -78,10 +78,10 @@ for p in (22, 8080):
 sh "$D/debian/mkconf.sh" "$D/config.sample" "$T/new.conf"
 probe "$T/new.conf" OPEN REFUSED
 
-# negative control: the pre-#123 Debian config (TCP filtered). Only the
-# personality is rewritten like mkconf.sh does: config.sample names
-# "OpenBSD 4.0 (x86)", which is not in columbo-v1.db, and the daemon
-# refuses to start with it. TCP stays filtered, so nothing may answer.
+# negative control: the pre-#123 Debian config (TCP filtered). The
+# personality sed matches mkconf.sh (a no-op now that config.sample names
+# ws2022-fwoff; kept for older samples). TCP stays filtered, so nothing may
+# answer.
 sed -e 's/^set default default icmp action filtered$/set default default icmp action open/' \
     -e 's/^set windows personality "OpenBSD 4.0 (x86)"$/set windows personality "ws2022-fwoff"/' \
     -e 's/^bind 192\.168\.3\.137 windows/# &/' "$D/config.sample" > "$T/old.conf"

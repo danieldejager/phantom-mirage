@@ -54,7 +54,7 @@ create default
 set default default tcp action filtered
 
 create windows
-set windows personality "OpenBSD 4.0 (x86)"
+set windows personality "ws2022-fwoff"
 set windows uptime 1728650
 add windows tcp port 80 "scripts/web.sh"
 add windows udp port 53 open
@@ -68,7 +68,7 @@ bind 10.3.0.20 windows
 flowchart LR
     subgraph templtree["templtree (config.c)"]
         def["template 'default'<br/>tcp action FILTERED"]
-        win["template 'windows'<br/>person = clone('OpenBSD 4.0 (x86)')<br/>tcp default CLOSED<br/>ethernet_addr = dell OUI"]
+        win["template 'windows'<br/>person = clone('ws2022-fwoff')<br/>tcp default CLOSED<br/>ethernet_addr = dell OUI"]
         inst["template '10.3.0.20'<br/>(template_clone of windows)<br/>honeypot_instance = 1"]
     end
     p80["port tcp/80<br/>PORT_OPEN 'scripts/web.sh'"]
@@ -85,4 +85,4 @@ flowchart LR
     r2 -- "ROUTE_LINK 10.3.0.0/24" --> inst
 ```
 
-A packet to 10.3.0.20 enters at router 10.0.0.1, accrues 8 ms delay, reaches the `10.3.0.20` template, port 80 runs `scripts/web.sh`, all other TCP ports reset, and replies look like OpenBSD 4.0 with a Dell MAC.
+A packet to 10.3.0.20 enters at router 10.0.0.1, accrues 8 ms delay, reaches the `10.3.0.20` template, port 80 runs `scripts/web.sh`, all other TCP ports reset, and replies look like Windows Server 2022 (firewall off, persona `ws2022-fwoff` from the six-persona database) with a Dell MAC.
