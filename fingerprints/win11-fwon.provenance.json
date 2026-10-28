@@ -1,0 +1,45 @@
+{
+  "block_sha256": "f3936130e6a522c481cab977824fdd2d0cff682bae8f0989bf84bc447f668292",
+  "captures": [],
+  "derive": {
+    "commit": null,
+    "sha256": null,
+    "version": "0.3.2"
+  },
+  "derive_report": null,
+  "generator": {
+    "name": "columbo-v1.db (imported)",
+    "version": "v1"
+  },
+  "limits": [
+    "imported from the published database, not rebuilt here: capture inputs, input hashes and derive commit are not in this repository; build_shipped_db.py cannot rebuild this block",
+    "not yet scored under the OS fingerprint scoring sheet; closed_tcp/closed_udp ports not published"
+  ],
+  "persona": "win11-fwon",
+  "ports": {
+    "closed_tcp": null,
+    "closed_udp": null,
+    "open_tcp": 3389
+  },
+  "probe": {
+    "runs": 6,
+    "version": "0.3.2"
+  },
+  "rules_applied": {},
+  "source": {
+    "asset": "columbo-v1.db",
+    "asset_sha256": "38f8d4cbde86b925a35d6157477913f148e7894c189fdfa1deeedbba9a94775f",
+    "release": "v1",
+    "repo": "danieldejager/columbo"
+  },
+  "sp_isr_method": "as published in columbo-v1.db (derive.py 0.3.2 min-max over probe runs); per-run values not available here",
+  "target": {
+    "description": "Windows 11",
+    "family": "windows",
+    "firewall": "on",
+    "key": "win11",
+    "os_build": null,
+    "os_edition": null,
+    "os_patch": null
+  }
+}

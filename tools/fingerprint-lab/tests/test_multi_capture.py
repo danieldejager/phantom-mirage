@@ -214,7 +214,10 @@ def test_real_repo_has_no_our_persona_on_bundled_db():
 
 # ---- the committed database ---------------------------------------------
 
-SHIPPED = ["ubuntu2404", "ws2022-fwoff", "ws2019-fwoff", "ws2025-fwoff"]
+SHIPPED = ["ubuntu2404", "ws2022-fwoff", "ws2019-fwoff", "ws2025-fwoff", "win11-fwon", "win11-fwoff"]
+# Built here from local captures; win11-* are imported byte for byte from columbo-v1.db.
+REBUILT = ["ubuntu2404", "ws2022-fwoff", "ws2019-fwoff", "ws2025-fwoff"]
+IMPORTED = ["win11-fwon", "win11-fwoff"]
 
 
 def _blocks():
@@ -230,6 +233,10 @@ def test_shipped_db_passes_check_db_and_lists_exact_personas():
     assert set(_blocks()) == set(SHIPPED)
 
 
+def b_fw(name):
+    return "on" if name.endswith("-fwon") or name == "ubuntu2404" else "off"
+
+
 def test_shipped_sidecars_match_blocks():
     text = (FP / "phantom-mirage-os.db").read_text()
     for name in SHIPPED:
@@ -237,11 +244,12 @@ def test_shipped_sidecars_match_blocks():
         m = re.search(rf"(^#@ persona: {re.escape(name)}\n.*?)(?:\n\n|\Z)", text, re.M | re.S)
         assert side["block_sha256"] == hashlib.sha256((m[1].rstrip("\n") + "\n").encode()).hexdigest()
         assert side["persona"] == name and "min-max" in side["sp_isr_method"]
+        assert side["target"]["firewall"] == b_fw(name)
 
 
 def test_shipped_files_have_no_lab_addresses_or_host_names():
     ip = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
-    for p in sorted(FP.iterdir()):
+    for p in sorted(q for q in FP.rglob("*") if q.is_file()):
         t = p.read_text()
         # OS build numbers like 10.0.20348.5761 have four dotted parts too;
         # allow only those, on target_os_build / os-build lines.
@@ -259,6 +267,9 @@ def test_shipped_windows_personas_name_their_port():
         side = json.loads((FP / f"{name}.provenance.json").read_text())
         assert side["ports"]["open_tcp"] == 135
     assert b["ubuntu2404"]["hdr"]["ports"].startswith("open_tcp=22 ")
+    for name in IMPORTED:
+        assert b[name]["hdr"]["ports"] == "open_tcp=3389", name
+        assert json.loads((FP / f"{name}.provenance.json").read_text())["ports"]["open_tcp"] == 3389
 
 
 def test_shipped_db_matches_measured_facts():
@@ -329,8 +340,8 @@ def _leaks(text):
 
 
 def test_shipped_files_have_no_lab_identifiers():
-    files = [FP / "phantom-mirage-os.db", *sorted(FP.glob("*.provenance.json"))]
-    assert len(files) == 5
+    files = [FP / "phantom-mirage-os.db", *sorted(FP.glob("*.provenance.json")), *sorted((FP / "imported").glob("*.fp"))]
+    assert len(files) == 9
     for p in files:
         assert _leaks(p.read_text()) == [], p.name
 
@@ -359,8 +370,11 @@ def test_shipped_records_derive_provenance_and_input_hashes():
     import build_db as bd
     text = (FP / "phantom-mirage-os.db").read_text()
     assert text.count(f"#@ derive: fingerprint-lab/derive.py {bd.DERIVE['version']} commit "
-                      f"{bd.DERIVE['commit']} sha256 {bd.DERIVE['sha256']}\n") == len(SHIPPED)
-    for name in SHIPPED:
+                      f"{bd.DERIVE['commit']} sha256 {bd.DERIVE['sha256']}\n") == len(REBUILT)
+    for name in IMPORTED:
+        side = json.loads((FP / f"{name}.provenance.json").read_text())
+        assert side["derive"]["version"] == bd.DERIVE["version"] and side["captures"] == []
+    for name in REBUILT:
         side = json.loads((FP / f"{name}.provenance.json").read_text())
         assert side["derive"] == bd.DERIVE
         for c in side["captures"]:
@@ -384,3 +398,23 @@ def test_extra_limit_must_be_one_line(tmp_path):
         build_db.build_block(inp, ["a\nb"])
     _, block, _ = build_db.build_block(inp, ["note one"])
     assert "#@ limit: note one\nFingerprint " in block
+
+
+# ---- imported win11 blocks ----------------------------------------------
+
+def test_imported_blocks_are_in_db_and_sidecars():
+    text = (FP / "phantom-mirage-os.db").read_text()
+    assert sorted(p.stem for p in (FP / "imported").glob("*.fp")) == sorted(IMPORTED)
+    for name in IMPORTED:
+        blk = (FP / "imported" / f"{name}.fp").read_text()
+        assert blk in text
+        side = json.loads((FP / f"{name}.provenance.json").read_text())
+        assert side["block_sha256"] == hashlib.sha256(blk.encode()).hexdigest()
+        assert side["source"]["asset"] == "columbo-v1.db"
+        assert "imported" in blk and "#@ firewall: " + b_fw(name) in blk
+
+
+def test_imported_blocks_feed_build(monkeypatch):
+    assert [build_db.block_persona(t) for t in build_shipped_db.imported_blocks({})] == ["win11-fwoff", "win11-fwon"]
+    with pytest.raises(build_db.BuildError):
+        build_shipped_db.imported_blocks({"win11-fwon": ["x"]})

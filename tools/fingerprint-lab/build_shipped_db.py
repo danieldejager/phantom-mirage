@@ -18,6 +18,8 @@ the committed one (nothing is written).
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import sys
 import tempfile
@@ -67,6 +69,25 @@ def read_limits(path: Path) -> dict[str, list[str]]:
     return out
 
 
+def imported_blocks(sources: dict) -> list[str]:
+    """fingerprints/imported/<persona>.fp: blocks taken byte for byte from a
+    published database (no local captures). Each must match its committed
+    sidecar's block_sha256; a persona may not be both imported and rebuilt."""
+    out = []
+    for path in sorted((FP_DIR / "imported").glob("*.fp")):
+        text = path.read_text(encoding="utf-8")
+        name = build_db.block_persona(text)
+        if name != path.stem:
+            raise BuildError(f"imported/{path.name} holds persona {name!r}")
+        if name in sources:
+            raise BuildError(f"{name} is both imported and listed in the sources file")
+        side = json.loads((FP_DIR / f"{name}.provenance.json").read_text(encoding="utf-8"))
+        if side.get("block_sha256") != hashlib.sha256(text.encode("utf-8")).hexdigest():
+            raise BuildError(f"imported/{path.name} does not match {name}.provenance.json block_sha256")
+        out.append(text)
+    return out
+
+
 def default_sources(root: Path) -> Path:
     env = os.environ.get("PM_SOURCES")
     return Path(env) if env else root / "phantom-mirage-sources.txt"
@@ -107,6 +128,7 @@ def build(root: Path, out: Path, sources_file: Path | None = None) -> list[str]:
         if persona in include:
             (out / f"{persona}.provenance.json").write_text(sidecar, encoding="utf-8")
             written.append(f"{persona}.provenance.json")
+    blocks += imported_blocks(sources)
     text, _ = build_db.assemble(blocks, include)
     (out / DB_NAME).write_text(text, encoding="utf-8")
     return [DB_NAME, *written]
