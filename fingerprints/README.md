@@ -13,6 +13,9 @@ default of the bare binary is unchanged (`nmap-os-db`, still shipped).
 Personas: `ubuntu2404`, `ws2022-fwoff`, `ws2019-fwoff`, `ws2025-fwoff`,
 `win11-fwon`, `win11-fwoff`. Only one personality file is loaded, so every
 `personality` in the config must be one of these names when it is used.
+`config.sample` names `OpenBSD 4.0 (x86)`, which is not in this file, so
+anyone using it with the new default file must change that personality
+(the Debian package does this for you via `debian/mkconf.sh`).
 
 Checks: `cd fingerprints && sha256sum -c columbo-v1.db.sha256` and
 `tools/fingerprint-lab/tests/test_columbo_db.py` (both run in CI).
