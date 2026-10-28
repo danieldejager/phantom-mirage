@@ -110,7 +110,13 @@ trap "" 15
 
 # This is the network in which phantom-mirage will work
 DAEMONOPTS="-f /etc/phantom-mirage/phantom-mirage.conf -l $LOGDIR/phantom-mirage.log"
-DAEMONOPTS="$DAEMONOPTS -p /etc/phantom-mirage/nmap.prints"
+# Default personality file: the project's own fingerprint database,
+# checked against its pinned sha256 (#150). Override with -p in OPTIONS.
+if ! ( cd /etc/phantom-mirage && sha256sum -c --status columbo-v1.db.sha256 ) ; then
+        log_failure_msg "/etc/phantom-mirage/columbo-v1.db is missing or does not match its pinned sha256"
+        case "$1" in start|restart|force-reload) exit 1 ;; esac
+fi
+DAEMONOPTS="$DAEMONOPTS -p /etc/phantom-mirage/columbo-v1.db"
 DAEMONOPTS="$DAEMONOPTS -a /etc/phantom-mirage/nmap.assoc"
 DAEMONOPTS="$DAEMONOPTS -0 /etc/phantom-mirage/pf.os"
 DAEMONOPTS="$DAEMONOPTS -x /etc/phantom-mirage/xprobe2.conf"

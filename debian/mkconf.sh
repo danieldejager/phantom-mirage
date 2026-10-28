@@ -9,6 +9,8 @@
 # (#110) and some TCP ports open with RST for the rest (#123). Before
 # #123 TCP stayed "filtered", so decoys answered ping but no port ever
 # answered a SYN.
+# The personality is rewritten to one from columbo-v1.db, the default
+# personality file for the Debian service (#150).
 set -eu
 in=$1 out=$2
 sed -e 's/^set default default icmp action filtered$/set default default icmp action open/' \
@@ -20,9 +22,11 @@ add default tcp port 80 open\
 add default tcp port 443 open\
 add default tcp port 445 open\
 add default tcp port 3389 open/' \
+    -e 's/^set windows personality "OpenBSD 4.0 (x86)"$/set windows personality "ws2022-fwoff"/' \
     -e 's/^bind 192\.168\.3\.137 windows/# &/' "$in" > "$out.tmp"
 grep -q '^set default default icmp action open$' "$out.tmp"
 grep -q '^set default default tcp action reset$' "$out.tmp"
 grep -q '^add default tcp port 22 open$' "$out.tmp"
+grep -q '^set windows personality "ws2022-fwoff"$' "$out.tmp"
 if grep -q '^bind 192\.168\.3\.137' "$out.tmp"; then exit 1; fi
 mv "$out.tmp" "$out"

@@ -53,7 +53,8 @@ honeyddatadir = $(datadir)/phantom-mirage
 honeydlibdir = $(libdir)/phantom-mirage
 honeydincludedir = $(includedir)/honeyd
 honeyddata_DATA = README.md nmap.assoc xprobe2.conf nmap-os-db config.sample \
-		config.ethernet pf.os nmap-mac-prefixes
+		config.ethernet pf.os nmap-mac-prefixes \
+		fingerprints/columbo-v1.db fingerprints/columbo-v1.db.sha256
 
 honeydplugins = @PLUGINS@
 honeydpluginsdeclare = @PLUGINSDECLARE@

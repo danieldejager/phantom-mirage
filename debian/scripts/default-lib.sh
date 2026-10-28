@@ -98,3 +98,12 @@ pm_check() {
 	done
 	return 0
 }
+
+# pm_check_fpdb DIR: the default personality file DIR/columbo-v1.db must
+# match the sha256 pinned in DIR/columbo-v1.db.sha256 (#150). Exits 78.
+pm_check_fpdb() {
+	[ -r "$1/columbo-v1.db" ] && [ -r "$1/columbo-v1.db.sha256" ] ||
+		pm_fail "missing $1/columbo-v1.db or its .sha256"
+	( cd "$1" && sha256sum -c --status columbo-v1.db.sha256 ) ||
+		pm_fail "$1/columbo-v1.db does not match its pinned sha256"
+}
