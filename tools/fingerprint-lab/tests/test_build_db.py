@@ -427,7 +427,7 @@ def test_moved_list_shipped_empty_and_today_repo_passes():
     assert check_config_refs.read_moved(check_config_refs.MOVED_DEFAULT) == {}
     if (REPO / "docker" / "phantom-mirage.conf").exists():
         found = check_config_refs.scan(REPO, {})
-        assert sum(1 for f in found if f[2] == "PERSONA_NOT_OURS") >= 28  # 29 before #150 (docker conf)
+        assert sum(1 for f in found if f[2] == "PERSONA_NOT_OURS") >= 27  # 29 before #150 (docker conf), 28 before config.sample used ws2022-fwoff
         assert check_config_refs.main(["--root", str(REPO)]) == 0
 
 
