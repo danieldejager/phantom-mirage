@@ -1,0 +1,39 @@
+# The runner rebuilds daemon objects when a header changes and
+# regenerates parse.c when parse.y is newer. Runs in a scratch copy.
+S=$(mktemp -d)
+trap 'rm -rf "$S"' EXIT
+tar -C "$ROOT" --exclude=./tests/security/out --exclude=./.git -cf - . |
+    tar -C "$S" -xf -
+mkdir -p "$S/tests/security/out"
+[ -d "$OUT/obj" ] && cp -a "$OUT/obj" "$S/tests/security/out/"
+echo 'daemon_objs' > "$S/tests/security/zz_objs.test"
+SO=$S/tests/security/out/obj
+rc=0
+# The inner runner builds in the scratch copy, whatever OUT the outer
+# run was given
+inner() { OUT="$S/tests/security/out" "$S/tests/security/run.sh" zz_objs; }
+inner >/dev/null 2>&1 || rc=1
+[ $rc -eq 0 ] || echo "initial build failed" >&2
+
+# A header content change rebuilds the objects that include it
+sleep 1
+echo '/* changed */' >> "$S/util.h"
+before=$(stat -c %Y "$SO/util.o")
+sleep 1
+inner >/dev/null 2>&1 || rc=1
+if [ "$(stat -c %Y "$SO/util.o")" = "$before" ]; then
+	echo "util.o not rebuilt after util.h changed" >&2; rc=1
+fi
+
+# A newer parse.y regenerates parse.c and rebuilds parse.o
+sleep 1
+echo '/* changed */' >> "$S/parse.y"
+sleep 1
+inner >/dev/null 2>&1 || rc=1
+if [ "$S/parse.y" -nt "$S/parse.c" ]; then
+	echo "parse.c not regenerated from a newer parse.y" >&2; rc=1
+fi
+if [ "$S/parse.c" -nt "$SO/parse.o" ]; then
+	echo "parse.o not rebuilt" >&2; rc=1
+fi
+[ $rc -eq 0 ]

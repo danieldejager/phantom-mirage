@@ -962,27 +962,86 @@ cmd_subsystem_connect_cb(int fd, short what, void *arg)
 	 */
 	port_encapsulation_free(tmp);
 
-	if (what != EV_WRITE) {
-		/* We encountered some error with this */
+	/*
+	 * CWE-252/CWE-404: a connection the subsystem never got fails now.
+	 * A UDP flow is freed rather than left to its idle timeout; for
+	 * TCP, tcp_connectfail only releases the buffers, sends no reset
+	 * and leaves the connection to its TCP timeout.
+	 */
+	if (what != EV_WRITE ||
+	    cmd_subsystem_connect(hdr, cmd, port, con) == -1) {
 		if (hdr->type == SOCK_STREAM)
 			tcp_connectfail(con);
-		return;
+		else
+			udp_free(con);
+	}
+}
+
+/* Send errors after which nothing was written and the channel is fine */
+static int
+cmd_subsystem_send_transient(int error)
+{
+	switch (error) {
+	case ETIMEDOUT:		/* EAGAIN until the deadline */
+	case EAGAIN:
+#if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
+	case EWOULDBLOCK:
+#endif
+	case ENOBUFS:
+	case ENOMEM:
+	case ETOOMANYREFS:
+	case EINTR:
+		return (1);
+	default:
+		return (0);
+	}
+}
+
+/*
+ * Closes a port channel that can no longer be trusted to be in frame and
+ * fails the connections waiting on it (UDP flows are freed; TCP ones go
+ * through tcp_connectfail and wait for their TCP timeout).  The subsystem may bind the port
+ * again; until then connects to it are refused.
+ */
+static void
+cmd_subsystem_reset_port(struct port *port)
+{
+	struct port_encapsulate *tmp;
+	struct tuple *hdr;
+	void *con;
+
+	while ((tmp = TAILQ_FIRST(&port->pending)) != NULL) {
+		hdr = tmp->hdr;
+		con = tmp->con;
+		port_encapsulation_free(tmp);
+		if (hdr == NULL)
+			continue;
+		if (hdr->type == SOCK_STREAM)
+			tcp_connectfail(con);
+		else
+			udp_free(con);
 	}
 
-	/* CWE-252: a connection the subsystem never got is dropped */
-	if (cmd_subsystem_connect(hdr, cmd, port, con) == -1 &&
-	    hdr->type == SOCK_STREAM)
-		tcp_connectfail(con);
+	if (port->sub_fd != -1) {
+		syslog(LOG_WARNING, "%s: closing out of frame channel to "
+		    "subsystem \"%s\"", __func__, port->sub->cmdstring);
+		TRACE(port->sub_fd, fdshare_close(port->sub_fd));
+		port->sub_fd = -1;
+	}
 }
 
 int
 cmd_subsystem_schedule_connect(struct tuple *hdr, struct command *cmd,
     struct port *port, void *con)
 {
-	struct port_encapsulate *tmp = calloc(1, sizeof(*tmp));
+	struct port_encapsulate *tmp;
 	struct subsystem *sub = port->sub;
 
-	if (tmp == NULL)
+	/* The channel was closed after an error */
+	if (port->sub_fd == -1)
+		return (-1);
+
+	if ((tmp = calloc(1, sizeof(*tmp))) == NULL)
 		return (-1);
 
 	tmp->hdr = hdr;
@@ -1050,9 +1109,20 @@ cmd_subsystem_connect(struct tuple *hdr, struct command *cmd,
 
 	if (send_fd_timed(port->sub_fd, pair[1], &bundle, sizeof(bundle),
 	    SUBSYSTEM_IO_TIMEOUT) == -1) {
+		int serrno = errno;
+
 		TRACE_RESET(pair[0], close(pair[0]));
 		TRACE_RESET(pair[1], close(pair[1]));
 		cmd->pfd = -1;
+		/*
+		 * CWE-664/CWE-755: a partial send (reported as EPIPE) leaves
+		 * the channel out of frame, and a hard error leaves it
+		 * unusable, so it is closed.  A transient error sent
+		 * nothing; only this connection fails and the channel is
+		 * kept, so a connect flood cannot deny the port for good.
+		 */
+		if (!cmd_subsystem_send_transient(serrno))
+			cmd_subsystem_reset_port(port);
 		return (-1);
 	}
 

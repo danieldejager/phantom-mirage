@@ -1,4 +1,10 @@
 # LeakSanitizer suppressions for tests/security. Only allocations made
-# while the harness loads the daemon's data files and configuration at
-# start up are suppressed; a leak from any later step is still reported.
-leak:fuzz_honeyd_init
+# by the daemon's data file loaders at start up are suppressed, matched
+# by exact function name; a leak from any other function is reported.
+# personality_parse: personality_free drops the TCP option arrays of a
+# fingerprint that a later duplicate overwrites.
+leak:^personality_parse$
+leak:^xprobe_personality_parse$
+# parse_associations: an association whose name is already in the tree
+# is not inserted and not freed.
+leak:^parse_associations$
