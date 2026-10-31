@@ -321,9 +321,10 @@ limit(void)
 		rc |= proxy_allow_range(buf) != 0;
 		rc |= proxy_decoy_range(buf) != 0;
 	}
-	rc |= proxy_allow_range("10.99.0.0/16") != -1;
-	rc |= proxy_decoy_range("10.99.0.0/16") != -1;
-	printf("%s: 32 ranges each accepted, the 33rd refused\n",
+	/* The 33rd gets its own error, not the bad range one */
+	rc |= proxy_allow_range("10.99.0.0/16") != -3;
+	rc |= proxy_decoy_range("10.99.0.0/16") != -3;
+	printf("%s: 32 ranges each accepted, the 33rd refused as over the limit\n",
 	    rc ? "FAIL" : "ok");
 	return (rc);
 }
@@ -386,6 +387,47 @@ metadata(void)
 		}
 		printf("with -A %s\n", broad[i].range);
 		expect(broad[i].neighbour, 1);
+		table(meta, 0);
+	}
+	return (0);
+}
+
+/* The further metadata endpoints are hard as exact addresses too */
+static int
+metadata2(void)
+{
+	static const char *meta[] = {
+		"169.254.170.2", "169.254.170.23", "192.0.0.192",
+		"fd00:ec2::23", "::ffff:169.254.170.2", "::ffff:169.254.170.23",
+		"::ffff:192.0.0.192", "::169.254.170.2", "::192.0.0.192", NULL
+	};
+	static const struct {
+		const char *range, *n1, *n2;
+	} broad[] = {
+		{ "169.254.0.0/16", "169.254.170.3", "169.254.170.22" },
+		{ "192.0.0.0/24", "192.0.0.191", "192.0.0.193" },
+		{ "fc00::/7", "fd00:ec2::22", "fd00:ec2::24" },
+		{ "0.0.0.0/0", "10.1.2.3", "::ffff:198.18.0.1" },
+		{ "::/0", "fe80::1", "ff02::1" },
+		{ NULL, NULL, NULL }
+	};
+	int i;
+
+	if (proxy_allow_range == NULL) {
+		printf("FAIL: no allow range option\n");
+		return (1);
+	}
+	for (i = 0; broad[i].range != NULL; i++) {
+		expect(broad[i].n1, 0);		/* denied until reopened */
+		expect(broad[i].n2, 0);
+		if (proxy_allow_range(broad[i].range) != 0) {
+			printf("FAIL: allow range %s not accepted\n",
+			    broad[i].range);
+			return (1);
+		}
+		printf("with -A %s\n", broad[i].range);
+		expect(broad[i].n1, 1);
+		expect(broad[i].n2, 1);
 		table(meta, 0);
 	}
 	return (0);
@@ -484,6 +526,8 @@ main(int argc, char **argv)
 		rc = hardallow();
 	} else if (strcmp(g, "metadata") == 0) {
 		rc = metadata();
+	} else if (strcmp(g, "metadata2") == 0) {
+		rc = metadata2();
 	} else if (strcmp(g, "shortmapped") == 0) {
 		rc = shortmapped();
 	} else if (strcmp(g, "limit") == 0) {

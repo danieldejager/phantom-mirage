@@ -89,8 +89,9 @@ usage(char *progname)
 	    "\t              ranges, for example 10.1.0.0/16; never reopens\n"
 	    "\t              loopback, 0/8, ::, documentation, NAT64, 6to4,\n"
 	    "\t              Teredo, discard, site local, broadcast, cloud\n"
-	    "\t              metadata, own interface or decoy addresses; up\n"
-	    "\t              to 32 ranges, none by default\n"
+	    "\t              metadata, own interface or decoy addresses; IPv4\n"
+	    "\t              mapped forms must be /96 or longer; up to 32\n"
+	    "\t              ranges, none by default\n"
 	    "\t -D range   - refuses the decoy address range, for example\n"
 	    "\t              10.20.0.0/16; IPv4 mapped forms are the same\n"
 	    "\t              range and must be /96 or longer; up to 32\n"
@@ -138,6 +139,9 @@ main(int argc, char **argv)
 				errx(EXIT_FAILURE, "Bad -A range: %s: an IPv4 "
 				    "mapped or compatible range must be /96 or "
 				    "longer", optarg);
+			if (rc == -3)
+				errx(EXIT_FAILURE, "Too many -A ranges: %s: the "
+				    "limit is 32", optarg);
 			if (rc != 0)
 				errx(EXIT_FAILURE, "Bad -A range: %s", optarg);
 			break;
@@ -146,6 +150,9 @@ main(int argc, char **argv)
 				errx(EXIT_FAILURE, "Bad -D range: %s: an IPv4 "
 				    "mapped or compatible range must be /96 or "
 				    "longer", optarg);
+			if (rc == -3)
+				errx(EXIT_FAILURE, "Too many -D ranges: %s: the "
+				    "limit is 32", optarg);
 			if (rc != 0)
 				errx(EXIT_FAILURE, "Bad -D range: %s", optarg);
 			break;

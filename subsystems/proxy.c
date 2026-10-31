@@ -214,8 +214,11 @@ static const struct {
 	{ "127.0.0.0", 8, PROXY_HARD },		/* loopback */
 	{ "169.254.0.0", 16, 0 },		/* link local */
 	{ "169.254.169.254", 32, PROXY_HARD },	/* cloud metadata */
+	{ "169.254.170.2", 32, PROXY_HARD },	/* container metadata */
+	{ "169.254.170.23", 32, PROXY_HARD },	/* pod identity */
 	{ "172.16.0.0", 12, 0 },		/* RFC 1918 */
 	{ "192.0.0.0", 24, 0 },			/* IETF protocol assignments */
+	{ "192.0.0.192", 32, PROXY_HARD },	/* cloud metadata, legacy */
 	{ "192.0.2.0", 24, PROXY_HARD },	/* documentation */
 	{ "192.88.99.0", 24, PROXY_HARD },	/* 6to4 relay anycast */
 	{ "192.168.0.0", 16, 0 },		/* RFC 1918 */
@@ -239,6 +242,7 @@ static const struct {
 	{ "5f00::", 16, PROXY_HARD },		/* SRv6 SIDs */
 	{ "fc00::", 7, 0 },			/* unique local */
 	{ "fd00:ec2::254", 128, PROXY_HARD },	/* cloud metadata */
+	{ "fd00:ec2::23", 128, PROXY_HARD },	/* pod identity */
 	{ "fe80::", 10, 0 },			/* link local */
 	{ "fec0::", 10, PROXY_HARD },		/* site local, deprecated */
 	{ "ff00::", 8, 0 },			/* multicast */
@@ -351,7 +355,7 @@ proxy_add_range(struct proxy_range *list, int *n, const char *s)
 	int rc;
 
 	if (*n >= PROXY_MAX_RANGES)
-		return (-1);
+		return (-3);	/* over the limit */
 	if ((rc = proxy_parse_range(s, &list[*n])) != 0)
 		return (rc);
 	(*n)++;
