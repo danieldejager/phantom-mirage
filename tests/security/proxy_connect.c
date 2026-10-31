@@ -37,6 +37,29 @@ __wrap_make_socket(int (*f)(int, const struct sockaddr *, socklen_t),
 }
 
 /*
+ * The upstream end is a socketpair; report the address it stands for,
+ * since the proxy checks the connected peer (PM-SCR-104).
+ */
+int __real_getpeername(int, struct sockaddr *, socklen_t *);
+
+int
+__wrap_getpeername(int fd, struct sockaddr *sa, socklen_t *len)
+{
+	struct sockaddr_in sin;
+
+	if (fd != peer[0])
+		return (__real_getpeername(fd, sa, len));
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_port = htons(80);
+	sin.sin_addr.s_addr = htonl(0xc0000205);	/* 192.0.2.5 */
+	if (*len > sizeof(sin))
+		*len = sizeof(sin);
+	memcpy(sa, &sin, *len);
+	return (0);
+}
+
+/*
  * Review fix: a second request on the same client connection while the
  * first upstream connect is in flight must get an error response and a
  * clean close, not silence.
