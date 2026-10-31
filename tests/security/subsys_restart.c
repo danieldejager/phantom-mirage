@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <pcap.h>
 #include <dnet.h>
 #include <event2/event.h>
@@ -32,6 +33,7 @@
 struct subsystem *template_subsystem_find(const char *);
 void subsystem_cleanup(struct subsystem *);
 void subsystem_restart(int, short, void *);
+void template_subsystem_free(struct subsystem *);
 
 /* The pending subsystem_restart timer for the subsystem, if any */
 static struct subsystem *want;
@@ -155,6 +157,29 @@ main(int argc, char **argv)
 		    "slow retry started it");
 		sub->cmd.pid = -1;
 		return (rc);
+	}
+	if (strcmp(t, "freed") == 0) {
+		/*
+		 * PM-SCR-207: freeing a subsystem with a restart pending
+		 * cancels it; the timer must not fire on freed memory
+		 */
+		struct timeval start, now;
+
+		fails = 1;
+		subsystem_cleanup(sub);
+		if (expect(calls == 1 && restart_in(sub) >= 0,
+		    "restart pending"))
+			return (1);
+		template_subsystem_free(sub);
+		gettimeofday(&start, NULL);
+		do {
+			event_base_loop(libevent_base,
+			    EVLOOP_ONCE | EVLOOP_NONBLOCK);
+			usleep(50000);
+			gettimeofday(&now, NULL);
+		} while (now.tv_sec - start.tv_sec <=
+		    SUBSYSTEM_RESTART_INTERVAL + 1);
+		return (expect(calls == 1, "no restart after the free"));
 	}
 	printf("FAIL: unknown case %s\n", t);
 	return (1);

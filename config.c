@@ -1104,6 +1104,10 @@ template_subsystem_free(struct subsystem *sub)
 
 	cmd_free(&sub->cmd);
 
+	/* CWE-416: a pending restart must not fire on the freed subsystem */
+	if (sub->restart_ev != NULL)
+		event_free(sub->restart_ev);
+
 	free(sub->cmdstring);
 	free(sub);
 }
