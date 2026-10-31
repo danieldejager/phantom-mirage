@@ -1,0 +1,4 @@
+# PM-SCR-127: record_add_hash leaks the entry for a repeated chunk
+cc_daemon stats_hash_dup tests/security/stats_hash_dup.c
+ASAN_OPTIONS=detect_leaks=0
+run_clean stats_hash_dup

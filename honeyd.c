@@ -1117,8 +1117,11 @@ honeyd_delay_cb(int fd, short which, void *arg)
 		pool_free(pool_pkt, ip);
 	template_free(tmpl);
 
-	if (delay->flags & DELAY_NEEDFREE)
+	if (delay->flags & DELAY_NEEDFREE) {
+		/* Only a delayed packet owns a timer */
+		event_free(delay->timeout);
 		pool_free(pool_delay, delay);
+	}
 }
 
 /*
@@ -1499,7 +1502,8 @@ tcp_free(struct tcp_con *con)
 	    NULL, 0);
 	honeyd_log_flowend(honeyd_logfp, IP_PROTO_TCP, &con->conhdr);
 
-	evtimer_del(con->retrans_timeout);
+	event_free(con->retrans_timeout);
+	event_free(con->conhdr.timeout);
 
 	if (con->cmd_pfd > 0)
 		cmd_free(&con->cmd);

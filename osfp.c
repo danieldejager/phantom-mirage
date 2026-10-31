@@ -139,6 +139,7 @@ honeyd_osfp_timeout(int fd, short what, void *arg)
 	root = honeyd_osfp_hash(&ip);
 	SPLAY_REMOVE(osfptree, root, entry);
 
+	event_free(entry->timeout);
 	free(entry);
 }
 

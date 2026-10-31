@@ -163,8 +163,8 @@ arp_free(struct arp_req *req)
 	if (SPLAY_FIND(haarptree, &ha_arp_reqs, req) != NULL)
 		SPLAY_REMOVE(haarptree, &ha_arp_reqs, req);
 
-	evtimer_del(req->active);
-	evtimer_del(req->discover);
+	event_free(req->active);
+	event_free(req->discover);
 	free(req);
 }
 
