@@ -193,7 +193,69 @@ remote_case(void)
 	return (bad);
 }
 
-/* Optional argument: smtp, get, connect, syncfail or remote */
+/*
+ * R2 follow-up: evdns_resolve_* fails synchronously on a live
+ * transaction. The client must get the same reply as for a failed
+ * lookup (HELO reply, proxy bad domain), not silence.
+ */
+static int
+reply_seen(int fd)
+{
+	char buf[512];
+	ssize_t r;
+
+	event_loop(EVLOOP_NONBLOCK);	/* flush the bufferevent */
+	r = recv(fd, buf, sizeof(buf) - 1, MSG_DONTWAIT);
+	return (r > 0);
+}
+
+static int
+syncreply_case(void)
+{
+	struct sockaddr_in sin;
+	struct smtp_ta *sta;
+	struct proxy_ta *ta;
+	const char *in = "HELO a\r\n";
+	int sv[2], bad = 0, i;
+
+	fail_resolve = 1;
+	setup(sv, &sin);
+	sta = smtp_ta_new(sv[0], (struct sockaddr *)&sin, sizeof(sin),
+	    NULL, 0, 0);
+	reply_seen(sv[1]);		/* drop the greeting */
+	write(sv[1], in, strlen(in));
+	event_loop(EVLOOP_ONCE);
+	i = reply_seen(sv[1]);
+	printf("smtp HELO, resolver failed: %s\n", i ? "replied" : "no reply");
+	bad |= !i;
+	smtp_errorcb(sta->bev, BEV_EVENT_EOF, sta);
+	close(sv[1]);
+
+	for (i = 0; i < 2; i++) {
+		int got;
+
+		setup(sv, &sin);
+		ta = proxy_ta_new(sv[0], (struct sockaddr *)&sin,
+		    sizeof(sin), NULL, 0);
+		kv_replace(&ta->dictionary, "$rawhost", "example.invalid");
+		if (i == 0)
+			proxy_handle_get(ta);
+		else
+			proxy_handle_connect(ta);
+		got = reply_seen(sv[1]);
+		printf("proxy %s, resolver failed: %s\n",
+		    i == 0 ? "GET" : "CONNECT", got ? "replied" : "no reply");
+		bad |= !got;
+		/* After the reply, wantclose has already freed ta */
+		if (!got)
+			proxy_errorcb(ta->bev, BEV_EVENT_EOF, ta);
+		close(sv[1]);
+	}
+	fail_resolve = 0;
+	return (bad);
+}
+
+/* Optional argument: smtp, get, connect, syncfail, syncreply or remote */
 int
 main(int argc, char **argv)
 {
@@ -208,6 +270,8 @@ main(int argc, char **argv)
 		proxy_case("CONNECT", proxy_handle_connect);
 	if (only != NULL && strcmp(only, "syncfail") == 0)
 		return (syncfail_case());
+	if (only != NULL && strcmp(only, "syncreply") == 0)
+		return (syncreply_case());
 	if (only != NULL && strcmp(only, "remote") == 0)
 		return (remote_case());
 	return (0);
