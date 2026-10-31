@@ -76,12 +76,12 @@ main(int argc, char **argv)
 	fcntl(sv[1], F_SETFL, O_NONBLOCK);
 	ta = proxy_ta_new(sv[0], (struct sockaddr *)&sin, sizeof(sin),
 	    NULL, 0);
-	kv_replace(&ta->dictionary, "$host", "192.0.2.5");
-	kv_replace(&ta->dictionary, "$rawhost", "192.0.2.5");
+	kv_replace(&ta->dictionary, "$host", "100.200.0.5");
+	kv_replace(&ta->dictionary, "$rawhost", "100.200.0.5");
 	kv_replace(&ta->dictionary, "$rawuri", "/");
 	if (port != NULL)
 		kv_replace(&ta->dictionary, "$port", port);
-	inet_pton(AF_INET, "192.0.2.5", &in);
+	inet_pton(AF_INET, "100.200.0.5", &in);
 
 	ta->dns_pending++;
 	if (strcmp(path, "get") == 0)
