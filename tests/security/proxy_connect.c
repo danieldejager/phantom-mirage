@@ -35,12 +35,70 @@ __wrap_make_socket(int (*f)(int, const struct sockaddr *, socklen_t),
 	return (peer[0]);
 }
 
+/*
+ * Review fix: a second request on the same client connection while the
+ * first upstream connect is in flight must get an error response and a
+ * clean close, not silence.
+ */
+static int
+second_request(void)
+{
+	struct sockaddr_in sin;
+	struct proxy_ta *ta;
+	char buf[512];
+	ssize_t r;
+	size_t got = 0;
+	int sv[2], i;
+
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = htonl(0x7f000001);
+	socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+	ta = proxy_ta_new(sv[0], (struct sockaddr *)&sin, sizeof(sin),
+	    NULL, 0);
+	kv_replace(&ta->dictionary, "$host", "192.0.2.5");
+	kv_replace(&ta->dictionary, "$rawuri", "/");
+	proxy_connect(ta, "192.0.2.5", 80);	/* first request */
+	proxy_connect(ta, "192.0.2.6", 80);	/* second, client still here */
+	for (i = 0; i < 4; i++)
+		event_loop(EVLOOP_NONBLOCK);
+
+	fcntl(sv[1], F_SETFL, O_NONBLOCK);
+	while (got < sizeof(buf) - 1 &&
+	    (r = read(sv[1], buf + got, sizeof(buf) - 1 - got)) > 0)
+		got += r;
+	buf[got] = '\0';
+	if (strncmp(buf, "HTTP/1.0 400 ", 13) != 0) {
+		printf("FAIL: no error response to second request\n");
+		return (1);
+	}
+	if (read(sv[1], buf, 1) != 0) {
+		printf("FAIL: client connection not closed\n");
+		return (1);
+	}
+	if (fcntl(peer[0], F_GETFD) != -1) {
+		printf("FAIL: upstream socket %d still open after close\n",
+		    peer[0]);
+		return (1);
+	}
+	printf("second request: error response and clean close\n");
+	close(sv[1]);
+	close(peer[1]);
+	return (0);
+}
+
+/* Optional argument "second" runs only the second request case */
 int
-main(void)
+main(int argc, char **argv)
 {
 	struct sockaddr_in sin;
 	struct proxy_ta *ta;
 	int sv[2], i;
+
+	if (argc > 1 && strcmp(argv[1], "second") == 0) {
+		event_init();
+		return (second_request());
+	}
 
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;

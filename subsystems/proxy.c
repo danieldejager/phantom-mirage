@@ -364,9 +364,14 @@ proxy_connect(struct proxy_ta *ta, char *host, int port)
 {
 	fprintf(stderr, "Connecting to %s port %d\n", host, port);
 
-	/* Only one upstream connection per transaction */
-	if (ta->connect_pending || ta->remote_fd != -1)
+	/*
+	 * Only one upstream connection per transaction: refuse a second
+	 * request with an error and close once it has been written.
+	 */
+	if (ta->connect_pending || ta->remote_fd != -1) {
+		proxy_bad_connection(ta);
 		return;
+	}
 
 	if (proxy_allowed_network(host)) {
 		char *local_ip = kv_find(&ta->dictionary, "$dstipaddress");
