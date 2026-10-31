@@ -1042,6 +1042,11 @@ honeyd_delay_cb(int fd, short which, void *arg)
 			syslog(LOG_ERR, "couldn't GRE encapsulate packet: %m");
 		else
 			count_increment(stats_network.output_bytes, iplen);
+	} else if ((delay->flags & DELAY_ETHERNET) &&
+	    (tmpl == NULL || tmpl->inter == NULL)) {
+		/* External delivery needs the template's interface */
+		syslog(LOG_ERR, "%s: no interface for external delivery",
+		    __func__);
 	} else if (delay->flags & DELAY_ETHERNET) {
 		extern struct network *reverse;
 		struct interface *inter = tmpl->inter;
@@ -3254,8 +3259,9 @@ icmp_recv_cb(struct template *tmpl, u_char *pkt, u_short pktlen)
 		/* YM: Added ICMP Address Mask reply capability */
 		case ICMP_MASK:
 		{
-			/* Happens only if xp_print != NULL */
-				if (xp_print->flags.icmp_addrmask_reply) {
+			/* No xprobe fingerprint: no reply */
+				if (xp_print != NULL &&
+				    xp_print->flags.icmp_addrmask_reply) {
 				icmp_idseq = (struct icmp_msg_idseq *)(icmp + 1);
 
 				syslog(LOG_DEBUG, "Sending ICMP Address Mask Reply: %s -> %s",
@@ -3271,8 +3277,9 @@ icmp_recv_cb(struct template *tmpl, u_char *pkt, u_short pktlen)
 		/* YM: Added ICMP Information reply capability */
 		case ICMP_INFO:
 		{
-			/* Happens only if xp_print != NULL */
-				if (xp_print->flags.icmp_info_reply) {
+			/* No xprobe fingerprint: no reply */
+				if (xp_print != NULL &&
+				    xp_print->flags.icmp_info_reply) {
 				icmp_idseq = (struct icmp_msg_idseq *)(icmp + 1);
 
 				syslog(LOG_DEBUG, "Sending ICMP Info Reply: %s -> %s",
@@ -3623,8 +3630,12 @@ honeyd_input(const struct interface *inter, struct ip_hdr *ip, u_short iplen)
 	if ((tmpl != NULL) && (tmpl->flags & TEMPLATE_EXTERNAL))
 		flags |= DELAY_ETHERNET;
 
-	/* Delay the packet if necessary, otherwise deliver it directly */
-	honeyd_delay_packet(NULL, inter, ip, iplen, NULL, NULL, delay, flags, no_spoof);
+	/*
+	 * Delay the packet if necessary, otherwise deliver it directly.
+	 * External delivery needs the template for its interface.
+	 */
+	honeyd_delay_packet((flags & DELAY_ETHERNET) ? tmpl : NULL, inter,
+	    ip, iplen, NULL, NULL, delay, flags, no_spoof);
 }
 
 // This is the callback that will be called whenever an external packet is recieved via pcap

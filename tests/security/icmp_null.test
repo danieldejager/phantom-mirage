@@ -1,0 +1,6 @@
+# PM-SCR-001 (ICMP mask and info with no xprobe fingerprint) and
+# PM-SCR-004 (router path queues DELAY_ETHERNET with a NULL template)
+cc_daemon icmp_null tests/security/icmp_null.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean icmp_null

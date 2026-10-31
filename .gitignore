@@ -96,3 +96,4 @@ os-test/results*
 __pycache__/
 /regress/config.nmap
 /regress/nmap.log
+/tests/security/out/
