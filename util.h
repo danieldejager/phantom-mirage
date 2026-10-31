@@ -83,6 +83,12 @@ char *kv_find(struct keyvalueq *head, char *key);
 int kv_remove(struct keyvalueq *head, char *key);
 void kv_replace(struct keyvalueq *head, char *key, char *value);
 
+/*
+ * Longest input line the line based subsystems buffer before they drop
+ * the connection
+ */
+#define MAX_LINE	4096
+
 /* Other misc stuff */
 int make_bound_connect(int, char *, uint16_t, char *);
 int make_socket(int (*f)(int, const struct sockaddr *, socklen_t), int type,

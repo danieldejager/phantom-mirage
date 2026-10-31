@@ -866,6 +866,10 @@ smtp_readcb(struct bufferevent *bev, void *arg)
 			return;
 		}
 	}
+
+	/* No end of line within MAX_LINE bytes: drop the connection */
+	if (evbuffer_get_length(EVBUFFER_INPUT(bev)) >= MAX_LINE)
+		smtp_ta_free(arg);
 }
 
 void
@@ -945,6 +949,7 @@ smtp_ta_new(int fd, struct sockaddr *sa, socklen_t salen,
 	    smtp_readcb, smtp_writecb, smtp_errorcb, ta);
 	if (ta->bev == NULL)
 		goto error;
+	bufferevent_setwatermark(ta->bev, EV_READ, 0, MAX_LINE);
 
 	/* Create our tiny dictionary */
 	name_from_addr(sa, salen, &ipname, &portname);
