@@ -1387,6 +1387,21 @@ honeyd_flow_option(const char *name, uint32_t def)
 	return ((uint32_t)cfg->cfg_int);
 }
 
+/*
+ * Like honeyd_flow_option(), but 0 turns the limit off (returned as 0)
+ * and only a missing or negative value keeps the default.
+ */
+uint32_t
+honeyd_limit_option(const char *name, uint32_t def)
+{
+	const struct honeyd_plugin_cfg *cfg;
+
+	cfg = plugins_config_find_item("honeyd", name, HD_CONFIG_INT);
+	if (cfg == NULL || cfg->cfg_int < 0)
+		return (def);
+	return ((uint32_t)cfg->cfg_int);
+}
+
 uint32_t
 template_max_refcnt(void)
 {
@@ -1544,7 +1559,7 @@ tcp_free(struct tcp_con *con)
 	event_free(con->retrans_timeout);
 	event_free(con->conhdr.timeout);
 
-	if (con->cmd_pfd > 0)
+	if (con->cmd_pfd != -1)
 		cmd_free(&con->cmd);
 	if (con->payload != NULL)
 		free(con->payload);
@@ -1699,7 +1714,7 @@ udp_free(struct udp_con *con)
 		free(buf);
 	}
 
-	if (con->cmd_pfd > 0)
+	if (con->cmd_pfd != -1)
 		cmd_free(&con->cmd);
 	if (con->tmpl != NULL)
 		template_free(con->tmpl);
@@ -1886,7 +1901,11 @@ tcp_setupconnect(struct tcp_con *con)
 	return (-1);
 }
 
-void
+/*
+ * Returns CMD_FORK_CAP if a TCP flow must be reset because the script
+ * process cap refused it, otherwise 0.
+ */
+int
 generic_connect(struct template *tmpl, struct tuple *hdr,
     struct command *cmd, void *con)
 {
@@ -1923,13 +1942,13 @@ generic_connect(struct template *tmpl, struct tuple *hdr,
 	if (action->status == PORT_SUBSYSTEM) {
 		if (cmd_subsystem_schedule_connect(hdr, cmd, port, con) == -1)
 			goto out;
-		return;
+		return (0);
 	} else if (action->status == PORT_PYTHON) {
 #ifdef HAVE_PYTHON		
 		if (pyextend_connection_start(hdr, cmd, con,
 			action->action_extend) == -1)
 			goto out;
-		return;
+		return (0);
 #endif
 	}
 
@@ -1937,7 +1956,7 @@ generic_connect(struct template *tmpl, struct tuple *hdr,
 	if (proto == IP_PROTO_TCP && action->status == PORT_RESERVED) {
 		if (cmd_subsystem_localconnect(hdr, cmd, port, con) == -1)
 			goto err;
-		return;
+		return (0);
 	}
 
 	if (action->status == PORT_OPEN || action->aitop == NULL) {
@@ -1955,7 +1974,7 @@ generic_connect(struct template *tmpl, struct tuple *hdr,
 		res = proxy_connect(hdr, cmd, action->aitop, line, con);
 		if (res == -1)
 			goto out;
-		return;
+		return (0);
 	}
 
 	/* Create arguments */
@@ -1973,15 +1992,19 @@ generic_connect(struct template *tmpl, struct tuple *hdr,
 
 	argv[i] = NULL;
 
-	if (cmd_fork(hdr, cmd, tmpl, argv[0], argv, con) == -1) {
-		syslog(LOG_WARNING, "malloc %s: %m", honeyd_contoa(hdr));
+	if ((i = cmd_fork(hdr, cmd, tmpl, argv[0], argv, con)) != 0) {
+		/* At the cap: cmd_fork logged it (rate limited). TCP gets a
+		 * RST from the caller, UDP data is dropped without ICMP. */
+		if (i == CMD_FORK_CAP)
+			return (proto == IP_PROTO_TCP ? CMD_FORK_CAP : 0);
+		syslog(LOG_WARNING, "script %s: %m", honeyd_contoa(hdr));
 		goto err;
 	}
 
 	syslog(LOG_DEBUG, "Connection established: %s %s <-> %s",
 	    proto == IP_PROTO_TCP ? "tcp" : "udp",
 	    honeyd_contoa(hdr), command);
-	return;
+	return (0);
 
  err:
 	if (proto == IP_PROTO_TCP)
@@ -1990,6 +2013,7 @@ generic_connect(struct template *tmpl, struct tuple *hdr,
 	syslog(LOG_DEBUG, "Connection established: %s %s",
 	    proto == IP_PROTO_TCP ? "tcp" : "udp",
 	    honeyd_contoa(hdr));
+	return (0);
 }
 
 int
@@ -2797,7 +2821,9 @@ tcp_recv_cb(struct template *tmpl, const struct interface* iface, u_char *pkt, u
 			tcp_send(con, TH_ACK, NULL, 0);
 
 			con->state = TCP_STATE_ESTABLISHED;
-			generic_connect(tmpl, &con->conhdr, &con->cmd, con);
+			if (generic_connect(tmpl, &con->conhdr, &con->cmd,
+				con) == CMD_FORK_CAP)
+				goto dropwithreset;
 			break;
 
 		case TCP_STATE_SYN_RECEIVED:
@@ -2830,7 +2856,9 @@ tcp_recv_cb(struct template *tmpl, const struct interface* iface, u_char *pkt, u
 			connection_update(&tcplru, &con->conhdr);
 
 			con->state = TCP_STATE_ESTABLISHED;
-			generic_connect(tmpl, &con->conhdr, &con->cmd, con);
+			if (generic_connect(tmpl, &con->conhdr, &con->cmd,
+				con) == CMD_FORK_CAP)
+				goto dropwithreset;
 			break;
 
 		case TCP_STATE_ESTABLISHED:
@@ -4026,6 +4054,8 @@ honeyd_sigchld(int fd, short what, void *arg)
 		/* Ignore the rrdtool driver for children accounting */
 		if (honeyd_rrd_drv != NULL && honeyd_rrd_drv->pid == pid)
 			continue;
+		/* PM-SCR-152: release its script process slot */
+		cmd_script_reaped(pid);
 		honeyd_nchildren--;
 	}
 }

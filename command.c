@@ -51,6 +51,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <dnet.h>
 #include <syslog.h>
@@ -100,6 +101,161 @@ cmd_trigger_write(struct command *cmd, int size)
 		TRACE(event_get_fd(cmd->pwrite), event_add(cmd->pwrite, NULL));
 }
 
+/*
+ * PM-SCR-152: script processes. Every script child forked by cmd_fork()
+ * has an entry in a pid map from fork until honeyd_sigchld() reaps it,
+ * so the live count is exact. "option honeyd max_script_procs N" caps
+ * the live script processes (default HONEYD_MAX_SCRIPT_PROCS) and
+ * "option honeyd max_script_procs_per_source N" caps those started for
+ * one source address (default HONEYD_MAX_SCRIPT_PROCS_SOURCE); 0 means
+ * no limit. The entry remembers the command that owns the child, and
+ * cmd_free() only signals a pid that is still in the map for that same
+ * command, so a reaped (and possibly reused) pid is never signalled.
+ */
+struct scriptproc {
+	SPLAY_ENTRY(scriptproc) node;
+	pid_t pid;
+	ip_addr_t src;
+	struct command *cmd;	/* NULL once cmd_free() let go of it */
+};
+
+struct scriptsrc {
+	SPLAY_ENTRY(scriptsrc) node;
+	ip_addr_t addr;
+	uint32_t nprocs;
+};
+
+static int
+scriptproc_compare(struct scriptproc *a, struct scriptproc *b)
+{
+	return (a->pid < b->pid ? -1 : a->pid > b->pid);
+}
+
+static int
+scriptsrc_compare(struct scriptsrc *a, struct scriptsrc *b)
+{
+	return (a->addr < b->addr ? -1 : a->addr > b->addr);
+}
+
+static SPLAY_HEAD(scriptproctree, scriptproc) scriptprocs =
+    SPLAY_INITIALIZER(&scriptprocs);
+static SPLAY_HEAD(scriptsrctree, scriptsrc) scriptsrcs =
+    SPLAY_INITIALIZER(&scriptsrcs);
+SPLAY_PROTOTYPE(scriptproctree, scriptproc, node, scriptproc_compare);
+SPLAY_GENERATE(scriptproctree, scriptproc, node, scriptproc_compare);
+SPLAY_PROTOTYPE(scriptsrctree, scriptsrc, node, scriptsrc_compare);
+SPLAY_GENERATE(scriptsrctree, scriptsrc, node, scriptsrc_compare);
+
+static uint32_t script_nprocs;
+uint32_t cmd_script_refused;	/* flows refused at the cap, ever */
+
+static struct scriptsrc *
+scriptsrc_find(ip_addr_t addr)
+{
+	struct scriptsrc tmp;
+
+	tmp.addr = addr;
+	return (SPLAY_FIND(scriptsrctree, &scriptsrcs, &tmp));
+}
+
+static struct scriptproc *
+scriptproc_find(pid_t pid)
+{
+	struct scriptproc tmp;
+
+	tmp.pid = pid;
+	return (SPLAY_FIND(scriptproctree, &scriptprocs, &tmp));
+}
+
+/* Live script processes, all sources */
+uint32_t
+cmd_script_procs(void)
+{
+	return (script_nprocs);
+}
+
+/* Live script processes started for flows from this source */
+uint32_t
+cmd_script_source_procs(ip_addr_t addr)
+{
+	struct scriptsrc *ss = scriptsrc_find(addr);
+
+	return (ss != NULL ? ss->nprocs : 0);
+}
+
+/* True if a new script process for this source must be refused */
+static int
+cmd_script_full(ip_addr_t src)
+{
+	uint32_t max;
+
+	max = honeyd_limit_option("max_script_procs",
+	    HONEYD_MAX_SCRIPT_PROCS);
+	if (max != 0 && script_nprocs >= max)
+		return (1);
+	max = honeyd_limit_option("max_script_procs_per_source",
+	    HONEYD_MAX_SCRIPT_PROCS_SOURCE);
+	if (max != 0 && cmd_script_source_procs(src) >= max)
+		return (1);
+	return (0);
+}
+
+/* At most one log line per second, with the count since the last one */
+static void
+cmd_script_refuse(struct tuple *hdr)
+{
+	static time_t last;
+	static uint32_t since;
+	time_t now = time(NULL);
+
+	cmd_script_refused++;
+	since++;
+	if (now == last)
+		return;
+	last = now;
+	syslog(LOG_NOTICE, "script process cap reached (%u live): refused "
+	    "%u flow(s), latest %s", script_nprocs, since,
+	    honeyd_contoa(hdr));
+	since = 0;
+}
+
+/* Called from honeyd_sigchld() for every reaped pid */
+void
+cmd_script_reaped(pid_t pid)
+{
+	struct scriptproc *sp;
+	struct scriptsrc *ss;
+
+	if ((sp = scriptproc_find(pid)) == NULL)
+		return;
+	SPLAY_REMOVE(scriptproctree, &scriptprocs, sp);
+	script_nprocs--;
+	if ((ss = scriptsrc_find(sp->src)) != NULL && --ss->nprocs == 0) {
+		SPLAY_REMOVE(scriptsrctree, &scriptsrcs, ss);
+		free(ss);
+	}
+	free(sp);
+}
+
+/*
+ * The flow is gone: kill the script and everything it started. The
+ * child made itself a process group leader, and the group cannot be
+ * reused while the leader is unreaped, which the map guarantees here.
+ * The entry stays (and counts) until the child is reaped.
+ */
+static void
+cmd_script_kill(struct command *cmd)
+{
+	struct scriptproc *sp;
+
+	if (cmd->pid <= 0 || (sp = scriptproc_find(cmd->pid)) == NULL ||
+	    sp->cmd != cmd)
+		return;
+	sp->cmd = NULL;
+	if (killpg(sp->pid, SIGKILL) == -1)
+		kill(sp->pid, SIGKILL);
+}
+
 void
 cmd_free(struct command *cmd)
 {
@@ -118,6 +274,8 @@ cmd_free(struct command *cmd)
 		TRACE(event_get_fd(cmd->peread), event_free(cmd->peread));
 		cmd->peread = NULL;
 	}
+
+	cmd_script_kill(cmd);
 
 	TRACE_RESET(cmd->pfd, close(cmd->pfd));
 	cmd->pfd = -1;
@@ -428,14 +586,37 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 	extern int honeyd_nchildren;
 	int pair[2], perr[2];
 	struct callback *cb;
+	struct scriptproc *sp;
+	struct scriptsrc *ss;
 	sigset_t sigmask;
+	/* SOCK_SEQPACKET keeps datagram boundaries for UDP scripts and,
+	 * unlike SOCK_DGRAM, gives the script EOF when the flow ends */
+	int type = hdr->type == SOCK_DGRAM ? SOCK_SEQPACKET : hdr->type;
 
-	if (socketpair(AF_UNIX, hdr->type, 0, pair) == -1)
+	if (cmd_script_full(hdr->ip_src)) {
+		cmd_script_refuse(hdr);
+		cmd->pfd = -1;
+		return (CMD_FORK_CAP);
+	}
+	if ((sp = calloc(1, sizeof(*sp))) == NULL)
 		return (-1);
+	if ((ss = scriptsrc_find(hdr->ip_src)) == NULL) {
+		if ((ss = calloc(1, sizeof(*ss))) == NULL) {
+			free(sp);
+			return (-1);
+		}
+		ss->addr = hdr->ip_src;
+		SPLAY_INSERT(scriptsrctree, &scriptsrcs, ss);
+	}
+	/* counted from here on; undone by script_undo on failure */
+	ss->nprocs++;
+
+	if (socketpair(AF_UNIX, type, 0, pair) == -1)
+		goto script_undo;
 	if (socketpair(AF_UNIX, SOCK_STREAM, 0, perr) == -1) {
 		TRACE_RESET(pair[0], close(pair[0]));
 		TRACE_RESET(pair[1], close(pair[1]));
-		return (-1);
+		goto script_undo;
 	}
 
 	/* Block SIGCHLD */
@@ -453,6 +634,10 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 	}
 
 	if (cmd->pid == 0) {
+		/* Own process group, so cmd_free() also kills what the
+		 * script starts */
+		setpgid(0, 0);
+
 		/* Child privileges */
 		sandbox_script_prepare(argv);
 		cmd_setpriv(tmpl);
@@ -494,6 +679,15 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 		/* NOT REACHED */
 	}
 
+	/* Also from the parent, so the group exists before any kill;
+	 * EACCES once the child has exec'd is fine, it did it itself */
+	setpgid(cmd->pid, cmd->pid);
+	sp->pid = cmd->pid;
+	sp->src = hdr->ip_src;
+	sp->cmd = cmd;
+	SPLAY_INSERT(scriptproctree, &scriptprocs, sp);
+	script_nprocs++;
+
 	TRACE_RESET(pair[1], close(pair[1]));
 	TRACE(pair[0], cmd->pfd = pair[0]);
 	if (fcntl(cmd->pfd, F_SETFD, 1) == -1)
@@ -520,10 +714,16 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 
 	honeyd_nchildren++;
 
-	/* Install old signal handler */
+	/*
+	 * The child runs and is accounted for, so never unwind from here:
+	 * that would close descriptors its events still use. Retry the
+	 * unblock once so SIGCHLD (and so reaping) is not left blocked.
+	 */
 	if (sigprocmask(SIG_UNBLOCK, &sigmask, NULL) == -1) {
 		warn("sigprocmask");
-		goto fork_err;
+		if (sigprocmask(SIG_UNBLOCK, &sigmask, NULL) == -1)
+			syslog(LOG_ERR, "%s: SIGCHLD stays blocked: %m",
+			    __func__);
 	}
 	return (0);
 
@@ -540,6 +740,14 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 	TRACE_RESET(pair[1], close(pair[1]));
 	cmd->pfd = -1;
 
+ script_undo:
+	if (--ss->nprocs == 0) {
+		SPLAY_REMOVE(scriptsrctree, &scriptsrcs, ss);
+		free(ss);
+	}
+	free(sp);
+	cmd->pid = -1;
+	cmd->pfd = -1;
 	return (-1);
 }
 
