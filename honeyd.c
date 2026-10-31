@@ -1617,7 +1617,7 @@ udp_new(struct ip_hdr *ip, struct udp_hdr *udp, int local)
 {
 	struct udp_con *con;
 
-	udp_make_room();
+	/* Allocate first so a failure at the cap cannot evict a flow */
 	if ((con = calloc(1, sizeof(struct udp_con))) == NULL) {
 			syslog(LOG_WARNING, "calloc: %m");
 			return (NULL);
@@ -1633,6 +1633,8 @@ udp_new(struct ip_hdr *ip, struct udp_hdr *udp, int local)
 		return (NULL);
 	}
 
+	/* The new flow is not on udplru yet, so it is never the one evicted */
+	udp_make_room();
 	udp_insert(con);
 
 	honeyd_log_flownew(honeyd_logfp, IP_PROTO_UDP, &con->conhdr);

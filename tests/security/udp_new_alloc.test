@@ -1,0 +1,5 @@
+# PM-SCR-157: udp_new allocates before making room under the UDP flow cap
+cc_daemon udp_new_alloc tests/security/udp_new_alloc.c -Wl,--wrap=calloc
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean udp_new_alloc
