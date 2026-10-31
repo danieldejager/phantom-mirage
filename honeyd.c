@@ -3174,11 +3174,22 @@ handle_udp_packet(struct template *tmpl, void *wrapper)
 		if (!unicast && isBroadcast)
 			con->conhdr.ip_dst = templateIp;
 
+		/*
+		 * PM-SCR-159: create the idle timer before the flow is listed,
+		 * counted or takes a source reference, so a failure leaves
+		 * nothing to undo but the allocation.
+		 */
+		con->conhdr.timeout = evtimer_new(libevent_base, honeyd_udp_timeout, con);
+		if (con->conhdr.timeout == NULL) {
+			syslog(LOG_ERR, "%s: evtimer_new failed", __func__);
+			free(con);
+			return 0;
+		}
+
 		/* The new flow is not on udplru yet, so it is never evicted */
 		udp_make_room();
 		udp_insert(con);
 		honeyd_source_take(&con->conhdr);
-		con->conhdr.timeout = evtimer_new(libevent_base, honeyd_udp_timeout, con);
 		honeyd_log_flownew(honeyd_logfp, IP_PROTO_UDP, &con->conhdr);
 
 		con->tmpl = template_ref(tmpl);
