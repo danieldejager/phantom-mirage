@@ -79,10 +79,21 @@ int debug;
 static void
 usage(char *progname)
 {
-	fprintf(stderr, "%s [-p port] [-l logfile] [-L mail_logfile]\n"
+	fprintf(stderr, "%s [-p port] [-l logfile] [-L mail_logfile]"
+	    " [-A range] [-D range]\n"
 	    "\t -p port    - specifies port to bind to\n"
 	    "\t -l logfile - logs PROXY transaction to specified file\n"
-	    "\t -L mail_logfile - logs SMTP transactions to specified file\n",
+	    "\t -L mail_logfile - logs SMTP transactions to specified file\n"
+	    "\t -A range   - allows proxying to an address range inside the\n"
+	    "\t              private, link local and similar special purpose\n"
+	    "\t              ranges, for example 10.1.0.0/16; never reopens\n"
+	    "\t              loopback, 0/8, ::, documentation, NAT64, 6to4,\n"
+	    "\t              Teredo, discard, site local, broadcast, own\n"
+	    "\t              interface or decoy addresses; up to 32 ranges,\n"
+	    "\t              none by default\n"
+	    "\t -D range   - refuses the decoy address range, for example\n"
+	    "\t              10.20.0.0/16; IPv4 mapped forms are the same\n"
+	    "\t              range; up to 32 ranges\n",
 	    progname);
 	exit(EXIT_SUCCESS);
 }
@@ -98,7 +109,7 @@ main(int argc, char **argv)
 	char *ports = NULL;
 	u_short port = 2525;
 
-	while ((ch = getopt(argc, argv, "ve:p:L:l:d:")) != -1) {
+	while ((ch = getopt(argc, argv, "ve:p:L:l:d:A:D:")) != -1) {
 		switch (ch) {
 		case 'e':
 			fprintf(stderr, "Redirecting stderr to %s\n", optarg);
@@ -120,6 +131,14 @@ main(int argc, char **argv)
 			break;
 		case 'L':
 			mail_logfile = optarg;
+			break;
+		case 'A':
+			if (proxy_allow_range(optarg) == -1)
+				errx(EXIT_FAILURE, "Bad -A range: %s", optarg);
+			break;
+		case 'D':
+			if (proxy_decoy_range(optarg) == -1)
+				errx(EXIT_FAILURE, "Bad -D range: %s", optarg);
 			break;
 		case 'd': {
 			if (smtp_set_datadir(optarg) == -1)
