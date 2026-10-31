@@ -17,6 +17,9 @@
  * PM-SCR-138: with DAT bad the personality zeroes the first UDP payload
  * byte even when the datagram has no payload, one byte past the end.
  *
+ * PM-SCR-141: the timestamp reply copied the request receive field into
+ * its transmit field and counted milliseconds from local midnight.
+ *
  * Usage: icmp_overread tstamp|unreach|quote|dat
  */
 #include <sys/types.h>
@@ -104,14 +107,52 @@ poison_pool(void)
 	pool_free(pool_pkt, p);
 }
 
+/* ms since midnight UTC, and the distance from it modulo one day */
+static uint32_t
+utc_ms(void)
+{
+	struct timeval tv;
+
+	gettimeofday(&tv, NULL);
+	return ((uint32_t)((tv.tv_sec % 86400) * 1000 + tv.tv_usec / 1000));
+}
+
+static int
+near(uint32_t got, uint32_t want)
+{
+	uint32_t d = got > want ? got - want : want - got;
+
+	if (d > 86400000 / 2)
+		d = 86400000 - (d % 86400000);
+	return (got < 86400000 && d <= 5000);
+}
+
+static int
+tstamp_check(const char *what)
+{
+	uint32_t rx, tx, ms = utc_ms();
+	int fail = 0;
+
+	memcpy(&rx, sent + IP_HDR_LEN + 12, 4);
+	memcpy(&tx, sent + IP_HDR_LEN + 16, 4);
+	printf("%s: receive %u transmit %u, UTC about %u\n", what,
+	    ntohl(rx), ntohl(tx), ms);
+	if (!near(ntohl(rx), ms)) {
+		printf("FAIL receive timestamp not UTC ms since midnight\n");
+		fail = 1;
+	}
+	if (!near(ntohl(tx), ms)) {
+		printf("FAIL transmit timestamp not UTC ms since midnight\n");
+		fail = 1;
+	}
+	return (fail);
+}
+
 static int
 tstamp(void)
 {
 	struct template *t;
 	u_char body[20], pkt[128];
-	struct tm *tm;
-	time_t now;
-	uint32_t rx, ms;
 	size_t i;
 	int fail = 0;
 
@@ -150,16 +191,28 @@ tstamp(void)
 	if (fail == 2)
 		printf("FAIL stale bytes in reply padding\n");
 
-	/* Receive timestamp: ms since midnight, network byte order */
-	memcpy(&rx, sent + IP_HDR_LEN + 12, 4);
-	now = time(NULL);
-	tm = localtime(&now);
-	ms = (tm->tm_hour * 3600 + tm->tm_min * 60 + tm->tm_sec) * 1000;
-	printf("receive timestamp %u, expected about %u\n", ntohl(rx), ms);
-	if (ntohl(rx) > ms || ms - ntohl(rx) > 5000) {
-		printf("FAIL receive timestamp byte order\n");
+	/*
+	 * Receive and transmit timestamps: ms since midnight UTC, network
+	 * byte order (PM-SCR-002, PM-SCR-141). The test runs with a local
+	 * zone eleven hours off UTC so local midnight time is caught.
+	 */
+	fail |= tstamp_check("originate 0");
+
+	/* Non zero originate and request fields must not leak through */
+	memcpy(body + 8, "\x01\x02\x03\x04", 4);
+	memcpy(body + 12, "\x7f\x7e\x7d\x7c", 4);
+	memcpy(body + 16, "\x55\x55\x55\x55", 4);
+	poison_pool();
+	inject(pkt, frame(pkt, IP_PROTO_ICMP, body, 20));
+	if (nsent != 1 || sentlen < IP_HDR_LEN + 20) {
+		printf("FAIL second request: %d replies\n", nsent);
+		return (1);
+	}
+	if (memcmp(sent + IP_HDR_LEN + 8, "\x01\x02\x03\x04", 4) != 0) {
+		printf("FAIL originate timestamp not echoed\n");
 		fail = 1;
 	}
+	fail |= tstamp_check("originate set");
 	return (fail);
 }
 
