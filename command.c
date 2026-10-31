@@ -728,8 +728,10 @@ cmd_subsystem_connect_cb(int fd, short what, void *arg)
 	port_encapsulation_free(tmp);
 
 	/*
-	 * CWE-252/CWE-404: a connection the subsystem never got is dropped
-	 * now; a UDP flow is freed rather than left to its idle timeout.
+	 * CWE-252/CWE-404: a connection the subsystem never got fails now.
+	 * A UDP flow is freed rather than left to its idle timeout; for
+	 * TCP, tcp_connectfail only releases the buffers, sends no reset
+	 * and leaves the connection to its TCP timeout.
 	 */
 	if (what != EV_WRITE ||
 	    cmd_subsystem_connect(hdr, cmd, port, con) == -1) {
@@ -740,9 +742,30 @@ cmd_subsystem_connect_cb(int fd, short what, void *arg)
 	}
 }
 
+/* Send errors after which nothing was written and the channel is fine */
+static int
+cmd_subsystem_send_transient(int error)
+{
+	switch (error) {
+	case ETIMEDOUT:		/* EAGAIN until the deadline */
+	case EAGAIN:
+#if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
+	case EWOULDBLOCK:
+#endif
+	case ENOBUFS:
+	case ENOMEM:
+	case ETOOMANYREFS:
+	case EINTR:
+		return (1);
+	default:
+		return (0);
+	}
+}
+
 /*
  * Closes a port channel that can no longer be trusted to be in frame and
- * drops the connections waiting on it.  The subsystem may bind the port
+ * fails the connections waiting on it (UDP flows are freed; TCP ones go
+ * through tcp_connectfail and wait for their TCP timeout).  The subsystem may bind the port
  * again; until then connects to it are refused.
  */
 static void
@@ -857,10 +880,13 @@ cmd_subsystem_connect(struct tuple *hdr, struct command *cmd,
 		TRACE_RESET(pair[1], close(pair[1]));
 		cmd->pfd = -1;
 		/*
-		 * CWE-664: anything but a timeout may have left part of a
-		 * message on the channel, so it is out of frame for good.
+		 * CWE-664/CWE-755: a partial send (reported as EPIPE) leaves
+		 * the channel out of frame, and a hard error leaves it
+		 * unusable, so it is closed.  A transient error sent
+		 * nothing; only this connection fails and the channel is
+		 * kept, so a connect flood cannot deny the port for good.
 		 */
-		if (serrno != ETIMEDOUT)
+		if (!cmd_subsystem_send_transient(serrno))
 			cmd_subsystem_reset_port(port);
 		return (-1);
 	}

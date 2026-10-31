@@ -11,7 +11,7 @@ for c in ${SUBSYS_CTL_CASES:-fdpass_eof connect_unknown_src \
     short_command localconnect_no_fd listen_full start_fail \
     connect_dup_fail_tcp connect_dup_fail_udp localconnect_dup_fail \
     send_fd_partial connect_udp_local_fail \
-    connect_udp_fail connect_partial_reset}; do
+    connect_udp_fail connect_partial_reset connect_transient}; do
 	run_clean subsys_ctl "$c" || { echo "case $c failed" >&2; rc=1; }
 	cp "$OUT/subsys_ctl.log" "$OUT/subsys_ctl.$c.log"
 done

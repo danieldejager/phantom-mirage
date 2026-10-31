@@ -81,7 +81,7 @@ __wrap_fdshare_dup(int fd)
 
 /* PM-SCR-197: sendmsg sends one byte short on demand */
 ssize_t __real_sendmsg(int, const struct msghdr *, int);
-static int short_send, fail_send, n_send;
+static int short_send, fail_send, n_send, fail_errno;
 
 ssize_t
 __wrap_sendmsg(int s, const struct msghdr *msg, int flags)
@@ -90,6 +90,10 @@ __wrap_sendmsg(int s, const struct msghdr *msg, int flags)
 	struct iovec v;
 
 	n_send++;
+	if (fail_errno) {
+		errno = fail_errno;
+		return (-1);
+	}
 	if (fail_send) {
 		errno = EPIPE;
 		return (-1);
@@ -465,6 +469,65 @@ main(int argc, char **argv)
 			return (1);
 		close(sv[0]);
 		return (expect(open_fds() == n, "no descriptor leaked"));
+	}
+	if (strcmp(t, "connect_transient") == 0) {
+		/*
+		 * PM-SCR-206: a transient send error fails only the one
+		 * connection; the channel stays open and the next connect
+		 * on it goes through as a whole message
+		 */
+		static const int errs[] = { ENOBUFS, ENOMEM, ETOOMANYREFS,
+		    EAGAIN };
+		struct udp_con *c1, *c2;
+		char buf[64];
+		socklen_t len;
+		int other, nudp, rc = 0, fd;
+
+		/* CTL_ERRNO=n checks only that one errno */
+		const char *only = getenv("CTL_ERRNO");
+
+		c1 = udp_flow(&p, &other);
+		for (size_t e = 0; e < sizeof(errs) / sizeof(errs[0]); e++) {
+			if (only != NULL && atoi(only) != errs[e])
+				continue;
+			nudp = honeyd_nudp;
+			if (cmd_subsystem_schedule_connect(&c1->conhdr,
+			    &c1->cmd, p, c1) == -1) {
+				rc |= expect(0, "connect scheduled");
+				break;
+			}
+			fail_errno = errs[e];
+			for (int i = 0; i < 20 && honeyd_nudp == nudp; i++)
+				event_base_loop(libevent_base,
+				    EVLOOP_ONCE | EVLOOP_NONBLOCK);
+			fail_errno = 0;
+			printf("errno %s\n", strerror(errs[e]));
+			rc |= expect(honeyd_nudp == nudp - 1,
+			    "the failed flow is dropped");
+			rc |= expect(p->sub_fd != -1, "channel kept open");
+			if (p->sub_fd == -1)
+				break;
+
+			c2 = udp_con_new(6000 + (int)e);
+			n_send = 0;
+			if (cmd_subsystem_schedule_connect(&c2->conhdr,
+			    &c2->cmd, p, c2) == -1) {
+				rc |= expect(0, "next connect scheduled");
+				break;
+			}
+			for (int i = 0; i < 20 && n_send == 0; i++)
+				event_base_loop(libevent_base,
+				    EVLOOP_ONCE | EVLOOP_NONBLOCK);
+			len = sizeof(buf);
+			fd = receive_fd(other, buf, &len);
+			rc |= expect(c2->cmd.pfd != -1 && fd != -1,
+			    "next connect delivered");
+			if (fd != -1)
+				close(fd);
+			c1 = udp_con_new(7000 + (int)e);
+		}
+		close(other);
+		return (rc);
 	}
 	if (strcmp(t, "connect_partial_reset") == 0) {
 		/*
