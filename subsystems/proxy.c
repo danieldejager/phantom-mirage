@@ -301,6 +301,8 @@ proxy_connect_cb(int fd, short what, void *arg)
 	socklen_t errsz = sizeof(error);
 	char *uri;
 
+	ta->connect_pending = 0;
+
 	/* Check if the connection completed */
 	if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &errsz) == -1 ||
 	    error) {
@@ -308,6 +310,7 @@ proxy_connect_cb(int fd, short what, void *arg)
 		fprintf(stderr, "%s: connection failed: %s\n",
 		    __func__, strerror(error));
 		close(fd);
+		ta->remote_fd = -1;
 
 		/* Give them a connect error message */
 		kv_replace(&ta->dictionary, "$reason", strerror(error));
@@ -321,9 +324,8 @@ proxy_connect_cb(int fd, short what, void *arg)
 	ta->remote_bev = bufferevent_new(ta->remote_fd,
 	    proxy_remote_readcb, proxy_remote_writecb,
 	    proxy_remote_errorcb, ta);
-	if (ta->bev == NULL) {
-		close(fd);
-		proxy_ta_free(ta);
+	if (ta->remote_bev == NULL) {
+		proxy_ta_free(ta);	/* closes remote_fd */
 		return;
 	}
 
@@ -362,7 +364,10 @@ proxy_connect(struct proxy_ta *ta, char *host, int port)
 {
 	fprintf(stderr, "Connecting to %s port %d\n", host, port);
 
-	ta->remote_fd = -1;
+	/* Only one upstream connection per transaction */
+	if (ta->connect_pending || ta->remote_fd != -1)
+		return;
+
 	if (proxy_allowed_network(host)) {
 		char *local_ip = kv_find(&ta->dictionary, "$dstipaddress");
 
@@ -385,8 +390,15 @@ proxy_connect(struct proxy_ta *ta, char *host, int port)
 		return;
 	}
 
-	/* One handy event to get called back on this */
-	event_once(ta->remote_fd, EV_WRITE, proxy_connect_cb, ta, NULL);
+	/* Owned by ta so that proxy_ta_free can cancel it */
+	event_set(&ta->connect_ev, ta->remote_fd, EV_WRITE,
+	    proxy_connect_cb, ta);
+	if (event_add(&ta->connect_ev, NULL) == -1) {
+		close(ta->remote_fd);
+		ta->remote_fd = -1;
+		return;
+	}
+	ta->connect_pending = 1;
 }
 
 void
@@ -726,10 +738,12 @@ proxy_ta_free(struct proxy_ta *ta)
 	bufferevent_free(ta->bev);
 	close(ta->fd);
 
-	if (ta->remote_bev) {
+	if (ta->connect_pending)
+		event_del(&ta->connect_ev);
+	if (ta->remote_bev != NULL)
 		bufferevent_free(ta->remote_bev);
+	if (ta->remote_fd != -1)
 		close(ta->remote_fd);
-	}
 
 	free(ta);
 	
@@ -756,6 +770,7 @@ proxy_ta_new(int fd, struct sockaddr *sa, socklen_t salen,
 	ta->salen = salen;
 
 	ta->fd = fd;
+	ta->remote_fd = -1;
 	ta->bev = bufferevent_new(fd,
 	    proxy_readcb, proxy_writecb, proxy_errorcb, ta);
 	if (ta->bev == NULL)
