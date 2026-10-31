@@ -879,13 +879,13 @@ cmd_subsystem_localconnect(struct tuple *hdr, struct command *cmd,
 	fd = receive_fd_timed(port->sub_fd, NULL, NULL, SUBSYSTEM_IO_TIMEOUT);
 	if (fd == -1) {
 		TRACE(port->sub_fd, fdshare_close(port->sub_fd));
+		port->sub_fd = -1;
 		syslog(LOG_ERR, "%s: receive_fd: %s", __func__,
 		    strerror(errno));
 		return (-1);
 	}
 
-        if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1)
-                warn("%s: fcntl(O_NONBLOCK)", __func__);
+	/* receive_fd_timed already made fd non blocking */
 
         if (fcntl(fd, F_SETFD, 1) == -1)
                 warn("%s: fcntl(F_SETFD)", __func__);

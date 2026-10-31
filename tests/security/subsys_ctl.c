@@ -236,7 +236,8 @@ main(int argc, char **argv)
 		cmd.pfd = cmd.perrfd = -1;
 		fd = cmd_subsystem_localconnect(&hdr, &cmd, p, NULL);
 		close(sv[0]);
-		return (expect(fd == -1, "withheld descriptor times out"));
+		return (expect(fd == -1 && p->sub_fd == -1,
+		    "withheld descriptor times out and is released"));
 	}
 	if (strcmp(t, "listen_full") == 0) {
 		/* A listen descriptor whose peer never drains it */
