@@ -14,7 +14,10 @@
  * fuzz/fuzz_common.c. ip_send is stubbed and only recorded here, so
  * nothing leaves the process.
  *
- * Usage: icmp_overread tstamp|unreach|quote
+ * PM-SCR-138: with DAT bad the personality zeroes the first UDP payload
+ * byte even when the datagram has no payload, one byte past the end.
+ *
+ * Usage: icmp_overread tstamp|unreach|quote|dat
  */
 #include <sys/types.h>
 #include <sys/param.h>
@@ -239,6 +242,28 @@ quote(void)
 	return (fail);
 }
 
+/* Payloadless UDP to a closed port with DAT bad (PM-SCR-138) */
+static int
+dat(void)
+{
+	struct template *t;
+	struct persudp *u;
+	u_char body[UDP_HDR_LEN], pkt[128];
+
+	if ((t = template_find("10.0.0.2")) == NULL || t->person == NULL)
+		abort();
+	u = &t->person->udptest;
+	u->response = 1;
+	u->dat = RVAL_BAD;
+	u->quotelen = 0xffff;
+	u->riplen = 0;
+
+	udp_pack_hdr((struct udp_hdr *)body, 1024, 4444, sizeof(body));
+	inject(pkt, frame(pkt, IP_PROTO_UDP, body, sizeof(body)));
+	printf("payloadless UDP with DAT bad: %d replies\n", nsent);
+	return (nsent != 1);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -254,6 +279,8 @@ main(int argc, char **argv)
 		rc = unreach_short();
 	else if (strcmp(argv[1], "quote") == 0)
 		rc = quote();
+	else if (strcmp(argv[1], "dat") == 0)
+		rc = dat();
 	else
 		return (2);
 	printf(rc ? "FAIL\n" : "OK\n");
