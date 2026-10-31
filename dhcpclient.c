@@ -177,7 +177,32 @@ struct template *_dhcp_dequeue()
 
 	struct template *template = front->m_template;
 	free(front);
+	if (dhcp_queue->m_count == 0)
+		dhcp_queue->m_rear = NULL;
 	return template;
+}
+
+/* Drop every queue entry for a template that is going away */
+static void
+_dhcp_unqueue(struct template *tmpl)
+{
+	QueueNode **pp, *node;
+
+	if (dhcp_queue == NULL)
+		return;
+
+	dhcp_queue->m_rear = NULL;
+	pp = &dhcp_queue->m_front;
+	while ((node = *pp) != NULL) {
+		if (node->m_template == tmpl) {
+			*pp = node->m_next;
+			free(node);
+			dhcp_queue->m_count--;
+			continue;
+		}
+		dhcp_queue->m_rear = node;
+		pp = &node->m_next;
+	}
 }
 
 void
@@ -275,12 +300,17 @@ dhcp_abort(struct template *tmpl)
 
 /*
  * Release everything a template's DHCP request owns: all three timers
- * are deleted and freed so none can fire against a freed template.
+ * are deleted and freed so none can fire against a freed template, and
+ * the template is taken off the discover queue so it is never dequeued
+ * after it is freed. Called for every freed template, with or without
+ * a request.
  */
 void
 dhcp_req_free(struct template *tmpl)
 {
 	struct dhcpclient_req *req = tmpl->dhcp_req;
+
+	_dhcp_unqueue(tmpl);
 
 	if (req == NULL)
 		return;

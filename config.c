@@ -428,10 +428,9 @@ template_deallocate(struct template *tmpl)
 		free(tmpl->ethernet_addr);
 	}
 
-	if (tmpl->dhcp_req != NULL) {
+	if (tmpl->dhcp_req != NULL)
 		dhcp_release(tmpl);
-		dhcp_req_free(tmpl);
-	}
+	dhcp_req_free(tmpl);
 
 	free(tmpl->origin);
 	free(tmpl->name);
