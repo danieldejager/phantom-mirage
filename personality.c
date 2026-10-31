@@ -168,11 +168,27 @@ personality_declone(struct personality *pers)
 	free(pers);
 }
 
+/*
+ * Releases a personality that is no longer in use. The TCP option arrays
+ * of each test are owned by the personality and are freed with it
+ * (CWE-401). Only personality_config_new calls this, while the fingerprint
+ * file is loaded at start up, before any template holds a clone that
+ * shares these arrays. The XProbe fingerprint belongs to its own tree and
+ * is not freed here.
+ */
 void
 personality_free(struct personality *pers)
 {
+	size_t i;
+
 	SPLAY_REMOVE(perstree, &personalities, pers);
 
+	for (i = 0; i < sizeof(pers->t_tests) / sizeof(pers->t_tests[0]); i++)
+		free(pers->t_tests[i].options.options);
+	for (i = 0; i < sizeof(pers->seq_tests) / sizeof(pers->seq_tests[0]);
+	    i++)
+		free(pers->seq_tests[i].options.options);
+	free(pers->ecn_test.options.options);
 	free(pers->name);
 	free(pers);
 }
