@@ -134,7 +134,7 @@ char *
 strrpl(char *str, size_t size, char *match, char *value)
 {
 	char *p, *e;
-	int len, rlen;
+	size_t len, rlen;
 
 	p = str;
 	e = p + strlen(p);
@@ -157,7 +157,8 @@ strrpl(char *str, size_t size, char *match, char *value)
 
 	rlen = strlen(value);
 
-	if (strlen(str) - len + rlen > size)
+	/* The result and its terminating NUL must fit in size bytes */
+	if (strlen(str) - len + rlen >= size)
 		return (NULL);
 
 	memmove(p + rlen, p + len, strlen(p + len) + 1);
