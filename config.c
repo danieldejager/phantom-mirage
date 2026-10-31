@@ -282,7 +282,12 @@ template_create(const char *name)
 			exit(EXIT_FAILURE);
 		}
 
-	tmpl->name = strdup(name);
+	/* CWE-476/CWE-252: nothing is inserted without a name */
+	if ((tmpl->name = strdup(name)) == NULL) {
+		syslog(LOG_ERR, "%s: strdup", __func__);
+		free(tmpl);
+		return (NULL);
+	}
 
 	/* UDP ports are closed by default */
 	tmpl->udp.status = PORT_CLOSED;
@@ -451,9 +456,17 @@ template_deallocate(struct template *tmpl)
 	while ((port = SPLAY_ROOT(&tmpl->ports)) != NULL)
 		port_free(tmpl, port);
 
-	/* Stop broadcast timers; the broadcast ports themselves stay */
-	SPLAY_FOREACH(port, porttree, &tmpl->bcasts)
+	/*
+	 * Stop broadcast timers and free the broadcast ports. CWE-401:
+	 * the ports were never freed. Each is owned by this template
+	 * alone (template_clone() makes new ones) and its action is a
+	 * shallow copy, so only the struct itself is freed.
+	 */
+	while ((port = SPLAY_ROOT(&tmpl->bcasts)) != NULL) {
 		bcast_stop(port);
+		SPLAY_REMOVE(porttree, &tmpl->bcasts, port);
+		free(port);
+	}
 
 	if (tmpl->person != NULL)
 		personality_declone(tmpl->person);
@@ -816,6 +829,12 @@ template_clone(const char *newname, const struct template *tmpl,
 	/* Remember the configured template name for logging */
 	newtmpl->origin = strdup(tmpl->origin != NULL ?
 	    tmpl->origin : tmpl->name);
+	/* CWE-476/CWE-252: drop the new template if the copy failed */
+	if (newtmpl->origin == NULL) {
+		syslog(LOG_ERR, "%s: strdup", __func__);
+		template_free(newtmpl);
+		return (NULL);
+	}
 
 	SPLAY_FOREACH(port, porttree, (struct porttree *)&tmpl->ports) {
 		if (port_insert(newtmpl, port->proto, port->number,

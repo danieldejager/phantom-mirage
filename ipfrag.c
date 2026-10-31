@@ -210,8 +210,23 @@ ip_fragment_new(ip_addr_t src, ip_addr_t dst, u_short id, u_char proto,
 	tmp->fragp = pl;
 
 	TAILQ_INIT(&tmp->fraglist);
+
+	/*
+	 * CWE-476/CWE-252: check the expiry timer before the record is
+	 * inserted or counted; on failure free it and drop the fragment.
+	 */
 	tmp->timeout = evtimer_new(libevent_base, ip_fragment_timeout, tmp);
-	evtimer_add(tmp->timeout, &tv);
+	if (tmp->timeout == NULL) {
+		syslog(LOG_ERR, "%s: evtimer_new: fragment dropped", __func__);
+		free(tmp);
+		return (NULL);
+	}
+	if (evtimer_add(tmp->timeout, &tv) == -1) {
+		syslog(LOG_ERR, "%s: evtimer_add: fragment dropped", __func__);
+		event_free(tmp->timeout);
+		free(tmp);
+		return (NULL);
+	}
 
 	SPLAY_INSERT(fragtree, &fragments, tmp);
 	TAILQ_INSERT_HEAD(&fraglru, tmp, next);
