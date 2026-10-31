@@ -1,0 +1,6 @@
+# PM-SCR-152: script process cap and cleanup, case grandchild (see script_cap.c)
+cc_daemon script_cap_grandchild tests/security/script_cap.c \
+    -Wl,--wrap=setgroups,--wrap=kill,--wrap=killpg,--wrap=sigprocmask
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean script_cap_grandchild grandchild

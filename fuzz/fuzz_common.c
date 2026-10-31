@@ -21,9 +21,32 @@
 
 /* ---- side-effect stubs (linked with --wrap) ---- */
 
-pid_t __wrap_fork(void) { errno = EPERM; return (-1); }
+/*
+ * A test that sets fuzz_real_exec gets the real fork() and lets the
+ * child exec the program fuzz_exec_path (with the daemon's argv), so a
+ * script action runs a local test program. Off by default.
+ */
+int fuzz_real_exec;
+const char *fuzz_exec_path;
+pid_t __real_fork(void);
+int __real_execv(const char *, char *const []);
+
+pid_t
+__wrap_fork(void)
+{
+	if (fuzz_real_exec)
+		return (__real_fork());
+	errno = EPERM;
+	return (-1);
+}
 int __wrap_execv(const char *p, char *const a[]) { abort(); }
-int __wrap_execvp(const char *p, char *const a[]) { abort(); }
+int
+__wrap_execvp(const char *p, char *const a[])
+{
+	if (fuzz_real_exec && fuzz_exec_path != NULL)
+		return (__real_execv(fuzz_exec_path, a));
+	abort();
+}
 
 int __real_connect(int, const struct sockaddr *, socklen_t);
 int

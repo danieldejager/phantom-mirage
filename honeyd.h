@@ -49,6 +49,8 @@ char *pm_getenv(const char *);
 #define HONEYD_MAX_CONNECTS	32000
 #define HONEYD_MAX_UDP		32000	/* default global UDP flow cap */
 #define HONEYD_MAX_SOURCE_FLOWS	1000	/* default per source flow cap */
+#define HONEYD_MAX_SCRIPT_PROCS	512	/* default live script processes */
+#define HONEYD_MAX_SCRIPT_PROCS_SOURCE 32	/* the same, per source address */
 
 #define HONEYD_CLOSE_WAIT	60
 #define HONEYD_SYN_WAIT		60
@@ -379,6 +381,10 @@ void cmd_free(struct command *);
 int cmd_fork(struct tuple *, struct command *, struct template *,
     char *, char **, void *);
 int cmd_python(struct tuple *, struct command *, void *);
+#define CMD_FORK_CAP	-2	/* cmd_fork: refused at the script cap */
+void cmd_script_reaped(pid_t);
+uint32_t cmd_script_procs(void);
+uint32_t cmd_script_source_procs(ip_addr_t);
 int cmd_subsystem(struct template *, struct subsystem *, char *, char **);
 
 struct addrinfo;
@@ -412,6 +418,7 @@ void tcp_sendfin(struct tcp_con *);
 
 void udp_free(struct udp_con *);
 uint32_t honeyd_flow_option(const char *, uint32_t);
+uint32_t honeyd_limit_option(const char *, uint32_t);
 int udp_send(struct udp_con *con, u_char *payload, u_int len);
 
 void config_init(void);
