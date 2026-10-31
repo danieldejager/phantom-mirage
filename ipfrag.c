@@ -140,7 +140,7 @@ ip_fragment_free(struct fragment *tmp)
 {
 	struct fragent *ent;
 
-	evtimer_del(tmp->timeout);
+	event_free(tmp->timeout);
 
 	SPLAY_REMOVE(fragtree, &fragments, tmp);
 	TAILQ_REMOVE(&fraglru, tmp, next);
