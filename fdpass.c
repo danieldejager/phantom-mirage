@@ -39,6 +39,8 @@
 #include <err.h>
 #include <string.h>
 #include <unistd.h>
+#include <poll.h>
+#include <time.h>
 
 #include "fdpass.h"
 
@@ -83,12 +85,13 @@ send_fd(int socket, int fd, void *base, size_t len)
 		if (errno == EAGAIN)
 			return (-1);
 		syslog(LOG_ERR,"%s: sendmsg(%d): %s", __func__, fd, strerror(errno));
-		exit(EXIT_FAILURE);
+		return (-1);
 	}
 	if (n == 0)
 	{
 		syslog(LOG_ERR,"%s: sendmsg: expected setn >0 got %ld", __func__, (long)n);
-		exit(EXIT_FAILURE);
+		errno = EPIPE;
+		return (-1);
 	}
 #else
 	syslog(LOG_ERR, "%s: subsystems not supported due to lack of fd passing",__func__);
@@ -136,12 +139,13 @@ receive_fd(int socket, void *base, socklen_t *len)
 		if (errno == EAGAIN)
 			return (-1);
 		syslog(LOG_ERR,"%s: recvmsg: %s", __func__, strerror(errno));
-		exit(EXIT_FAILURE);
+		return (-1);
 	}
 	if (n == 0)
 	{
 		syslog(LOG_ERR,"%s: recvmsg: expected received >0 got %ld", __func__, (long)n);
-		exit(EXIT_FAILURE);
+		errno = ECONNRESET;
+		return (-1);
 	}
 	if (len != 0)
 		*len = n;
@@ -187,4 +191,37 @@ receive_fd(int socket, void *base, socklen_t *len)
 	exit(EXIT_FAILURE);
 	}
 #endif
+}
+
+/*
+ * Like receive_fd, but waits at most timeout_ms for the descriptor when
+ * the socket is non blocking. Returns -1 with errno ETIMEDOUT when the
+ * peer sends nothing in time.
+ */
+int
+receive_fd_timed(int socket, void *base, socklen_t *len, int timeout_ms)
+{
+	struct timespec start, now;
+	struct pollfd pfd;
+	int fd, left;
+
+	clock_gettime(CLOCK_MONOTONIC, &start);
+	for (;;) {
+		if ((fd = receive_fd(socket, base, len)) != -1 ||
+		    errno != EAGAIN)
+			return (fd);
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		left = timeout_ms - (int)((now.tv_sec - start.tv_sec) * 1000 +
+		    (now.tv_nsec - start.tv_nsec) / 1000000);
+		if (left <= 0) {
+			syslog(LOG_ERR, "%s: no descriptor after %d ms",
+			    __func__, timeout_ms);
+			errno = ETIMEDOUT;
+			return (-1);
+		}
+		pfd.fd = socket;
+		pfd.events = POLLIN;
+		if (poll(&pfd, 1, left) == -1 && errno != EINTR)
+			return (-1);
+	}
 }

@@ -73,6 +73,7 @@ struct subsystem {
 };
 
 #define SUBSYSTEM_RESTART_INTERVAL	5	/* time between restarts */
+#define SUBSYSTEM_IO_TIMEOUT		1000	/* ms per control step */
 
 int templ_container_compare(struct template_container *,
     struct template_container *);

@@ -27,6 +27,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <errno.h>
+#include <poll.h>
+#include <time.h>
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -56,6 +58,49 @@ atomicio(ssize_t (*f)(int, void *, size_t), int fd, void *_s, size_t n)
 		default:
 			pos += res;
 		}
+	}
+	return (pos);
+}
+
+/*
+ * Like atomicio, but on a non blocking descriptor waits at most
+ * timeout_ms in total instead of spinning on EAGAIN. Returns the bytes
+ * moved so far, or -1 with errno ETIMEDOUT if nothing moved in time.
+ */
+ssize_t
+atomicio_timed(ssize_t (*f)(int, void *, size_t), int fd, void *_s, size_t n,
+    int timeout_ms)
+{
+	char *s = _s;
+	ssize_t res, pos = 0;
+	struct timespec start, now;
+	struct pollfd pfd;
+	int left;
+
+	clock_gettime(CLOCK_MONOTONIC, &start);
+	while (n > pos) {
+		res = (f) (fd, s + pos, n - pos);
+		if (res > 0) {
+			pos += res;
+			continue;
+		}
+		if (res == -1 && errno == EINTR)
+			continue;
+		if (res == 0 || errno != EAGAIN)
+			return (pos != 0 ? pos : res);
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		left = timeout_ms - (int)((now.tv_sec - start.tv_sec) * 1000 +
+		    (now.tv_nsec - start.tv_nsec) / 1000000);
+		if (left <= 0) {
+			if (pos != 0)
+				return (pos);
+			errno = ETIMEDOUT;
+			return (-1);
+		}
+		pfd.fd = fd;
+		pfd.events = f == read ? POLLIN : POLLOUT;
+		if (poll(&pfd, 1, left) == -1 && errno != EINTR)
+			return (pos != 0 ? pos : -1);
 	}
 	return (pos);
 }

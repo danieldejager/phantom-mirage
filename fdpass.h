@@ -30,5 +30,6 @@
 
 int send_fd(int, int, void *, size_t);
 int receive_fd(int, void *, socklen_t *);
+int receive_fd_timed(int, void *, socklen_t *, int);
 
 #endif /* _FDPASS_H_ */

@@ -9,6 +9,8 @@
 #include <unistd.h>
 
 ssize_t atomicio(ssize_t (*)(int, void *, size_t), int, void *, size_t);
+ssize_t atomicio_timed(ssize_t (*)(int, void *, size_t), int, void *, size_t,
+    int);
 
 /* write(2) takes a const buffer: same ABI, cast for atomicio() */
 #define vwrite ((ssize_t (*)(int, void *, size_t))write)
