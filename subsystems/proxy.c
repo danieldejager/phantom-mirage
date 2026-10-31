@@ -523,19 +523,28 @@ char *
 proxy_corrupt(char *data, size_t len)
 {
 	static char buffer[4096];
-	int corruptions = len / CORRUPT_SPACE + 1;
-	int i;
+	size_t corruptions = len / CORRUPT_SPACE + 1;
+	size_t i;
+	char *out = buffer;
 
-	if (len > sizeof(buffer) || len <= 1)
+	if (len <= 1)
 		return (data);
 
-	memcpy(buffer, data, len);
+	/*
+	 * Over the static buffer, corrupt the caller's data in place
+	 * rather than relaying it intact (PM-SCR-105). Every caller
+	 * writes the result and then drops its copy of the data.
+	 */
+	if (len > sizeof(buffer))
+		out = data;
+	else
+		memcpy(buffer, data, len);
 	for (i = 0; i < corruptions; i++) {
-		int off = rand() % (len - 1);
-		buffer[off] = rand();
+		size_t off = (size_t)rand() % (len - 1);
+		out[off] = rand();
 	}
 
-	return (buffer);
+	return (out);
 }
 
 void
