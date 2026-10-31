@@ -93,6 +93,8 @@
 #include "debug.h"
 
 #define ARP_MAX_ACTIVE		600
+/* PM-SCR-151: lifetime of an entry whose discovery got no answer */
+#define ARP_FAIL_RETENTION	30
 
 /* Exported */
 int need_arp = 0;	/* We set this if we need to listen to arp traffic */
@@ -316,11 +318,16 @@ arp_discover(struct arp_req *req, struct addr *ha)
 		evtimer_add(req->discover, &tv);
 		req->cnt++;
 	} else {
+		struct timeval fail_tv = {ARP_FAIL_RETENTION, 0};
+
 		/*
+		 * Expire the failed entry after ARP_FAIL_RETENTION rather
+		 * than ARP_MAX_ACTIVE so the address can be retried.
 		 * The callback may re-enter arp_request() and evict req at
 		 * the entry cap: do not touch req after it.
 		 */
 		req->cnt++;
+		evtimer_add(req->active, &fail_tv);
 		arp_callback(req, 0);
 	}
 }

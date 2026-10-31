@@ -1,0 +1,5 @@
+# PM-SCR-151: a failed ARP entry expires within 30 s, not 600 s
+cc_daemon arp_fail_retention tests/security/arp_fail_retention.c
+LSAN_OPTIONS=suppressions=$T/arp_cap.supp:print_suppressions=0
+export LSAN_OPTIONS
+run_clean arp_fail_retention
