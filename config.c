@@ -1139,14 +1139,21 @@ template_get_dhcp_address(struct addr *addr)
 {
 	static char address[16];
 
+	/*
+	 * CWE-400/CWE-770/CWE-617: a rogue DHCP server or many DHCP
+	 * cloned templates can use up the temporary addresses. Fail this
+	 * lease with LOG_ERR instead of exiting the whole process; the
+	 * counter stays at the limit so every later call fails too.
+	 */
+	if (privip_counter > 255 * 255) {
+		syslog(LOG_ERR, "%s: out of temporary IP addresses, "
+		    "lease skipped", __func__);
+		return (-1);
+	}
+
 	snprintf(address, sizeof(address),
 	    "169.254.%d.%d", privip_counter / 256 + 1, privip_counter % 256);
-
-	if (++privip_counter > 255 * 255)
-	{
-		syslog(LOG_ERR, "%s: out of temporary IP addresses", __func__);
-		exit(EXIT_FAILURE);
-	}
+	privip_counter++;
 
 	return (addr_aton(address, addr));
 }
