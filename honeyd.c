@@ -869,6 +869,13 @@ honeyd_ether_send_cb(struct arp_req *req, int success, void *arg)
 	struct ip_hdr *ip = arg;
 	u_int len, iplen = ntohs(ip->ip_len);
 
+	/*
+	 * The ARP request failed: req->ha is still the broadcast MAC.
+	 * Drop the queued packet; it is freed once below.
+	 */
+	if (!success)
+		goto out;
+
 	eth_pack_hdr(pkt,
 	    req->ha.addr_eth,				/* destination */
 	    req->src_ha.addr_eth,			/* source */

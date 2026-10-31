@@ -10,5 +10,6 @@ void fuzz_honeyd_init(const char *config);
 void fuzz_drain_events(void);
 /* Optional: sees every packet the daemon hands to ip_send */
 extern void (*fuzz_ip_send_hook)(const void *, size_t);
+extern void (*fuzz_eth_send_hook)(const void *, size_t);
 
 #endif
