@@ -196,14 +196,23 @@ honeyd_osfp_cache(const struct ip_hdr *ip)
 }
 
 int
-honeyd_osfp_match(const struct ip_hdr *ip, pf_osfp_t fp)
+honeyd_osfp_match(const struct ip_hdr *ip, u_short iplen, pf_osfp_t fp)
 {
-	struct pf_osfp_enlist *list;
+	struct pf_osfp_enlist *list = NULL;
 	const struct tcp_hdr *tcp;
+	u_int hl = ip->ip_hl << 2;
 
-	tcp = (const struct tcp_hdr *)((u_char *)ip + (ip->ip_hl << 2));
-
-	list = pf_osfp_fingerprint_hdr(ip, tcp);
+	/*
+	 * Only fingerprint a TCP header (and its options) that lies wholly
+	 * inside the packet; anything else falls back to the cache.
+	 */
+	if (ip->ip_p == IP_PROTO_TCP && hl >= IP_HDR_LEN &&
+	    iplen >= hl + TCP_HDR_LEN) {
+		tcp = (const struct tcp_hdr *)((u_char *)ip + hl);
+		if ((tcp->th_off << 2) >= TCP_HDR_LEN &&
+		    (tcp->th_off << 2) <= iplen - hl)
+			list = pf_osfp_fingerprint_hdr(ip, tcp);
+	}
 	if (list == NULL) {
 		struct osfp *entry = honeyd_osfp_cache(ip);
 		if (entry != NULL)
