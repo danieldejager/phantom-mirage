@@ -417,16 +417,17 @@ arp_recv_cb(u_char *u, const struct pcap_pkthdr *pkthdr, const u_char *pkt)
 		addr_pack(&src.arp_pa, ADDR_TYPE_IP, IP_ADDR_BITS,
 		    &ethip->ar_spa, IP_ADDR_LEN);
 		if ((req = arp_find(&src.arp_pa)) != NULL) {
-			addr_pack(&req->ha, ADDR_TYPE_ETH, ETH_ADDR_BITS,
-			    ethip->ar_sha, ETH_ADDR_LEN);
-
 			/*
 			 * Ignore arp replies that we generate ourselves.
 			 * Because we fake ethernet mac addresses so
 			 * successfully or pcap filter does not know that
-			 * this is a Honeyd packet.
+			 * this is a Honeyd packet.  Check before touching
+			 * req->ha: internal entries are keyed by it in the
+			 * hardware address tree.
 			 */
 			if ( !(req->flags & ARP_INTERNAL) ) {
+				addr_pack(&req->ha, ADDR_TYPE_ETH,
+				    ETH_ADDR_BITS, ethip->ar_sha, ETH_ADDR_LEN);
 				/* Signal success */
 				req->flags |= ARP_EXTERNAL;
 				req->cnt = ARP_REQUEST_SUCESS;

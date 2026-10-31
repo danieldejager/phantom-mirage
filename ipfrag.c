@@ -353,6 +353,7 @@ ip_fragment(struct template *tmpl, struct ip_hdr *ip, u_short len,
 	u_short off;
 	u_short hlen;
 	enum fragpolicy fragp = FRAG_OLD;
+	int n;
 	
 	addr_pack(&src, ADDR_TYPE_IP, IP_ADDR_BITS, &ip->ip_src, IP_ADDR_LEN);
 
@@ -361,6 +362,10 @@ ip_fragment(struct template *tmpl, struct ip_hdr *ip, u_short len,
 
 	if (fragp == FRAG_DROP)
 		goto drop;
+
+	/* Enforce the global caps on every fragment, not only new queues */
+	if (nfragmem > IPFRAG_MAX_MEM || nfragments > IPFRAG_MAX_FRAGS)
+		ip_fragment_reclaim(nfragments/10 + 1);
 
 	fragq = ip_fragment_find(ip->ip_src, ip->ip_dst, ip->ip_id, ip->ip_p);
 
@@ -380,6 +385,9 @@ ip_fragment(struct template *tmpl, struct ip_hdr *ip, u_short len,
 	if (off) {
 		len -= hlen;
 		dat += hlen;
+		/* off is a u_short: reject before off + hlen wraps */
+		if (off + hlen + len > IP_LEN_MAX)
+			goto freeall;
 		off += hlen;
 	}
 
@@ -393,18 +401,24 @@ ip_fragment(struct template *tmpl, struct ip_hdr *ip, u_short len,
 			goto drop;
 	}
 
+	n = 0;
+	TAILQ_FOREACH(ent, &fragq->fraglist, next)
+		n++;
+	if (n >= IPFRAG_MAX_PERQUEUE)
+		goto freeall;
+
 	if ((ent = calloc(1, sizeof(struct fragent))) == NULL)
 		goto freeall;
 
 	ent->off = off;
 	ent->len = len;
-	ent->size = len;
+	ent->size = len + sizeof(struct fragent);
 	if ((ent->data = malloc(len)) == NULL) {
 		free(ent);
 		goto freeall;
 	}
 	memcpy(ent->data, dat, len);
-	nfragmem += len;
+	nfragmem += ent->size;
 
 	syslog(LOG_DEBUG,  "Received fragment from %s, id %d: %d@%d",
 	    addr_ntoa(&src), ntohs(ip->ip_id), len, off);

@@ -1,0 +1,5 @@
+# PM-SCR-010: ARP reply must not rewrite the MAC of an internal entry
+cc_daemon arp_internal_reply tests/security/arp_internal_reply.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean arp_internal_reply

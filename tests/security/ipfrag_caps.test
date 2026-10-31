@@ -1,0 +1,6 @@
+# PM-SCR-008: fragment cap per queue, offset wrap, global cap on every
+# fragment
+cc_daemon ipfrag_caps tests/security/ipfrag_caps.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean ipfrag_caps

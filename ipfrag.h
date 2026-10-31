@@ -36,7 +36,7 @@ struct fragent {
 	TAILQ_ENTRY(fragent) next;
 	u_short off;
 	u_short len;
-	u_short size;
+	u_int size;		/* payload plus bookkeeping, for nfragmem */
 	u_char *data;
 };
 
@@ -62,6 +62,7 @@ struct fragment {
 
 #define IPFRAG_MAX_MEM		(25*1024*1024)
 #define IPFRAG_MAX_FRAGS	(10000)
+#define IPFRAG_MAX_PERQUEUE	(64)	/* fragments held per queue */
 
 void ip_fragment_init(void);
 int ip_fragment(struct template *, struct ip_hdr *, u_short,
