@@ -9,7 +9,8 @@
  *
  * The descriptors a subsystem passes back were left blocking, so a
  * subsystem that withheld the per connection descriptor, or did not
- * drain its listen descriptor, still blocked the daemon.
+ * drain its listen descriptor, still blocked the daemon; and a failed
+ * subsystem start called exit().
  *
  * Each case runs as its own process (argv[1]) under a watchdog alarm,
  * so a spin shows up as a failure. The subsystem side is a local
@@ -49,6 +50,7 @@ int cmd_subsystem_localconnect(struct tuple *, struct command *,
     struct port *, void *);
 int cmd_subsystem_connect(struct tuple *, struct command *, struct port *,
     void *);
+void template_subsystem_start(struct template *, struct subsystem *);
 
 static const char config[] =
 	"create default\n"
@@ -269,6 +271,17 @@ main(int argc, char **argv)
 		close(sv[0]);
 		return (expect(fd == -1 && cmd.pfd == -1,
 		    "undrained listen descriptor times out"));
+	}
+	if (strcmp(t, "start_fail") == 0) {
+		/* fork() fails in the harness, so cmd_subsystem() fails */
+		struct subsystem *s2;
+
+		if (template_subsystem(tmpl, "/bin/false", 0) == -1 ||
+		    (s2 = template_subsystem_find("/bin/false")) == NULL)
+			abort();
+		template_subsystem_start(tmpl, s2);
+		return (expect(s2->cmd.pid == -1 && s2->cmd.pfd == -1,
+		    "failed start leaves the daemon running"));
 	}
 	printf("FAIL: unknown case %s\n", t);
 	return (1);

@@ -1210,8 +1210,10 @@ template_subsystem_start(struct template *tmpl, struct subsystem *sub)
 	argv[2] = line;
 	if (cmd_subsystem(tmpl, sub, "/bin/sh", argv) == -1)
 	{
-		syslog(LOG_ERR, "%s: can not start subsystem \"%s\" for %s",__func__ ,sub->cmdstring, name);
-		exit(EXIT_FAILURE);
+		/* The template runs on without this subsystem */
+		syslog(LOG_ERR, "%s: can not start subsystem \"%s\" for %s",
+		    __func__, sub->cmdstring, name);
+		return;
 	}
 
 }
