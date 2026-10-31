@@ -1,0 +1,5 @@
+# PM-SCR-160: honeyd_udp_recv allocates before making room under the UDP flow cap
+cc_daemon udp_recv_alloc tests/security/udp_recv_alloc.c -Wl,--wrap=calloc
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean udp_recv_alloc
