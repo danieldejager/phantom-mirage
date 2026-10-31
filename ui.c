@@ -156,8 +156,8 @@ ui_dead(struct uiclient *client)
 {
 	syslog(LOG_NOTICE, "%s: ui on fd %d is gone", __func__, client->fd);
 
-	event_del(client->ev_read);
-	event_del(client->ev_write);
+	event_free(client->ev_read);	/* also deletes them */
+	event_free(client->ev_write);
 
 	close(client->fd);
 	evbuffer_free(client->inbuf);

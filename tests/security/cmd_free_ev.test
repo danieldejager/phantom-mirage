@@ -1,0 +1,7 @@
+# PM-SCR-007: cmd_free unscheduled the command events but never freed them
+cc_daemon cmd_free_ev tests/security/cmd_free_ev.c \
+    -Wl,--wrap=event_new,--wrap=event_free
+# The daemon's global configuration is never freed: leak checks off.
+# The test counts live events itself.
+ASAN_OPTIONS=detect_leaks=0
+run_clean cmd_free_ev

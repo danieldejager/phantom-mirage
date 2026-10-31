@@ -257,7 +257,7 @@ tcp_track_free(struct tcp_track *con)
 	hooks_dispatch(IP_PROTO_TCP, HD_INCOMING_STREAM, &con->conhdr,
 	    NULL, 0);
 
-	evtimer_del(con->timeout);
+	event_free(con->timeout);	/* also deletes it */
 
 	free(con);
 }

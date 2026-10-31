@@ -103,18 +103,27 @@ cmd_trigger_write(struct command *cmd, int size)
 void
 cmd_free(struct command *cmd)
 {
-	if (cmd->pread != NULL)
-		TRACE(event_get_fd(cmd->pread), event_del(cmd->pread));
+	/* event_free also deletes the event */
+	if (cmd->pread != NULL) {
+		TRACE(event_get_fd(cmd->pread), event_free(cmd->pread));
+		cmd->pread = NULL;
+	}
 
-	if (cmd->pwrite != NULL)
-		TRACE(event_get_fd(cmd->pwrite), event_del(cmd->pwrite));
+	if (cmd->pwrite != NULL) {
+		TRACE(event_get_fd(cmd->pwrite), event_free(cmd->pwrite));
+		cmd->pwrite = NULL;
+	}
+
+	if (cmd->peread != NULL) {
+		TRACE(event_get_fd(cmd->peread), event_free(cmd->peread));
+		cmd->peread = NULL;
+	}
 
 	TRACE_RESET(cmd->pfd, close(cmd->pfd));
 	cmd->pfd = -1;
 	cmd->pid = -1;
 
 	if (cmd->perrfd != -1) {
-		TRACE(event_get_fd(cmd->peread), event_del(cmd->peread));
 		TRACE_RESET(cmd->perrfd, close(cmd->perrfd));
 		cmd->perrfd = -1;
 	}
@@ -128,6 +137,11 @@ cmd_free(struct command *cmd)
 void
 cmd_ready_fd(struct command *cmd, struct callback *cb, void *con)
 {
+	/* Free the connect event from cmd_proxy_connect before replacing it */
+	if (cmd->pwrite != NULL) {
+		TRACE(event_get_fd(cmd->pwrite), event_free(cmd->pwrite));
+		cmd->pwrite = NULL;
+	}
 	TRACE(cmd->pfd,
 		cmd->pread = event_new(libevent_base, cmd->pfd, EV_READ, cb->cb_read, con));
 	TRACE(cmd->pfd,
