@@ -1,0 +1,5 @@
+# PM-SCR-156: udp_new does not check evtimer_new
+cc_daemon udp_new_timer tests/security/udp_new_timer.c -Wl,--wrap=event_new
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean udp_new_timer

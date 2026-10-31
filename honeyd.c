@@ -1617,7 +1617,7 @@ udp_new(struct ip_hdr *ip, struct udp_hdr *udp, int local)
 {
 	struct udp_con *con;
 
-	udp_make_room();
+	/* Allocate first so a failure at the cap cannot evict a flow */
 	if ((con = calloc(1, sizeof(struct udp_con))) == NULL) {
 			syslog(LOG_WARNING, "calloc: %m");
 			return (NULL);
@@ -1625,9 +1625,17 @@ udp_new(struct ip_hdr *ip, struct udp_hdr *udp, int local)
 
 	honeyd_setudp(con, ip, udp, local);
 
-	udp_insert(con);
-
+	/* Create the idle timer before the flow is listed or counted */
 	con->conhdr.timeout = evtimer_new(libevent_base, honeyd_udp_timeout, con);
+	if (con->conhdr.timeout == NULL) {
+		syslog(LOG_ERR, "%s: evtimer_new failed", __func__);
+		free(con);
+		return (NULL);
+	}
+
+	/* The new flow is not on udplru yet, so it is never the one evicted */
+	udp_make_room();
+	udp_insert(con);
 
 	honeyd_log_flownew(honeyd_logfp, IP_PROTO_UDP, &con->conhdr);
 
