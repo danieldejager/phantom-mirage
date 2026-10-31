@@ -1185,6 +1185,21 @@ honeyd_delay_packet(struct template *tmpl, const struct interface* iface, struct
 
 	if (ms) {
 		delay->timeout = evtimer_new(libevent_base, honeyd_delay_callback, delay);
+		if (delay->timeout == NULL) {
+			/*
+			 * CWE-476/CWE-252: drop the packet. Free what the
+			 * callback would have freed: our packet copy (or the
+			 * caller's packet handed to us with DELAY_FREEPKT),
+			 * the template reference and the delay record.
+			 */
+			syslog(LOG_ERR, "%s: evtimer_new failed, packet dropped",
+			    __func__);
+			if (delay->flags & DELAY_FREEPKT)
+				pool_free(pool_pkt, delay->ip);
+			template_free(delay->tmpl);
+			pool_free(pool_delay, delay);
+			return;
+		}
 		timerclear(&tv);
 		tv.tv_sec = ms / 1000;
 		tv.tv_usec = (ms % 1000) * 1000;
