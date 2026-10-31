@@ -16,6 +16,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <event.h>
+#include <evdns.h>
 #include <pcre.h>
 #include "util.h"
 #include "subsystems/proxy.h"
@@ -87,7 +88,54 @@ second_request(void)
 	return (0);
 }
 
-/* Optional argument "second" runs only the second request case */
+void proxy_handle_get_cb(int, char, int, int, void *, void *);
+
+/*
+ * R2 follow-up: proxy_ta_free defers while a lookup is in flight. A
+ * pending upstream connect must be canceled at that point, not left to
+ * complete and send the request upstream for a client that is gone.
+ */
+static int
+deferred_connect(void)
+{
+	struct sockaddr_in sin;
+	struct proxy_ta *ta;
+	char buf[64];
+	int sv[2], i;
+
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = htonl(0x7f000001);
+	socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+	ta = proxy_ta_new(sv[0], (struct sockaddr *)&sin, sizeof(sin),
+	    NULL, 0);
+	kv_replace(&ta->dictionary, "$host", "192.0.2.5");
+	kv_replace(&ta->dictionary, "$port", "80");
+	kv_replace(&ta->dictionary, "$rawuri", "/");
+	proxy_connect(ta, "192.0.2.5", 80);
+	ta->dns_pending = 1;		/* a lookup is still in flight */
+	proxy_errorcb(NULL, BEV_EVENT_EOF, ta);	/* client goes away */
+	for (i = 0; i < 4; i++)
+		event_loop(EVLOOP_NONBLOCK);
+
+	fcntl(peer[1], F_SETFL, O_NONBLOCK);
+	if (read(peer[1], buf, sizeof(buf)) > 0) {
+		printf("FAIL: request sent upstream after client left\n");
+		return (1);
+	}
+	if (fcntl(peer[0], F_GETFD) != -1) {
+		printf("FAIL: upstream socket still open at deferral\n");
+		return (1);
+	}
+	/* The lookup completes: last reference frees the transaction */
+	proxy_handle_get_cb(DNS_ERR_TIMEOUT, 0, 0, 0, NULL, ta);
+	printf("deferred free: connect canceled, nothing sent upstream\n");
+	close(sv[1]);
+	close(peer[1]);
+	return (0);
+}
+
+/* Optional argument "second" or "deferred" runs only that case */
 int
 main(int argc, char **argv)
 {
@@ -98,6 +146,10 @@ main(int argc, char **argv)
 	if (argc > 1 && strcmp(argv[1], "second") == 0) {
 		event_init();
 		return (second_request());
+	}
+	if (argc > 1 && strcmp(argv[1], "deferred") == 0) {
+		event_init();
+		return (deferred_connect());
 	}
 
 	memset(&sin, 0, sizeof(sin));
