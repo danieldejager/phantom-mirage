@@ -310,6 +310,16 @@ subsystem_listen(struct port *sub_port, char *ip, int nfd)
 	syslog(LOG_DEBUG, "Listen: %s:%d -> fd %d", 
 	    ip, sub_port->number, nfd);
 
+	/*
+	 * One descriptor per port: replacing it would leak the reference
+	 * held for the earlier listen or connection.
+	 */
+	if (sub_port->sub_fd != -1 || sub_port->sub_conport != NULL) {
+		syslog(LOG_WARNING, "%s: port %d already in use",
+		    __func__, sub_port->number);
+		return (-1);
+	}
+
 	/* We use this fd to notify the other side */
 	TRACE(nfd, sub_port->sub_fd = fdshare_dup(nfd));
 	if (sub_port->sub_fd == -1)
@@ -375,8 +385,10 @@ subsystem_cmd_listen(int fd,
 		return (-1);
 	}
 
+	/* Reply 0 on success, not the descriptor number */
+	res = 0;
 	if (strcmp(asrc, "0.0.0.0") != 0) {
-		TRACE(nfd, subsystem_listen(sub_port, asrc, nfd));
+		TRACE(nfd, res = subsystem_listen(sub_port, asrc, nfd));
 	} else {
 		/* 
 		 * Subsystem sharing means that we need to
