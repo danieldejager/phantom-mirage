@@ -160,7 +160,12 @@ arp_free(struct arp_req *req)
 {
 	SPLAY_REMOVE(paarptree, &pa_arp_reqs, req);
 
-	if (SPLAY_FIND(haarptree, &ha_arp_reqs, req) != NULL)
+	/*
+	 * Only remove our own node. External entries are not in the
+	 * hardware address tree, but a reply may have set their MAC to
+	 * that of an internal entry; removing by key would drop that one.
+	 */
+	if (SPLAY_FIND(haarptree, &ha_arp_reqs, req) == req)
 		SPLAY_REMOVE(haarptree, &ha_arp_reqs, req);
 
 	event_free(req->active);

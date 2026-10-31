@@ -1,0 +1,6 @@
+# Freeing an external ARP entry whose MAC came from a reply removed the
+# internal entry with that MAC from the hardware address tree
+cc_daemon arp_ha_rekey tests/security/arp_ha_rekey.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean arp_ha_rekey
