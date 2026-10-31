@@ -824,6 +824,10 @@ template_clone(const char *newname, const struct template *tmpl,
 	struct port *port;
 	struct in_addr in_addr;
 
+	/* CWE-476: check the source before it is dereferenced */
+	if (tmpl == NULL)
+		return (NULL);
+
 	if ((newtmpl = template_create(newname)) == NULL)
 		return (NULL);
 	/* Remember the configured template name for logging */
@@ -838,18 +842,28 @@ template_clone(const char *newname, const struct template *tmpl,
 
 	SPLAY_FOREACH(port, porttree, (struct porttree *)&tmpl->ports) {
 		if (port_insert(newtmpl, port->proto, port->number,
-			&port->action) == NULL)
+			&port->action) == NULL) {
+			/*
+			 * CWE-401: take the half built clone out of the
+			 * index and free it with its ports
+			 */
+			template_free(newtmpl);
 			return (NULL);
+		}
 	}
 
 	SPLAY_FOREACH(port, porttree, (struct porttree *)&tmpl->bcasts) {
 		if (bcast_insert(newtmpl, port->srcport, port->number,
-			port->timeout, &port->action) == -1)
+			port->timeout, &port->action) == -1) {
+			/*
+			 * CWE-401: as above; template_deallocate() also
+			 * frees the broadcast ports added so far, which
+			 * have no timer yet
+			 */
+			template_free(newtmpl);
 			return (NULL);
+		}
 	}
-
-	if(tmpl == NULL)
-		return NULL;
 
 	if (tmpl->person)
 		newtmpl->person = personality_clone(tmpl->person);
