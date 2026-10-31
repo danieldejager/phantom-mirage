@@ -40,8 +40,10 @@ struct proxy_ta {
 	int fd;
 	struct bufferevent *bev;
 
-	int remote_fd;
+	int remote_fd;			/* -1 when not open */
 	struct bufferevent *remote_bev;
+	struct event connect_ev;	/* upstream connect completion */
+	int connect_pending;
 
 	char *proxy_id;
 
