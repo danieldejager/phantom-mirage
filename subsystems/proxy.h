@@ -76,5 +76,7 @@ void proxy_ta_free(struct proxy_ta *ta);
 void proxy_bind_socket(struct event *ev, u_short port);
 void proxy_init(void);
 char *proxy_pcre_group(char *line, int groupnr, int ovector[]);
+int proxy_allow_range(const char *);
+int proxy_decoy_range(const char *);
 
 #endif /* _PROXY_H_ */

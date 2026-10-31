@@ -319,12 +319,12 @@ connect_case(void)
 	peer(&sin, sv);
 	ta = proxy_ta_new(sv[0], (struct sockaddr *)&sin, sizeof(sin),
 	    NULL, 0);
-	kv_replace(&ta->dictionary, "$host", "192.0.2.25");
+	kv_replace(&ta->dictionary, "$host", "100.200.0.25");
 	kv_replace(&ta->dictionary, "$port", "25");
 	long_hostname = malloc(1101);
 	memset(long_hostname, 'g', 1100);
 	long_hostname[1100] = '\0';
-	addr.s_addr = htonl(0xc0000219);
+	addr.s_addr = htonl(0x64c80019);
 	ta->dns_pending = 1;
 	proxy_handle_connect_cb(DNS_ERR_NONE, DNS_IPv4_A, 1, 0, &addr, ta);
 	free(long_hostname);

@@ -59,6 +59,8 @@
 #include <getopt.h>
 #include <err.h>
 #include <syslog.h>
+#include <ifaddrs.h>
+#include <arpa/inet.h>
 
 #include <pcre.h>
 #include <event.h>
@@ -164,48 +166,351 @@ proxy_write_response(struct proxy_ta *ta, struct keyvalue data[])
 		bufferevent_write(ta->bev, response, strlen(response));
 }
 
+/*
+ * Destination policy (PM-SCR-104). Only a numeric, resolved address is
+ * judged; a host name is always refused. IPv4 mapped and IPv4
+ * compatible IPv6 addresses are judged by their embedded IPv4 address.
+ * In order:
+ *   1. the host's own interface addresses and the operator named decoy
+ *      ranges (-D) are refused;
+ *   2. the hard deny ranges below (PROXY_HARD) are refused;
+ *   3. an operator named allow range (-A, none by default) is accepted;
+ *   4. the remaining special purpose ranges below are refused;
+ *   5. anything else is accepted.
+ * So -A, however wide, never reopens steps 1 and 2. NAT64, 6to4 and
+ * Teredo prefixes are refused whole rather than judged by the IPv4
+ * address they carry: a translator or relay can reach any IPv4
+ * address, so the outer address is what the proxy actually talks to.
+ * The cloud metadata addresses are hard as exact addresses only, so a
+ * soft range that holds one can still be reopened around it.
+ * -A and -D each take up to PROXY_MAX_RANGES ranges. A range written in
+ * the IPv4 mapped form, or one of /80 to /95 inside ::/80, is refused
+ * when shorter than /96: addresses there are judged as IPv4, so such a
+ * range would never match anything.
+ */
+struct proxy_range {
+	int af;			/* AF_INET or AF_INET6 */
+	u_char net[16];
+	int bits;
+};
+
+#define PROXY_MAX_RANGES	32
+#define PROXY_HARD		1	/* -A cannot reopen */
+
+static struct proxy_range proxy_allow[PROXY_MAX_RANGES];
+static int proxy_nallow;
+static struct proxy_range proxy_decoy[PROXY_MAX_RANGES];
+static int proxy_ndecoy;
+
+static const struct {
+	const char *net;
+	int bits;
+	int hard;
+} proxy_denied4[] = {
+	{ "0.0.0.0", 8, PROXY_HARD },		/* this network */
+	{ "10.0.0.0", 8, 0 },			/* RFC 1918 */
+	{ "100.64.0.0", 10, 0 },		/* shared address space, CGNAT */
+	{ "100.100.100.200", 32, PROXY_HARD },	/* cloud metadata */
+	{ "127.0.0.0", 8, PROXY_HARD },		/* loopback */
+	{ "169.254.0.0", 16, 0 },		/* link local */
+	{ "169.254.169.254", 32, PROXY_HARD },	/* cloud metadata */
+	{ "169.254.170.2", 32, PROXY_HARD },	/* container metadata */
+	{ "169.254.170.23", 32, PROXY_HARD },	/* pod identity */
+	{ "172.16.0.0", 12, 0 },		/* RFC 1918 */
+	{ "192.0.0.0", 24, 0 },			/* IETF protocol assignments */
+	{ "192.0.0.192", 32, PROXY_HARD },	/* cloud metadata, legacy */
+	{ "192.0.2.0", 24, PROXY_HARD },	/* documentation */
+	{ "192.88.99.0", 24, PROXY_HARD },	/* 6to4 relay anycast */
+	{ "192.168.0.0", 16, 0 },		/* RFC 1918 */
+	{ "198.18.0.0", 15, 0 },		/* benchmarking */
+	{ "198.51.100.0", 24, PROXY_HARD },	/* documentation */
+	{ "203.0.113.0", 24, PROXY_HARD },	/* documentation */
+	{ "224.0.0.0", 4, 0 },			/* multicast */
+	{ "240.0.0.0", 4, 0 },			/* reserved */
+	{ "255.255.255.255", 32, PROXY_HARD },	/* limited broadcast */
+	{ NULL, 0, 0 }
+}, proxy_denied6[] = {
+	{ "::", 128, PROXY_HARD },		/* unspecified */
+	{ "::1", 128, PROXY_HARD },		/* loopback */
+	{ "64:ff9b::", 96, PROXY_HARD },	/* NAT64 well known prefix */
+	{ "64:ff9b:1::", 48, PROXY_HARD },	/* NAT64 local use */
+	{ "100::", 64, PROXY_HARD },		/* discard only */
+	{ "2001::", 23, PROXY_HARD },		/* IETF protocol assignments */
+	{ "2001::", 32, PROXY_HARD },		/* Teredo (inside the /23) */
+	{ "2001:db8::", 32, PROXY_HARD },	/* documentation */
+	{ "2002::", 16, PROXY_HARD },		/* 6to4 */
+	{ "5f00::", 16, PROXY_HARD },		/* SRv6 SIDs */
+	{ "fc00::", 7, 0 },			/* unique local */
+	{ "fd00:ec2::254", 128, PROXY_HARD },	/* cloud metadata */
+	{ "fd00:ec2::23", 128, PROXY_HARD },	/* pod identity */
+	{ "fe80::", 10, 0 },			/* link local */
+	{ "fec0::", 10, PROXY_HARD },		/* site local, deprecated */
+	{ "ff00::", 8, 0 },			/* multicast */
+	{ NULL, 0, 0 }
+};
+
+static int
+proxy_prefix_match(const u_char *a, const u_char *net, int bits)
+{
+	int full = bits / 8, rest = bits % 8;
+
+	if (memcmp(a, net, full) != 0)
+		return (0);
+	if (rest == 0)
+		return (1);
+	return (((a[full] ^ net[full]) & (0xff << (8 - rest)) & 0xff) == 0);
+}
+
+/* Reduces IPv4 mapped and IPv4 compatible IPv6 to IPv4 */
+static void
+proxy_normalize(int *af, u_char *a)
+{
+	static const u_char mapped[12] = {
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff };
+	static const u_char zero[16];
+
+	if (*af != AF_INET6)
+		return;
+	if (memcmp(a, mapped, 12) == 0 ||
+	    (memcmp(a, zero, 12) == 0 && memcmp(a, zero, 16) != 0 &&
+	     !(memcmp(a, zero, 15) == 0 && a[15] == 1))) {
+		memmove(a, a + 12, 4);
+		*af = AF_INET;
+	}
+}
+
+static int
+proxy_parse_addr(const char *s, int *af, u_char *a)
+{
+	memset(a, 0, 16);
+	if (inet_pton(AF_INET, s, a) == 1)
+		*af = AF_INET;
+	else if (inet_pton(AF_INET6, s, a) == 1)
+		*af = AF_INET6;
+	else
+		return (-1);
+	proxy_normalize(af, a);
+	return (0);
+}
+
+static int
+proxy_parse_range(const char *s, struct proxy_range *r)
+{
+	char buf[INET6_ADDRSTRLEN + 8], *slash, *end;
+	int max;
+	long bits;
+
+	if (strlen(s) >= sizeof(buf))
+		return (-1);
+	snprintf(buf, sizeof(buf), "%s", s);
+	if ((slash = strchr(buf, '/')) != NULL)
+		*slash++ = '\0';
+	memset(r->net, 0, sizeof(r->net));
+	if (inet_pton(AF_INET, buf, r->net) == 1)
+		r->af = AF_INET;
+	else if (inet_pton(AF_INET6, buf, r->net) == 1)
+		r->af = AF_INET6;
+	else
+		return (-1);
+	max = r->af == AF_INET ? 32 : 128;
+	r->bits = max;
+	if (slash != NULL) {
+		bits = strtol(slash, &end, 10);
+		if (*slash == '\0' || *end != '\0' || bits < 0 || bits > max)
+			return (-1);
+		r->bits = bits;
+	}
+	if (r->af == AF_INET6 && r->bits < 96) {
+		static const u_char zero[10];
+
+		if (memcmp(r->net, zero, 10) == 0 &&
+		    ((r->net[10] == 0xff && r->net[11] == 0xff) ||
+		     r->bits >= 80))
+			return (-2);	/* could never match */
+	}
+	/*
+	 * A mapped or compatible range that covers only embedded IPv4
+	 * addresses is stored as the IPv4 range, the same way addresses
+	 * are normalised before they are compared.
+	 */
+	if (r->af == AF_INET6 && r->bits >= 96) {
+		int af = AF_INET6;
+		u_char a[16];
+
+		memcpy(a, r->net, sizeof(a));
+		proxy_normalize(&af, a);
+		if (af == AF_INET) {
+			memset(r->net, 0, sizeof(r->net));
+			memcpy(r->net, a, 4);
+			r->af = AF_INET;
+			r->bits -= 96;
+		}
+	}
+	return (0);
+}
+
+static int
+proxy_add_range(struct proxy_range *list, int *n, const char *s)
+{
+	int rc;
+
+	if (*n >= PROXY_MAX_RANGES)
+		return (-3);	/* over the limit */
+	if ((rc = proxy_parse_range(s, &list[*n])) != 0)
+		return (rc);
+	(*n)++;
+	return (0);
+}
+
+/*
+ * -A: allow a range inside the special purpose ranges that are not
+ * hard denied. Off by default; up to PROXY_MAX_RANGES ranges.
+ */
+int
+proxy_allow_range(const char *s)
+{
+	return (proxy_add_range(proxy_allow, &proxy_nallow, s));
+}
+
+/* -D: refuse a decoy (honeyd virtual) address range; up to PROXY_MAX_RANGES */
+int
+proxy_decoy_range(const char *s)
+{
+	return (proxy_add_range(proxy_decoy, &proxy_ndecoy, s));
+}
+
+static int
+proxy_in_ranges(const struct proxy_range *list, int n, int af,
+    const u_char *a)
+{
+	int i;
+
+	for (i = 0; i < n; i++) {
+		if (list[i].af == af &&
+		    proxy_prefix_match(a, list[i].net, list[i].bits))
+			return (1);
+	}
+	return (0);
+}
+
+static int
+proxy_own_interface(int af, const u_char *a)
+{
+	struct ifaddrs *ifa, *i;
+	u_char b[16];
+	int baf, found = 0;
+
+	if (getifaddrs(&ifa) == -1)
+		return (1);	/* cannot tell: refuse */
+	for (i = ifa; i != NULL && !found; i = i->ifa_next) {
+		if (i->ifa_addr == NULL)
+			continue;
+		memset(b, 0, sizeof(b));
+		baf = i->ifa_addr->sa_family;
+		if (baf == AF_INET)
+			memcpy(b, &((struct sockaddr_in *)
+			    i->ifa_addr)->sin_addr, 4);
+		else if (baf == AF_INET6)
+			memcpy(b, &((struct sockaddr_in6 *)
+			    i->ifa_addr)->sin6_addr, 16);
+		else
+			continue;
+		proxy_normalize(&baf, b);
+		found = baf == af && memcmp(a, b, af == AF_INET ? 4 : 16) == 0;
+	}
+	freeifaddrs(ifa);
+	return (found);
+}
+
+/* In a deny table range; hard only, or any when hard is 0 */
+static int
+proxy_denied(int af, const u_char *a, int hard)
+{
+	u_char net[16];
+	int i;
+
+	for (i = 0; ; i++) {
+		const char *s = af == AF_INET ?
+		    proxy_denied4[i].net : proxy_denied6[i].net;
+		int bits = af == AF_INET ?
+		    proxy_denied4[i].bits : proxy_denied6[i].bits;
+		int h = af == AF_INET ?
+		    proxy_denied4[i].hard : proxy_denied6[i].hard;
+
+		if (s == NULL)
+			return (0);
+		if (hard && !h)
+			continue;
+		memset(net, 0, sizeof(net));
+		inet_pton(af, s, net);
+		if (proxy_prefix_match(a, net, bits))
+			return (1);
+	}
+}
+
+static int
+proxy_allowed_addr(int af, u_char *a)
+{
+
+	proxy_normalize(&af, a);
+	if (proxy_own_interface(af, a) ||
+	    proxy_in_ranges(proxy_decoy, proxy_ndecoy, af, a))
+		return (0);
+	if (proxy_denied(af, a, PROXY_HARD))
+		return (0);
+	if (proxy_in_ranges(proxy_allow, proxy_nallow, af, a))
+		return (1);
+	return (!proxy_denied(af, a, 0));
+}
+
+/* Takes a numeric address; a host name is refused */
 int
 proxy_allowed_network(const char *host)
 {
-	const char *error;
-	int erroroffset;
-	pcre *re_uri;
-	int rc;
-	int ovector[30];
-	char *unusednets[] = {
-		"^127\\.[0-9]+\\.[0-9]+\\.[0-9]+$",		/* local */
-		"^10\\.[0-9]+\\.[0-9]+\\.[0-9]+$",		/* rfc-1918 */
-		"^172\\.(1[6-9]|2[0-9]|3[01])\\.[0-9]+\\.[0-9]+$",
-		"^192\\.168\\.[0-9]+\\.[0-9]+$",		/* rfc-1918 */
-		"^2(2[4-9]|3[0-9])\\.[0-9]+\\.[0-9]+\\.[0-9]+$",/* rfc-1112 */
-		"^2(4[0-9]|5[0-5])\\.[0-9]+\\.[0-9]+\\.[0-9]+$",
-		"^0\\.[0-9]+\\.[0-9]+\\.[0-9]+$",
-		"^255\\.[0-9]+\\.[0-9]+\\.[0-9]+$",
-		NULL
-	};
+	u_char a[16];
+	int af;
 
-	char **p;
+	if (host == NULL || proxy_parse_addr(host, &af, a) == -1)
+		return (0);
+	return (proxy_allowed_addr(af, a));
+}
 
-	for (p = &unusednets[0]; *p; ++p) {
-		re_uri = pcre_compile(*p, PCRE_CASELESS,
-		    &error, &erroroffset, NULL);
-		if (re_uri == NULL) {
-			/* Default to no match */
-			fprintf(stderr, "%s: %s: %s at %d",
-			    __func__, *p, error, erroroffset);
-			return (0);
-		}
+/* Same policy for a connected socket's peer */
+static int
+proxy_allowed_peer(int fd)
+{
+	struct sockaddr_storage ss;
+	socklen_t len = sizeof(ss);
+	u_char a[16];
 
-		/* Match against the URI */
-		rc = pcre_exec(re_uri, NULL, host, strlen(host),
-		    0, 0, ovector, 30);
-		pcre_free(re_uri);
-
-		if (rc >= 0)
-			return (0);
+	memset(&ss, 0, sizeof(ss));
+	memset(a, 0, sizeof(a));
+	if (getpeername(fd, (struct sockaddr *)&ss, &len) == -1)
+		return (0);
+	if (ss.ss_family == AF_INET) {
+		memcpy(a, &((struct sockaddr_in *)&ss)->sin_addr, 4);
+		return (proxy_allowed_addr(AF_INET, a));
 	}
+	if (ss.ss_family == AF_INET6) {
+		memcpy(a, &((struct sockaddr_in6 *)&ss)->sin6_addr, 16);
+		return (proxy_allowed_addr(AF_INET6, a));
+	}
+	return (0);
+}
 
-	return (1);
+/* The subsystem's own decoy address, as honeyd reported it */
+static int
+proxy_is_local(struct proxy_ta *ta, const char *host)
+{
+	char *local = kv_find(&ta->dictionary, "$dstipaddress");
+	u_char a[16], b[16];
+	int af, bf;
+
+	if (local == NULL || proxy_parse_addr(local, &bf, b) == -1)
+		return (0);
+	if (proxy_parse_addr(host, &af, a) == -1)
+		return (1);
+	return (af == bf && memcmp(a, b, af == AF_INET ? 4 : 16) == 0);
 }
 
 /*
@@ -350,6 +655,17 @@ proxy_connect_cb(int fd, short what, void *arg)
 		return;
 	}
 
+	/* Check the address actually connected to, not only the name */
+	if (!proxy_allowed_peer(fd)) {
+		close(fd);
+		ta->remote_fd = -1;
+		kv_replace(&ta->dictionary, "$reason",
+		    "destination not allowed");
+		proxy_write_response(ta, badconnect);
+		ta->wantclose = 1;
+		return;
+	}
+
 	ta->remote_bev = bufferevent_new(ta->remote_fd,
 	    proxy_remote_readcb, proxy_remote_writecb,
 	    proxy_remote_errorcb, ta);
@@ -402,7 +718,9 @@ proxy_connect(struct proxy_ta *ta, char *host, int port)
 		return;
 	}
 
-	if (proxy_allowed_network(host)) {
+	if (!proxy_allowed_network(host) || proxy_is_local(ta, host)) {
+		errno = EACCES;
+	} else {
 		char *local_ip = kv_find(&ta->dictionary, "$dstipaddress");
 
 		if (local_ip != NULL) {
@@ -543,6 +861,7 @@ proxy_handle_connect_cb(int result, char type, int count, int ttl,
 	char *host = kv_find(&ta->dictionary, "$host");
 	int port = proxy_parse_port(kv_find(&ta->dictionary, "$port"));
 	char *response;
+	int allowed = 0;
 	fprintf(stderr, "Connecting to %s port %d\n", host, port);
 
 	ta->dns_pending--;
@@ -559,7 +878,16 @@ proxy_handle_connect_cb(int result, char type, int count, int ttl,
 		return;
 	}
 
-	if (port != 25 || !proxy_allowed_network(host)) {
+	/* Judge the resolved address, not the name (PM-SCR-104) */
+	if (type == DNS_IPv4_A && count > 0) {
+		struct addr addr;
+
+		addr_pack(&addr, ADDR_TYPE_IP, IP_ADDR_BITS, addresses,
+		    IP_ADDR_LEN);
+		allowed = proxy_allowed_network(addr_ntoa(&addr));
+	}
+
+	if (port != 25 || !allowed) {
 		proxy_write_response(ta, badport);
 		ta->wantclose = 1;
 	} else {

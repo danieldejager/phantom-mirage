@@ -37,6 +37,29 @@ __wrap_make_socket(int (*f)(int, const struct sockaddr *, socklen_t),
 }
 
 /*
+ * The upstream end is a socketpair; report the address it stands for,
+ * since the proxy checks the connected peer (PM-SCR-104).
+ */
+int __real_getpeername(int, struct sockaddr *, socklen_t *);
+
+int
+__wrap_getpeername(int fd, struct sockaddr *sa, socklen_t *len)
+{
+	struct sockaddr_in sin;
+
+	if (fd != peer[0])
+		return (__real_getpeername(fd, sa, len));
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_port = htons(80);
+	sin.sin_addr.s_addr = htonl(0x64c80005);	/* 100.200.0.5 */
+	if (*len > sizeof(sin))
+		*len = sizeof(sin);
+	memcpy(sa, &sin, *len);
+	return (0);
+}
+
+/*
  * Review fix: a second request on the same client connection while the
  * first upstream connect is in flight must get an error response and a
  * clean close, not silence.
@@ -57,10 +80,10 @@ second_request(void)
 	socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
 	ta = proxy_ta_new(sv[0], (struct sockaddr *)&sin, sizeof(sin),
 	    NULL, 0);
-	kv_replace(&ta->dictionary, "$host", "192.0.2.5");
+	kv_replace(&ta->dictionary, "$host", "100.200.0.5");
 	kv_replace(&ta->dictionary, "$rawuri", "/");
-	proxy_connect(ta, "192.0.2.5", 80);	/* first request */
-	proxy_connect(ta, "192.0.2.6", 80);	/* second, client still here */
+	proxy_connect(ta, "100.200.0.5", 80);	/* first request */
+	proxy_connect(ta, "100.200.0.6", 80);	/* second, client still here */
 	for (i = 0; i < 4; i++)
 		event_loop(EVLOOP_NONBLOCK);
 
@@ -109,10 +132,10 @@ deferred_connect(void)
 	socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
 	ta = proxy_ta_new(sv[0], (struct sockaddr *)&sin, sizeof(sin),
 	    NULL, 0);
-	kv_replace(&ta->dictionary, "$host", "192.0.2.5");
+	kv_replace(&ta->dictionary, "$host", "100.200.0.5");
 	kv_replace(&ta->dictionary, "$port", "80");
 	kv_replace(&ta->dictionary, "$rawuri", "/");
-	proxy_connect(ta, "192.0.2.5", 80);
+	proxy_connect(ta, "100.200.0.5", 80);
 	ta->dns_pending = 1;		/* a lookup is still in flight */
 	proxy_errorcb(NULL, BEV_EVENT_EOF, ta);	/* client goes away */
 	for (i = 0; i < 4; i++)
@@ -160,7 +183,7 @@ main(int argc, char **argv)
 
 	ta = proxy_ta_new(sv[0], (struct sockaddr *)&sin, sizeof(sin),
 	    NULL, 0);
-	proxy_connect(ta, "192.0.2.5", 80);
+	proxy_connect(ta, "100.200.0.5", 80);
 	/* Client goes away before the upstream connect completes */
 	proxy_errorcb(NULL, BEV_EVENT_EOF, ta);
 	for (i = 0; i < 4; i++)
@@ -180,9 +203,9 @@ main(int argc, char **argv)
 	socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
 	ta = proxy_ta_new(sv[0], (struct sockaddr *)&sin, sizeof(sin),
 	    NULL, 0);
-	kv_replace(&ta->dictionary, "$host", "192.0.2.5");
+	kv_replace(&ta->dictionary, "$host", "100.200.0.5");
 	kv_replace(&ta->dictionary, "$rawuri", "/");
-	proxy_connect(ta, "192.0.2.5", 80);
+	proxy_connect(ta, "100.200.0.5", 80);
 	for (i = 0; i < 4; i++)
 		event_loop(EVLOOP_NONBLOCK);
 	if (ta->remote_bev == NULL) {

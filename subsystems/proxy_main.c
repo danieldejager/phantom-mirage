@@ -79,10 +79,23 @@ int debug;
 static void
 usage(char *progname)
 {
-	fprintf(stderr, "%s [-p port] [-l logfile] [-L mail_logfile]\n"
+	fprintf(stderr, "%s [-p port] [-l logfile] [-L mail_logfile]"
+	    " [-A range] [-D range]\n"
 	    "\t -p port    - specifies port to bind to\n"
 	    "\t -l logfile - logs PROXY transaction to specified file\n"
-	    "\t -L mail_logfile - logs SMTP transactions to specified file\n",
+	    "\t -L mail_logfile - logs SMTP transactions to specified file\n"
+	    "\t -A range   - allows proxying to an address range inside the\n"
+	    "\t              private, link local and similar special purpose\n"
+	    "\t              ranges, for example 10.1.0.0/16; never reopens\n"
+	    "\t              loopback, 0/8, ::, documentation, NAT64, 6to4,\n"
+	    "\t              Teredo, discard, site local, broadcast, cloud\n"
+	    "\t              metadata, own interface or decoy addresses; IPv4\n"
+	    "\t              mapped forms must be /96 or longer; up to 32\n"
+	    "\t              ranges, none by default\n"
+	    "\t -D range   - refuses the decoy address range, for example\n"
+	    "\t              10.20.0.0/16; IPv4 mapped forms are the same\n"
+	    "\t              range and must be /96 or longer; up to 32\n"
+	    "\t              ranges\n",
 	    progname);
 	exit(EXIT_SUCCESS);
 }
@@ -94,11 +107,11 @@ main(int argc, char **argv)
 	char *progname = argv[0];
 	char *logfile = NULL;
 	char *mail_logfile = NULL;
-	int ch;
+	int ch, rc;
 	char *ports = NULL;
 	u_short port = 2525;
 
-	while ((ch = getopt(argc, argv, "ve:p:L:l:d:")) != -1) {
+	while ((ch = getopt(argc, argv, "ve:p:L:l:d:A:D:")) != -1) {
 		switch (ch) {
 		case 'e':
 			fprintf(stderr, "Redirecting stderr to %s\n", optarg);
@@ -120,6 +133,28 @@ main(int argc, char **argv)
 			break;
 		case 'L':
 			mail_logfile = optarg;
+			break;
+		case 'A':
+			if ((rc = proxy_allow_range(optarg)) == -2)
+				errx(EXIT_FAILURE, "Bad -A range: %s: an IPv4 "
+				    "mapped or compatible range must be /96 or "
+				    "longer", optarg);
+			if (rc == -3)
+				errx(EXIT_FAILURE, "Too many -A ranges: %s: the "
+				    "limit is 32", optarg);
+			if (rc != 0)
+				errx(EXIT_FAILURE, "Bad -A range: %s", optarg);
+			break;
+		case 'D':
+			if ((rc = proxy_decoy_range(optarg)) == -2)
+				errx(EXIT_FAILURE, "Bad -D range: %s: an IPv4 "
+				    "mapped or compatible range must be /96 or "
+				    "longer", optarg);
+			if (rc == -3)
+				errx(EXIT_FAILURE, "Too many -D ranges: %s: the "
+				    "limit is 32", optarg);
+			if (rc != 0)
+				errx(EXIT_FAILURE, "Bad -D range: %s", optarg);
 			break;
 		case 'd': {
 			if (smtp_set_datadir(optarg) == -1)
