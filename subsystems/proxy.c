@@ -666,10 +666,28 @@ proxy_readline(struct bufferevent *bev)
 	return (line);
 }
 
+/*
+ * Too many header lines or bytes: answer 400 unless a reply is already
+ * queued, stop reading and close once the reply has been written.
+ */
+static void
+proxy_header_limit(struct proxy_ta *ta)
+{
+	struct evbuffer *input = EVBUFFER_INPUT(ta->bev);
+
+	bufferevent_disable(ta->bev, EV_READ);
+	evbuffer_drain(input, evbuffer_get_length(input));
+	if (!ta->wantclose)
+		proxy_bad_connection(ta);
+	else if (evbuffer_get_length(EVBUFFER_OUTPUT(ta->bev)) == 0)
+		proxy_ta_free(ta);	/* nothing left to write */
+}
+
 void
 proxy_readcb(struct bufferevent *bev, void *arg)
 {
 	struct proxy_ta *ta = arg;
+	size_t before;
 	char *line;
 
 	if (ta->justforward) {
@@ -686,8 +704,23 @@ proxy_readcb(struct bufferevent *bev, void *arg)
 		return;
 	}
 
+	before = evbuffer_get_length(EVBUFFER_INPUT(bev));
 	while ((line = proxy_readline(bev)) != NULL) {
 		int res = 0;
+		size_t used = before - evbuffer_get_length(EVBUFFER_INPUT(bev));
+
+		before = evbuffer_get_length(EVBUFFER_INPUT(bev));
+		/* Header lines and discarded lines count against the limits */
+		if (ta->wantclose || (ta->empty_cb != NULL && strlen(line))) {
+			ta->hdr_lines++;
+			ta->hdr_bytes += used;
+			if (ta->hdr_lines > PROXY_MAX_HEADER_LINES ||
+			    ta->hdr_bytes > PROXY_MAX_HEADER_BYTES) {
+				free(line);
+				proxy_header_limit(ta);
+				return;
+			}
+		}
 		/* If we are ready to close on the bugger, just eat it */
 		if (ta->wantclose) {
 			free(line);
