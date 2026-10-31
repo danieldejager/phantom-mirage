@@ -13,6 +13,11 @@
 static int ev_live;
 static int ev_made;	/* every event_new, freed or not */
 
+/* Optional: events a test wants to see freed, set by the test */
+#define EV_WATCH_MAX	4
+static struct event *ev_watch[EV_WATCH_MAX];
+static int ev_watch_freed[EV_WATCH_MAX];
+
 struct event *__real_event_new(struct event_base *, evutil_socket_t, short,
     event_callback_fn, void *);
 void __real_event_free(struct event *);
@@ -33,6 +38,11 @@ __wrap_event_new(struct event_base *b, evutil_socket_t fd, short what,
 void
 __wrap_event_free(struct event *ev)
 {
+	int i;
+
+	for (i = 0; i < EV_WATCH_MAX; i++)
+		if (ev != NULL && ev == ev_watch[i])
+			ev_watch_freed[i] = 1;
 	ev_live--;
 	__real_event_free(ev);
 }

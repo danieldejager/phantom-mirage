@@ -273,6 +273,38 @@ dhcp_abort(struct template *tmpl)
 	req->state = 0;
 }
 
+/*
+ * Release everything a template's DHCP request owns: all three timers
+ * are deleted and freed so none can fire against a freed template.
+ */
+void
+dhcp_req_free(struct template *tmpl)
+{
+	struct dhcpclient_req *req = tmpl->dhcp_req;
+
+	if (req == NULL)
+		return;
+
+	if (req->timeoutEv != NULL) {
+		event_del(req->timeoutEv);
+		event_free(req->timeoutEv);
+		req->timeoutEv = NULL;
+	}
+	if (req->renewEv != NULL) {
+		event_del(req->renewEv);
+		event_free(req->renewEv);
+		req->renewEv = NULL;
+	}
+	if (req->renewTimeoutEv != NULL) {
+		event_del(req->renewTimeoutEv);
+		event_free(req->renewTimeoutEv);
+		req->renewTimeoutEv = NULL;
+	}
+
+	free(req);
+	tmpl->dhcp_req = NULL;
+}
+
 static void
 _dhcp_renew_cb(int fd, short ev, void *arg)
 {
