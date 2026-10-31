@@ -39,6 +39,7 @@
 #include "template.h"
 #include "subsystem.h"
 #include "fdpass.h"
+#include "util.h"
 #include "fuzz_common.h"
 
 extern struct callback subsystem_cb;
@@ -80,7 +81,7 @@ __wrap_fdshare_dup(int fd)
 
 /* PM-SCR-197: sendmsg sends one byte short on demand */
 ssize_t __real_sendmsg(int, const struct msghdr *, int);
-static int short_send, fail_send;
+static int short_send, fail_send, n_send;
 
 ssize_t
 __wrap_sendmsg(int s, const struct msghdr *msg, int flags)
@@ -88,6 +89,7 @@ __wrap_sendmsg(int s, const struct msghdr *msg, int flags)
 	struct msghdr m = *msg;
 	struct iovec v;
 
+	n_send++;
 	if (fail_send) {
 		errno = EPIPE;
 		return (-1);
@@ -118,22 +120,31 @@ static int peer;
 
 /* An incoming UDP flow to 10.0.0.2:53 with a subsystem port */
 static struct udp_con *
-udp_flow(struct port **pp, int *subside)
+udp_con_new(int sport)
 {
 	struct ip_hdr ip;
 	struct udp_hdr udp;
-	struct action a;
 	struct udp_con *con;
-	int sv[2];
 
 	memset(&ip, 0, sizeof(ip));
 	memset(&udp, 0, sizeof(udp));
 	inet_pton(AF_INET, "192.0.2.9", &ip.ip_src);
 	inet_pton(AF_INET, "10.0.0.2", &ip.ip_dst);
-	udp.uh_sport = htons(5000);
+	udp.uh_sport = htons(sport);
 	udp.uh_dport = htons(53);
 	if ((con = udp_new(&ip, &udp, 0)) == NULL)
 		abort();
+	return (con);
+}
+
+static struct udp_con *
+udp_flow(struct port **pp, int *subside)
+{
+	struct action a;
+	struct udp_con *con;
+	int sv[2];
+
+	con = udp_con_new(5000);
 	memset(&a, 0, sizeof(a));
 	a.status = PORT_SUBSYSTEM;
 	if ((*pp = port_insert(tmpl, IP_PROTO_UDP, 53, &a)) == NULL)
@@ -141,7 +152,7 @@ udp_flow(struct port **pp, int *subside)
 	subsystem_readyport(*pp, sub, tmpl);
 	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1)
 		abort();
-	(*pp)->sub_fd = sv[0];
+	(*pp)->sub_fd = fdshare_dup(sv[0]);
 	*subside = sv[1];
 	return (con);
 }
@@ -454,6 +465,47 @@ main(int argc, char **argv)
 			return (1);
 		close(sv[0]);
 		return (expect(open_fds() == n, "no descriptor leaked"));
+	}
+	if (strcmp(t, "connect_partial_reset") == 0) {
+		/*
+		 * PM-SCR-206: after a partial descriptor send the port
+		 * channel is closed, not reused, so the subsystem never
+		 * reads a later message out of frame.
+		 */
+		struct udp_con *c1, *c2, *c3;
+		char buf[64];
+		ssize_t n, got = 0;
+		int other, nudp, rc;
+
+		c1 = udp_flow(&p, &other);
+		c2 = udp_con_new(5001);
+		nudp = honeyd_nudp;
+		if (cmd_subsystem_schedule_connect(&c1->conhdr, &c1->cmd, p,
+		    c1) == -1 ||
+		    cmd_subsystem_schedule_connect(&c2->conhdr, &c2->cmd, p,
+		    c2) == -1)
+			abort();
+		short_send = 1;
+		n_send = 0;
+		for (int i = 0; i < 20 && honeyd_nudp > nudp - 2; i++)
+			event_base_loop(libevent_base,
+			    EVLOOP_ONCE | EVLOOP_NONBLOCK);
+		short_send = 0;
+		rc = expect(n_send == 1, "no send on the misframed channel");
+		rc |= expect(honeyd_nudp == nudp - 2,
+		    "pending flows on the channel dropped");
+		rc |= expect(p->sub_fd == -1, "channel closed");
+		c3 = udp_con_new(5002);
+		rc |= expect(cmd_subsystem_schedule_connect(&c3->conhdr,
+		    &c3->cmd, p, c3) == -1, "closed channel refuses connects");
+		/* The subsystem side sees the fragment, then end of stream */
+		fcntl(other, F_SETFL, O_NONBLOCK);
+		while ((n = read(other, buf, sizeof(buf))) > 0)
+			got += n;
+		rc |= expect(got > 0 && n == 0,
+		    "subsystem sees end of stream after the fragment");
+		close(other);
+		return (rc);
 	}
 	if (strcmp(t, "connect_udp_fail") == 0) {
 		/* PM-SCR-205: a failed UDP connect drops the flow at once */

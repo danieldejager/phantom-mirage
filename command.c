@@ -740,14 +740,50 @@ cmd_subsystem_connect_cb(int fd, short what, void *arg)
 	}
 }
 
+/*
+ * Closes a port channel that can no longer be trusted to be in frame and
+ * drops the connections waiting on it.  The subsystem may bind the port
+ * again; until then connects to it are refused.
+ */
+static void
+cmd_subsystem_reset_port(struct port *port)
+{
+	struct port_encapsulate *tmp;
+	struct tuple *hdr;
+	void *con;
+
+	while ((tmp = TAILQ_FIRST(&port->pending)) != NULL) {
+		hdr = tmp->hdr;
+		con = tmp->con;
+		port_encapsulation_free(tmp);
+		if (hdr == NULL)
+			continue;
+		if (hdr->type == SOCK_STREAM)
+			tcp_connectfail(con);
+		else
+			udp_free(con);
+	}
+
+	if (port->sub_fd != -1) {
+		syslog(LOG_WARNING, "%s: closing out of frame channel to "
+		    "subsystem \"%s\"", __func__, port->sub->cmdstring);
+		TRACE(port->sub_fd, fdshare_close(port->sub_fd));
+		port->sub_fd = -1;
+	}
+}
+
 int
 cmd_subsystem_schedule_connect(struct tuple *hdr, struct command *cmd,
     struct port *port, void *con)
 {
-	struct port_encapsulate *tmp = calloc(1, sizeof(*tmp));
+	struct port_encapsulate *tmp;
 	struct subsystem *sub = port->sub;
 
-	if (tmp == NULL)
+	/* The channel was closed after an error */
+	if (port->sub_fd == -1)
+		return (-1);
+
+	if ((tmp = calloc(1, sizeof(*tmp))) == NULL)
 		return (-1);
 
 	tmp->hdr = hdr;
@@ -815,9 +851,17 @@ cmd_subsystem_connect(struct tuple *hdr, struct command *cmd,
 
 	if (send_fd_timed(port->sub_fd, pair[1], &bundle, sizeof(bundle),
 	    SUBSYSTEM_IO_TIMEOUT) == -1) {
+		int serrno = errno;
+
 		TRACE_RESET(pair[0], close(pair[0]));
 		TRACE_RESET(pair[1], close(pair[1]));
 		cmd->pfd = -1;
+		/*
+		 * CWE-664: anything but a timeout may have left part of a
+		 * message on the channel, so it is out of frame for good.
+		 */
+		if (serrno != ETIMEDOUT)
+			cmd_subsystem_reset_port(port);
 		return (-1);
 	}
 
