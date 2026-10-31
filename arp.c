@@ -135,6 +135,10 @@ SPLAY_GENERATE(haarptree, arp_req, next_ha, ha_compare);
  */
 static TAILQ_HEAD(arpextq, arp_req) arp_extlru =
     TAILQ_HEAD_INITIALIZER(arp_extlru);
+/*
+ * "option honeyd max_arp_pending N" and "option honeyd max_arp_entries N"
+ * override these when set (values below 1 are ignored).
+ */
 static int arp_cap_pending = ARP_MAX_PENDING;
 static int arp_cap_entries = ARP_MAX_ENTRIES;
 static int arp_npending;	/* counted entries whose callback has not run */
@@ -400,7 +404,12 @@ arp_request(struct interface *inter,
 	 * failure on a detached request with no interface, so the caller's
 	 * failure path frees its queued packet and nothing is sent.
 	 */
-	if (arp_npending >= arp_cap_pending) {
+	int max_pending = honeyd_flow_option("max_arp_pending",
+	    arp_cap_pending);
+	int max_entries = honeyd_flow_option("max_arp_entries",
+	    arp_cap_entries);
+
+	if (arp_npending >= max_pending) {
 		struct arp_req tmp;
 
 		memset(&tmp, 0, sizeof(tmp));
@@ -420,7 +429,7 @@ arp_request(struct interface *inter,
 	 * again, then fail its callback once (frees a queued packet), then
 	 * free it.
 	 */
-	while (arp_nexternal >= arp_cap_entries &&
+	while (arp_nexternal >= max_entries &&
 	    (req = TAILQ_FIRST(&arp_extlru)) != NULL) {
 		arp_uncount(req);
 		arp_nevicted++;

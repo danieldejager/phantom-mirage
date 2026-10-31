@@ -125,10 +125,13 @@ make_prompt(void)
 	extern int honeyd_nchildren;
 	extern int honeyd_nudp;
 	extern uint32_t honeyd_udp_evicted;
+	extern int arp_external_count(void);
+	extern uint32_t arp_pending_rejected(void), arp_external_evicted(void);
 
-	snprintf(tmp, sizeof(tmp), "%dC %dU %uE %dP %s",
-	    honeyd_nconnects, honeyd_nudp, honeyd_udp_evicted, honeyd_nchildren,
-	    PROMPT);
+	snprintf(tmp, sizeof(tmp), "%dC %dU %uE %dA %uR %uV %dP %s",
+	    honeyd_nconnects, honeyd_nudp, honeyd_udp_evicted,
+	    arp_external_count(), arp_pending_rejected(),
+	    arp_external_evicted(), honeyd_nchildren, PROMPT);
 
 	return (tmp);
 }

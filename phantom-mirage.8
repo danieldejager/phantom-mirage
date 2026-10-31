@@ -313,13 +313,15 @@ The value can be either an integer, a float, or a character string.
 The options are picked up when phantom-mirage reads the configuration file and
 can then be queried by the plugins.
 .Pp
-Three options under the plugin name
+Five options under the plugin name
 .Va honeyd
-limit concurrent flows:
+limit concurrent flows and ARP state:
 .Bd -literal -offset indent
 option honeyd max_template_flows 65535
 option honeyd max_source_flows 1000
 option honeyd max_udp_flows 32000
+option honeyd max_arp_pending 256
+option honeyd max_arp_entries 4096
 .Ed
 .Pp
 .Va max_template_flows
@@ -332,6 +334,13 @@ source is refused while it is over the cap.
 caps the UDP flow state kept for all templates together; at the cap
 the least recently used UDP flow is dropped without an ICMP error to
 make room for the new one.
+.Va max_arp_pending
+caps the ARP requests still waiting for a reply; a new request at the
+cap is refused and its queued packet is dropped.
+.Va max_arp_entries
+caps the ARP entries learned or remembered as failed for other hosts;
+at the cap the oldest one is dropped.
+ARP entries of the configured templates are not counted.
 The values shown are the defaults, and a value below 1 keeps the
 default.
 .It Fl i Ar interface

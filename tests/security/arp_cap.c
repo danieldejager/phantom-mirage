@@ -13,6 +13,8 @@
  *   order    entry cap 8: entries are evicted oldest first
  *   count    counters stay >= 0 and match the live entries across the
  *            reply, discovery failure, timeout and eviction paths
+ *   option   "option honeyd max_arp_pending 4" and max_arp_entries 8
+ *            from the configuration take effect
  *   reenter  callbacks that call arp_request() again during rejection
  *            and eviction (ASan catches any use after free)
  *
@@ -355,13 +357,42 @@ mode_reenter(void)
 	return (0);
 }
 
+static const char config_option[] =
+	"option honeyd max_arp_pending 4\n"
+	"option honeyd max_arp_entries 8\n"
+	"create default\n"
+	"set default default udp action block\n"
+	"bind 10.0.0.2 default\n";
+
+static int
+mode_option(void)
+{
+	int i;
+
+	for (i = 0; i < 20; i++)
+		request(i);
+	check(arp_pending_count() == 4, "4 pending at the configured cap");
+	check(arp_pending_rejected() == 16, "16 rejected");
+	run_for(1700000);
+	for (i = 20; i < 40; i += 4) {
+		int j;
+		for (j = i; j < i + 4; j++)
+			request(j);
+		run_for(1700000);
+	}
+	check(live_total(40) == 8, "8 entries live at the configured cap");
+	check(arp_external_evicted() == 16, "16 evicted");
+	check(counters_ok(40), "counters match");
+	return (0);
+}
+
 int
 main(int argc, char **argv)
 {
 	const char *m = argc > 1 ? argv[1] : "";
 
 	setvbuf(stdout, NULL, _IONBF, 0);
-	fuzz_honeyd_init(config);
+	fuzz_honeyd_init(strcmp(m, "option") == 0 ? config_option : config);
 	fuzz_drain_events();
 	addr_aton("10.0.0.2", &src_pa);
 	addr_aton("02:00:00:00:00:02", &src_ha);
@@ -378,6 +409,8 @@ main(int argc, char **argv)
 		mode_order();
 	else if (strcmp(m, "count") == 0)
 		mode_count();
+	else if (strcmp(m, "option") == 0)
+		mode_option();
 	else if (strcmp(m, "reenter") == 0)
 		mode_reenter();
 	else
