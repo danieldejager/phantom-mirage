@@ -996,10 +996,10 @@ icmp_error_personality(struct template *tmpl,
 	{
 		struct udp_hdr *udp = (struct udp_hdr *)((u_char *)ip + (ip->ip_hl << 2));
 		u_char *p = (u_char *)(udp + 1);
-		if(test->uck != RVAL_OKAY)
-		{
+		/* Only when the UDP header was received (PM-SCR-146) */
+		if (test->uck != RVAL_OKAY &&
+		    rlen >= (u_int)(ip->ip_hl << 2) + UDP_HDR_LEN)
 			udp->uh_sum = htons(test->uckVal);
-		}
 		/* Only when there is a payload byte to change (PM-SCR-138) */
 		if (test->dat == RVAL_BAD &&
 		    rlen > (u_int)(ip->ip_hl << 2) + UDP_HDR_LEN)
