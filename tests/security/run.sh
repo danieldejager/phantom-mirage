@@ -48,11 +48,24 @@ cc_san() {
 	$CC $SAN $CF "$@" $LIBS_H -o "$OUT/$n"
 }
 
+# Checksum of every header the daemon objects can include. Objects are
+# only rebuilt when their .c is newer, so a header change drops them all.
+hdr_sum() {
+	cat ./*.h compat/*.h subsystems/*.h fuzz/*.h 2>/dev/null | cksum
+}
+
 # Build the daemon objects once (honeyd.c comes in via fuzz_common.c)
 DOBJS=
 daemon_objs() {
 	[ -n "$DOBJS" ] && return 0
+	# The Makefile rules only generate parse.c and lex.c when missing
+	[ parse.y -nt parse.c ] && rm -f parse.c parse.h
+	[ lex.l -nt lex.c ] && rm -f lex.c
 	make -s parse.c lex.c >/dev/null
+	sum=$(hdr_sum)
+	if [ "$sum" != "$(cat "$OUT/obj/headers.sum" 2>/dev/null)" ]; then
+		rm -f "$OUT"/obj/*.o "$OUT/obj/headers.sum"
+	fi
 	for o in $(q objs) sha1.o; do
 		[ "$o" = honeyd.o ] && continue
 		s=${o%.o}.c
@@ -62,6 +75,7 @@ daemon_objs() {
 		fi
 		DOBJS="$DOBJS $OUT/obj/$o"
 	done
+	echo "$sum" > "$OUT/obj/headers.sum"
 	# shellcheck disable=SC2086
 	$CC $SAN $CF -DFUZZ_DATADIR="\"$ROOT\"" -c fuzz/fuzz_common.c \
 	    -o "$OUT/obj/fuzz_common.o"
