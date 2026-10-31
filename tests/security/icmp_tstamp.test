@@ -1,0 +1,5 @@
+# PM-SCR-002: short ICMP timestamp request, stale padding, byte order
+cc_daemon icmp_overread tests/security/icmp_overread.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean icmp_overread tstamp

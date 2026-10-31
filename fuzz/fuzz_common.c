@@ -37,7 +37,14 @@ __wrap_connect(int fd, const struct sockaddr *sa, socklen_t len)
 
 static char fake_handle[64];
 ip_t *__wrap_ip_open(void) { return ((ip_t *)fake_handle); }
-ssize_t __wrap_ip_send(ip_t *i, const void *buf, size_t len) { return (len); }
+void (*fuzz_ip_send_hook)(const void *, size_t);
+ssize_t
+__wrap_ip_send(ip_t *i, const void *buf, size_t len)
+{
+	if (fuzz_ip_send_hook != NULL)
+		fuzz_ip_send_hook(buf, len);
+	return (len);
+}
 ssize_t __wrap_eth_send(eth_t *e, const void *buf, size_t len) { return (len); }
 
 /* ---- init ---- */
