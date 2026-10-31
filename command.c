@@ -215,6 +215,13 @@ cmd_script_full(ip_addr_t src, int udp)
 	return (0);
 }
 
+/* True if a script for this flow would not be refused at the cap */
+int
+cmd_script_room(struct tuple *hdr)
+{
+	return (!cmd_script_full(hdr->ip_src, hdr->type == SOCK_DGRAM));
+}
+
 /* At most one log line per second, with the count since the last one */
 static void
 cmd_script_refuse(struct tuple *hdr)

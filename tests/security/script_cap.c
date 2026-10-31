@@ -24,6 +24,8 @@
  *  disabled    0 disables both caps
  *  udpshare    PM-SCR-221: spoofed UDP sources fill only the UDP share
  *              (half of max_script_procs); TCP scripts still start
+ *  udpretry    PM-SCR-222: a UDP flow refused at the cap starts its
+ *              script on a later datagram once a slot is free
  */
 #include <sys/types.h>
 #include <sys/param.h>
@@ -572,6 +574,44 @@ t_udpshare(void)
 	check(sent_rst == 1, "TCP at the full cap is still reset");
 }
 
+static void
+t_udpretry(void)
+{
+	struct tuple *a, *b;
+	struct command *cb;
+	uint32_t r0;
+
+	option("option honeyd max_script_procs 1\n");
+	udp_pkt(0x0b000001, 4000, 53);
+	check(honeyd_nchildren == 1, "first UDP script started");
+	udp_pkt(0x0b000002, 4000, 53);
+	b = find(&udplru, 0x0b000002, 4000);
+	cb = cmd_of(&udplru, b);
+	check(b != NULL && cb->pfd == -1, "second flow refused at the cap");
+
+	/* still full: a later datagram neither starts nor recounts */
+	r0 = &cmd_script_refused != NULL ? cmd_script_refused : 0;
+	udp_pkt(0x0b000002, 4000, 53);
+	check(honeyd_nchildren == 1 && cb->pfd == -1 &&
+	    (&cmd_script_refused == NULL || cmd_script_refused == r0),
+	    "no retry while the cap is still full");
+
+	/* the first flow ends and its script is reaped */
+	a = find(&udplru, 0x0b000001, 4000);
+	if (a != NULL)
+		udp_free((struct udp_con *)a);
+	reap_to(0);
+	check(honeyd_nchildren == 0, "first script reaped");
+
+	udp_pkt(0x0b000002, 4000, 53);
+	printf("after a slot frees: live %d, refused flow pfd %d\n",
+	    honeyd_nchildren, cb->pfd);
+	check(honeyd_nchildren == 1 && cb->pfd != -1 && cb->pid > 0,
+	    "refused flow starts its script on a later datagram");
+	udp_pkt(0x0b000002, 4000, 53);
+	check(honeyd_nchildren == 1, "no second script for the same flow");
+}
+
 static const struct {
 	const char *name;
 	void (*fn)(void);
@@ -581,7 +621,7 @@ static const struct {
 	{ "reaped", t_reaped }, { "nchildren", t_nchildren },
 	{ "sigchld", t_sigchld }, { "seqpacket", t_seqpacket },
 	{ "udpdrop", t_udpdrop }, { "disabled", t_disabled },
-	{ "udpshare", t_udpshare },
+	{ "udpshare", t_udpshare }, { "udpretry", t_udpretry },
 };
 
 int

@@ -316,6 +316,7 @@ struct udp_con {
 	int nincoming;
 
 	int softerrors;		/* ICMP unreachables for this state */
+	int script_refused;	/* script refused at the cap; retried */
 
 	struct port *port;
 };
@@ -385,6 +386,7 @@ int cmd_python(struct tuple *, struct command *, void *);
 void cmd_script_reaped(pid_t);
 uint32_t cmd_script_procs(void);
 uint32_t cmd_script_udp_procs(void);
+int cmd_script_room(struct tuple *);
 uint32_t cmd_script_source_procs(ip_addr_t);
 int cmd_subsystem(struct template *, struct subsystem *, char *, char **);
 

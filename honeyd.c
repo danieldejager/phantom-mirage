@@ -1994,9 +1994,10 @@ generic_connect(struct template *tmpl, struct tuple *hdr,
 
 	if ((i = cmd_fork(hdr, cmd, tmpl, argv[0], argv, con)) != 0) {
 		/* At the cap: cmd_fork logged it (rate limited). TCP gets a
-		 * RST from the caller, UDP data is dropped without ICMP. */
+		 * RST from the caller; UDP data is dropped without ICMP and
+		 * the flow retries on a later datagram. */
 		if (i == CMD_FORK_CAP)
-			return (proto == IP_PROTO_TCP ? CMD_FORK_CAP : 0);
+			return (CMD_FORK_CAP);
 		syslog(LOG_WARNING, "script %s: %m", honeyd_contoa(hdr));
 		goto err;
 	}
@@ -3259,7 +3260,13 @@ handle_udp_packet(struct template *tmpl, void *wrapper)
 		honeyd_log_flownew(honeyd_logfp, IP_PROTO_UDP, &con->conhdr);
 
 		con->tmpl = template_ref(tmpl);
-		generic_connect(tmpl, &con->conhdr, &con->cmd, con);
+		con->script_refused = generic_connect(tmpl, &con->conhdr,
+		    &con->cmd, con) == CMD_FORK_CAP;
+	} else if (con->script_refused && cmd_script_room(&con->conhdr)) {
+		/* Refused at the script cap before (PM-SCR-222): once there
+		 * is room, a later datagram starts the script */
+		con->script_refused = generic_connect(con->tmpl, &con->conhdr,
+		    &con->cmd, con) == CMD_FORK_CAP;
 	}
 
 	/* Keep this state active */
