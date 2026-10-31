@@ -130,7 +130,12 @@ queue_dhcp_discover(struct template *tmpl)
 	//Initialize the queue if this is the first operation
 	if(dhcp_queue == NULL)
 	{
-		dhcp_queue = (Queue*) malloc(sizeof(Queue));
+		/* Fail the request cleanly, retry on the next call (PM-SCR-154) */
+		if ((dhcp_queue = malloc(sizeof(Queue))) == NULL)
+		{
+			syslog(LOG_ERR, "%s: malloc", __func__);
+			return;
+		}
 		dhcp_queue->m_count = 0;
 		dhcp_queue->m_front = NULL;
 		dhcp_queue->m_rear = NULL;
@@ -140,7 +145,7 @@ queue_dhcp_discover(struct template *tmpl)
 
 	if(!(nextQueueNode = (QueueNode*)malloc(sizeof(QueueNode))))
 	{
-		//TODO: malloc returned an error, let's at least make a warning
+		syslog(LOG_ERR, "%s: malloc", __func__);
 		return;
 	}
 

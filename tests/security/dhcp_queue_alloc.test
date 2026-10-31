@@ -1,0 +1,6 @@
+# PM-SCR-154: queue_dhcp_discover does not check the queue allocation
+cc_daemon dhcp_queue_alloc tests/security/dhcp_queue_alloc.c \
+    -Wl,--wrap=malloc
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean dhcp_queue_alloc
