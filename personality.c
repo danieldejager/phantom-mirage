@@ -950,6 +950,7 @@ icmp_error_personality(struct template *tmpl,
 {
 	struct persudp *test;
 	int iphdr_changed = 0;
+	u_int rlen = ntohs(ip->ip_len);	/* received, before RIPL */
 
 	if (tmpl == NULL || tmpl->person == NULL)
 		return (1);
@@ -999,7 +1000,9 @@ icmp_error_personality(struct template *tmpl,
 		{
 			udp->uh_sum = htons(test->uckVal);
 		}
-		if (test->dat == RVAL_BAD)
+		/* Only when there is a payload byte to change (PM-SCR-138) */
+		if (test->dat == RVAL_BAD &&
+		    rlen > (u_int)(ip->ip_hl << 2) + UDP_HDR_LEN)
 			*p = 0;
 	}
 	
