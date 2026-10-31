@@ -18,6 +18,8 @@ OUT=${OUT:-$T/out}
 CC=${CC:-clang}
 SAN="-g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined"
 SAN="$SAN -fno-sanitize=alignment -fno-sanitize-recover=all"
+# A printf style call whose arguments do not match its format fails the build
+SAN="$SAN -Werror=format"
 ASAN_OPTIONS=${ASAN_OPTIONS:-detect_leaks=1}
 UBSAN_OPTIONS=${UBSAN_OPTIONS:-print_stacktrace=1:halt_on_error=1}
 export ASAN_OPTIONS UBSAN_OPTIONS

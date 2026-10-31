@@ -1,0 +1,5 @@
+# PM-SCR-184: a clone that cannot copy a dynamic rule fails, and says so
+cc_daemon clone_dynamic tests/security/clone_dynamic.c -Wl,--wrap=syslog
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean clone_dynamic
