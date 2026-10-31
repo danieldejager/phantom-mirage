@@ -130,7 +130,12 @@ queue_dhcp_discover(struct template *tmpl)
 	//Initialize the queue if this is the first operation
 	if(dhcp_queue == NULL)
 	{
-		dhcp_queue = (Queue*) malloc(sizeof(Queue));
+		/* Fail the request cleanly, retry on the next call (PM-SCR-154) */
+		if ((dhcp_queue = malloc(sizeof(Queue))) == NULL)
+		{
+			syslog(LOG_ERR, "%s: malloc", __func__);
+			return;
+		}
 		dhcp_queue->m_count = 0;
 		dhcp_queue->m_front = NULL;
 		dhcp_queue->m_rear = NULL;
@@ -140,7 +145,7 @@ queue_dhcp_discover(struct template *tmpl)
 
 	if(!(nextQueueNode = (QueueNode*)malloc(sizeof(QueueNode))))
 	{
-		//TODO: malloc returned an error, let's at least make a warning
+		syslog(LOG_ERR, "%s: malloc", __func__);
 		return;
 	}
 
@@ -293,7 +298,13 @@ dhcp_abort(struct template *tmpl)
 	if (req->state == 0)
 		return;
 
-	event_del(req->timeoutEv);
+	/* No timer of the aborted request may fire later (PM-SCR-148) */
+	if (req->timeoutEv != NULL)
+		event_del(req->timeoutEv);
+	if (req->renewEv != NULL)
+		event_del(req->renewEv);
+	if (req->renewTimeoutEv != NULL)
+		event_del(req->renewTimeoutEv);
 
 	req->state = 0;
 }
@@ -571,8 +582,12 @@ _dhcp_reply(struct template *tmpl, u_char *buf, size_t buflen)
 		syslog(LOG_NOTICE, "[%s] got DHCP offer: %s",
 		    inter->if_ent.intf_name, addr_ntoa(&addr));
 
-		dhcp_abort(tmpl);
-		//Abort resets the state variable, so we have to set it again afterward
+		/*
+		 * The request is answered: stop its timeout only. dhcp_abort
+		 * would also cancel the renewal just scheduled above.
+		 */
+		if (req->timeoutEv != NULL)
+			event_del(req->timeoutEv);
 		req->state = DHREQ_STATE_GOTACK;
 
 

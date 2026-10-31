@@ -869,6 +869,13 @@ honeyd_ether_send_cb(struct arp_req *req, int success, void *arg)
 	struct ip_hdr *ip = arg;
 	u_int len, iplen = ntohs(ip->ip_len);
 
+	/*
+	 * The ARP request failed: req->ha is still the broadcast MAC.
+	 * Drop the queued packet; it is freed once below.
+	 */
+	if (!success)
+		goto out;
+
 	eth_pack_hdr(pkt,
 	    req->ha.addr_eth,				/* destination */
 	    req->src_ha.addr_eth,			/* source */
@@ -2310,20 +2317,17 @@ icmp_timestamp_reply(struct template *tmpl, struct ip_hdr *rip,
 	u_int iplen;
 	struct icmp_msg_timestamp icmp_time;
 	uint8_t padding = 6;
-	struct tm *now_tm;
-	time_t now;
+	struct timeval tv;
 	uint32_t milliseconds;
 
 	pkt = pool_alloc(pool_pkt);
 	/* Pool slots are reused: never send stale bytes as padding */
 	memset(pkt, 0, IP_HDR_LEN + ICMP_HDR_LEN + 16 + padding);
 
-	now = time(NULL);
-	now_tm = localtime(&now);
-
-	milliseconds = (now_tm->tm_hour * 60 * 60 + 
-		now_tm->tm_min * 60 + 
-		now_tm->tm_sec) * 1000;
+	/* Milliseconds since midnight UTC, as RFC 792 asks (PM-SCR-141) */
+	gettimeofday(&tv, NULL);
+	milliseconds = (uint32_t)((tv.tv_sec % 86400) * 1000 +
+	    tv.tv_usec / 1000);
 
 	icmp_time.hdr.icmp_type = ICMP_TSTAMPREPLY,
 	icmp_time.hdr.icmp_code = 0;
@@ -2332,9 +2336,8 @@ icmp_timestamp_reply(struct template *tmpl, struct ip_hdr *rip,
 
 	/* For now just do the following */
 	icmp_time.icmp_ts_orig = icmp_rip->icmp_ts_orig;
-	icmp_time.icmp_ts_rx = htonl(ntohl(icmp_rip->icmp_ts_orig) +
-	    milliseconds);
-	icmp_time.icmp_ts_tx = icmp_rip->icmp_ts_rx;
+	icmp_time.icmp_ts_rx = htonl(milliseconds);
+	icmp_time.icmp_ts_tx = htonl(milliseconds);
 		
 	iplen = IP_HDR_LEN + ICMP_HDR_LEN + 16 + padding; 
 	/* 6 bytes of 0 at the end, why? RedHat and Windows have 6 bytes of

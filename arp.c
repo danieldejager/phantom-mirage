@@ -225,7 +225,12 @@ void
 arp_free(struct arp_req *req)
 {
 	arp_uncount(req);
-	SPLAY_REMOVE(paarptree, &pa_arp_reqs, req);
+	/*
+	 * Only remove our own node: a request created while another entry
+	 * for the same address was in the tree was never inserted.
+	 */
+	if (SPLAY_FIND(paarptree, &pa_arp_reqs, req) == req)
+		SPLAY_REMOVE(paarptree, &pa_arp_reqs, req);
 
 	/*
 	 * Only remove our own node. External entries are not in the

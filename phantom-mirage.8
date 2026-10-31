@@ -340,6 +340,9 @@ cap is refused and its queued packet is dropped.
 .Va max_arp_entries
 caps the ARP entries learned or remembered as failed for other hosts;
 at the cap the oldest one is dropped.
+If the dropped entry is still pending, its queued packet is dropped
+through the failure path exactly once, the same as for a refused
+request, and nothing is sent.
 ARP entries of the configured templates are not counted.
 The values shown are the defaults, and a value below 1 keeps the
 default.

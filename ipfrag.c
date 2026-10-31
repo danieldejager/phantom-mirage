@@ -188,14 +188,15 @@ ip_fragment_new(ip_addr_t src, ip_addr_t dst, u_short id, u_char proto,
 	struct timeval tv = { IPFRAG_TIMEOUT, 0};
 	int reclaim = 0;
 
+	/* Reclaim at least one queue: nfragments/10 is 0 below ten */
 	if (nfragmem > IPFRAG_MAX_MEM || nfragments > IPFRAG_MAX_FRAGS)
-		ip_fragment_reclaim(nfragments/10);
+		ip_fragment_reclaim(nfragments/10 + 1);
 
 	while (tmp == NULL && reclaim < 2) {
 		tmp = calloc(1, sizeof(struct fragment));
 		if (tmp == NULL) {
 			reclaim++;
-			ip_fragment_reclaim(nfragments/10);
+			ip_fragment_reclaim(nfragments/10 + 1);
 		}
 	}
 
@@ -263,20 +264,33 @@ ip_fragment_insert(struct fragment *fragq, struct fragent *ent, short mf)
 			memcpy(ent->data, odata, overlap);
 		}
 		prev->len -= overlap;
+
+		/* Same offset: prev is now empty, drop it */
+		if (prev->len == 0) {
+			struct fragent *empty = prev;
+
+			prev = TAILQ_PREV(empty, fragq, next);
+			TAILQ_REMOVE(&fragq->fraglist, empty, next);
+			ip_fragent_free(empty);
+		}
 	}
 
-	if (after && off + len > after->off) {
+	/* Drop or trim every following fragment the new one overlaps */
+	while (after && off + len > after->off) {
 		overlap = off + len - after->off;
 
 		if (overlap >= after->len) {
+			struct fragent *next = TAILQ_NEXT(after, next);
+
 			if (fragq->fragp == FRAG_OLD) {
 				u_char *ndata = ent->data + after->off - off;
 				memcpy(ndata, after->data, after->len);
 			}
-			
+
 			/* Drop the old fragment */
 			TAILQ_REMOVE(&fragq->fraglist, after, next);
 			ip_fragent_free(after);
+			after = next;
 		} else {
 			/* Trim the overlap */
 			if (fragq->fragp == FRAG_NEW) {

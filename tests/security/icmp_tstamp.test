@@ -1,5 +1,9 @@
 # PM-SCR-002: short ICMP timestamp request, stale padding, byte order
+# PM-SCR-141: receive and transmit timestamps are UTC ms since midnight;
+# a local zone eleven hours off UTC catches local midnight time
 cc_daemon icmp_overread tests/security/icmp_overread.c
 # The daemon's global configuration is never freed: leak checks off
 ASAN_OPTIONS=detect_leaks=0
+TZ=XST-11
+export TZ
 run_clean icmp_overread tstamp

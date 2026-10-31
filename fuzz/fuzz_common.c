@@ -45,7 +45,14 @@ __wrap_ip_send(ip_t *i, const void *buf, size_t len)
 		fuzz_ip_send_hook(buf, len);
 	return (len);
 }
-ssize_t __wrap_eth_send(eth_t *e, const void *buf, size_t len) { return (len); }
+void (*fuzz_eth_send_hook)(const void *, size_t);
+ssize_t
+__wrap_eth_send(eth_t *e, const void *buf, size_t len)
+{
+	if (fuzz_eth_send_hook != NULL)
+		fuzz_eth_send_hook(buf, len);
+	return (len);
+}
 
 /* ---- init ---- */
 

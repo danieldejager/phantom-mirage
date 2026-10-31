@@ -996,10 +996,10 @@ icmp_error_personality(struct template *tmpl,
 	{
 		struct udp_hdr *udp = (struct udp_hdr *)((u_char *)ip + (ip->ip_hl << 2));
 		u_char *p = (u_char *)(udp + 1);
-		if(test->uck != RVAL_OKAY)
-		{
+		/* Only when the UDP header was received (PM-SCR-146) */
+		if (test->uck != RVAL_OKAY &&
+		    rlen >= (u_int)(ip->ip_hl << 2) + UDP_HDR_LEN)
 			udp->uh_sum = htons(test->uckVal);
-		}
 		/* Only when there is a payload byte to change (PM-SCR-138) */
 		if (test->dat == RVAL_BAD &&
 		    rlen > (u_int)(ip->ip_hl << 2) + UDP_HDR_LEN)
@@ -1762,10 +1762,18 @@ parse_u1(struct personality *pers, int off, char *line)
 				else return -1;
 				break;
 			case 'I':
+			{
+				unsigned long ipl;
+
 				strsep(&p2, "=");
-				test->quotelen = strtoul(p2, &end, 16);
-				test->quotelen -= IP_HDR_LEN + ICMP_HDR_LEN + 4;
+				ipl = strtoul(p2, &end, 16);
+				/* A whole reply: IP and ICMP headers, unused word (PM-SCR-140) */
+				if (end == p2 || ipl < IP_HDR_LEN + ICMP_HDR_LEN + 4 ||
+				    ipl > IP_LEN_MAX)
+					return (-1);
+				test->quotelen = ipl - (IP_HDR_LEN + ICMP_HDR_LEN + 4);
 				break;
+			}
 			case 'R':
 			{
 				c = *(p2+2);
@@ -1793,8 +1801,15 @@ parse_u1(struct personality *pers, int off, char *line)
 							// the number given
 							if(*p2 == 'G')
 								test->riplen = 0;
-							else
-								test->riplen = strtoul(p2, &end, 16) - 328;
+							else {
+								unsigned long ripl;
+
+								ripl = strtoul(p2, &end, 16);
+								/* An IP total length (PM-SCR-140) */
+								if (end == p2 || ripl > IP_LEN_MAX)
+									return (-1);
+								test->riplen = (int)ripl - 328;
+							}
 							break;
 						}
 						else return -1;
