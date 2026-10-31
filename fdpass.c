@@ -168,10 +168,10 @@ receive_fd(int socket, void *base, socklen_t *len)
 		if (cmsg != NULL && cmsg->cmsg_level == SOL_SOCKET &&
 		    cmsg->cmsg_type == SCM_RIGHTS &&
 		    cmsg->cmsg_len >= CMSG_LEN(sizeof(int))) {
-			size_t i, n = (cmsg->cmsg_len - CMSG_LEN(0)) /
+			size_t i, nfds = (cmsg->cmsg_len - CMSG_LEN(0)) /
 			    sizeof(int);
 
-			for (i = 0; i < n && CMSG_LEN((i + 1) * sizeof(int)) <=
+			for (i = 0; i < nfds && CMSG_LEN((i + 1) * sizeof(int)) <=
 			    msg.msg_controllen; i++) {
 				memcpy(&fd, CMSG_DATA(cmsg) + i * sizeof(int),
 				    sizeof(fd));
