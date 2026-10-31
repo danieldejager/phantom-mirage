@@ -3,7 +3,7 @@
 # including on descriptors the subsystem passed back; a failed
 # subsystem start is not fatal
 cc_daemon subsys_ctl tests/security/subsys_ctl.c -Wl,--wrap=fdshare_dup,--wrap=sendmsg
-# Leak checks on (start up leaks are suppressed in lsan.supp); every
+# Leak checks on, with no suppressions; every
 # case runs and any failure fails the test
 rc=0
 for c in ${SUBSYS_CTL_CASES:-fdpass_eof connect_unknown_src \

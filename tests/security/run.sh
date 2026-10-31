@@ -22,8 +22,7 @@ SAN="$SAN -fno-sanitize=alignment -fno-sanitize-recover=all"
 SAN="$SAN -Werror=format"
 ASAN_OPTIONS=${ASAN_OPTIONS:-detect_leaks=1}
 UBSAN_OPTIONS=${UBSAN_OPTIONS:-print_stacktrace=1:halt_on_error=1}
-# Leaks made while loading the daemon's data files at start up are known
-LSAN_OPTIONS=${LSAN_OPTIONS:-suppressions=$T/lsan.supp:print_suppressions=0}
+# No leak suppressions: every leak is reported
 export ASAN_OPTIONS UBSAN_OPTIONS LSAN_OPTIONS
 
 if [ ! -f Makefile ]; then
