@@ -24,7 +24,8 @@
 .Op Fl i Ar interface
 .Op Fl u Ar uid
 .Op Fl g Ar gid
-.Op Fl c Ar host:port:username:password
+.Op Fl c Ar host:port:username
+.Op Fl -stats-password-file Ar file
 .Op Fl -webserver-address Ar address
 .Op Fl -webserver-port Ar port
 .Op Fl -webserver-root Ar path
@@ -332,7 +333,7 @@ default.
 Listen on
 .Ar interface .
 It is possible to specify multiple interfaces.
-.It Fl c Ar hostname:port:username:password
+.It Fl c Ar hostname:port:username Ns Op : Ns Ar password
 Using this flag,
 .Nm
 functions as a traffic statistic collector.
@@ -342,6 +343,24 @@ The username and password is used to create a signature on the
 data packet that can be used to verify the integrity of the data.
 The statistics can be used to automatically detect anomalies like
 worm propagation.
+The password is read from the file given with
+.Fl -stats-password-file .
+Giving it as the last field of
+.Fl c
+still works but is deprecated and prints a warning, since the command
+line is visible to other local users.
+.It Fl -stats-password-file Ar file
+Reads the
+.Fl c
+password from the first line of
+.Ar file .
+The file must be a regular file, not a symlink, owned by the user
+running
+.Nm
+and not accessible by group or others (mode 0600); otherwise
+.Nm
+exits with an error.
+The password is never logged.
 .It Fl -webserver-address Ar address
 Specifies the address on which the web server should listen.
 By default, this is
