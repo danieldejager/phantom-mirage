@@ -80,6 +80,7 @@ SPLAY_GENERATE(subtmpltree, template_container, node, templ_container_compare);
 
 void subsystem_read(int, short, void *);
 void subsystem_write(int, short, void *);
+void subsystem_restart(int, short, void *);
 
 struct callback subsystem_cb = {
 	subsystem_read, subsystem_write, NULL, NULL
@@ -154,6 +155,20 @@ subsystem_insert_template(struct subsystem *sub, struct template *tmpl)
 		SPLAY_INSERT(subtmpltree, &sub->root, cont);
 }
 
+/* Schedules subsystem_restart on the subsystem's own timer */
+static void
+subsystem_restart_later(struct subsystem *sub, struct timeval *tv)
+{
+	if (sub->restart_ev == NULL &&
+	    (sub->restart_ev = evtimer_new(libevent_base, subsystem_restart,
+	    sub)) == NULL) {
+		syslog(LOG_ERR, "%s: evtimer_new", __func__);
+		return;
+	}
+	if (evtimer_add(sub->restart_ev, tv) == -1)
+		syslog(LOG_ERR, "%s: evtimer_add", __func__);
+}
+
 void
 subsystem_restart(int fd, short what, void *arg)
 {
@@ -173,15 +188,21 @@ subsystem_restart(int fd, short what, void *arg)
 
 	/*
 	 * CWE-754: a failed restart was never tried again. Retry with a
-	 * doubling delay, capped, and stop after a bounded number of
-	 * failures in a row; the template runs on without the subsystem.
+	 * doubling delay, capped; after a bounded number of failures in a
+	 * row keep retrying, but only every SUBSYSTEM_RESTART_SLOW seconds,
+	 * so a subsystem that can start again is not down for good.
 	 */
-	if (++sub->restart_tries >= SUBSYSTEM_RESTART_TRIES) {
+	timerclear(&tv);
+	if (sub->restart_tries < SUBSYSTEM_RESTART_TRIES)
+		sub->restart_tries++;
+	if (sub->restart_tries >= SUBSYSTEM_RESTART_TRIES) {
+		tv.tv_sec = SUBSYSTEM_RESTART_SLOW;
 		syslog(LOG_ERR, "Subsystem \"%s\" not restarted after %d "
-		    "tries", sub->cmdstring, sub->restart_tries);
+		    "tries, retry in %ld s", sub->cmdstring,
+		    sub->restart_tries, (long)tv.tv_sec);
+		subsystem_restart_later(sub, &tv);
 		return;
 	}
-	timerclear(&tv);
 	tv.tv_sec = SUBSYSTEM_RESTART_INTERVAL;
 	for (int i = 1; i < sub->restart_tries &&
 	    tv.tv_sec < SUBSYSTEM_RESTART_MAX_DELAY; i++)
@@ -190,9 +211,7 @@ subsystem_restart(int fd, short what, void *arg)
 		tv.tv_sec = SUBSYSTEM_RESTART_MAX_DELAY;
 	syslog(LOG_WARNING, "Subsystem \"%s\" restart failed, retry in "
 	    "%ld s", sub->cmdstring, (long)tv.tv_sec);
-	if (event_base_once(libevent_base, -1, EV_TIMEOUT, subsystem_restart,
-	    sub, &tv) == -1)
-		syslog(LOG_ERR, "%s: event_base_once", __func__);
+	subsystem_restart_later(sub, &tv);
 }
 
 void
@@ -216,7 +235,7 @@ subsystem_cleanup(struct subsystem *sub)
 			
 			timerclear(&tv);
 			tv.tv_sec = 2 * SUBSYSTEM_RESTART_INTERVAL;
-			event_base_once(libevent_base, -1, EV_TIMEOUT, subsystem_restart, sub, &tv);
+			subsystem_restart_later(sub, &tv);
 		}
 		return;
 	}

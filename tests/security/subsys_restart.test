@@ -1,9 +1,9 @@
-# PM-SCR-198: a failed subsystem restart is retried, a bounded number
-# of times
+# PM-SCR-198, PM-SCR-208: a failed subsystem restart is retried, fast
+# a bounded number of times and then slowly
 cc_daemon subsys_restart tests/security/subsys_restart.c \
     -Wl,--wrap=cmd_subsystem
 rc=0
-for c in retry bounded; do
+for c in retry slow_retry; do
 	run_clean subsys_restart "$c" || { echo "case $c failed" >&2; rc=1; }
 	cp "$OUT/subsys_restart.log" "$OUT/subsys_restart.$c.log"
 done
