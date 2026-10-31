@@ -991,6 +991,7 @@ void
 dhcp_template_new(struct template *tmpl)
 {
 	struct addr addr;
+	char *name;
 
 	/* Need to find a temporary IP address */
 	if (template_get_dhcp_address(&addr) == -1) {
@@ -998,11 +999,21 @@ dhcp_template_new(struct template *tmpl)
 		return;
 	}
 
+	/*
+	 * CWE-476/CWE-252: copy the new name before the template is taken
+	 * out of the index and its ARP entry; on failure leave it as it is.
+	 */
+	if ((name = strdup(addr_ntoa(&addr))) == NULL) {
+		syslog(LOG_ERR, "%s: strdup: DHCP restart for %s skipped",
+		    __func__, tmpl->name);
+		return;
+	}
+
 	template_remove_arp(tmpl);
 	template_remove(tmpl);
 	free(tmpl->name);
 
-	tmpl->name = strdup(addr_ntoa(&addr));
+	tmpl->name = name;
 	template_post_arp(tmpl, &addr);
 
 	queue_dhcp_discover(tmpl);
