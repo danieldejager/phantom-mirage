@@ -1119,7 +1119,7 @@ template_print(struct evbuffer *buffer, struct template *tmpl)
 	evbuffer_add_printf(buffer, "  TCP seq: %x\n", tmpl->seq);
 	evbuffer_add_printf(buffer, "  TCP drop: in: %d syn: %d\n",
 	    tmpl->drop_inrate, tmpl->drop_synrate);
-	evbuffer_add_printf(buffer, "  refcnt: %d\n", tmpl->refcnt);
+	evbuffer_add_printf(buffer, "  refcnt: %u\n", tmpl->refcnt);
 	evbuffer_add_printf(buffer, "  ports:\n");
 
 	SPLAY_FOREACH(port, porttree, &tmpl->ports) {
