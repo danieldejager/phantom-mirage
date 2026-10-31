@@ -57,7 +57,7 @@ struct proxy_ta {
 
 	int (*empty_cb)(struct proxy_ta *);
 
-	int dns_pending;
+	int dns_pending;	/* evdns lookups in flight */
 	int dns_canceled;
 };
 
