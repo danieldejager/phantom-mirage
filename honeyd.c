@@ -2139,12 +2139,22 @@ icmp_error_send(struct template *tmpl, struct addr *addr,
 
 	quotelen = 40;
 
+	/*
+	 * Received length, read before the personality can rewrite
+	 * ip_len (RIPL). Callers have checked it against the capture.
+	 */
+	riplen = ntohs(rip->ip_len);
+
 	if (!icmp_error_personality(tmpl, addr, rip, &df, &tos, &quotelen, &ttl))
 		return;
 
-	riplen = ntohs(rip->ip_len);
+	/* IPL comes from the fingerprint file: bound it (PM-SCR-006) */
+	if (quotelen < 0)
+		quotelen = 0;
 	if (riplen < quotelen)
 		quotelen = riplen;
+	if (quotelen > HONEYD_MTU - IP_HDR_LEN - ICMP_HDR_LEN - 4)
+		quotelen = HONEYD_MTU - IP_HDR_LEN - ICMP_HDR_LEN - 4;
 
 	iplen = IP_HDR_LEN + ICMP_HDR_LEN + 4 + quotelen;
 
@@ -2251,6 +2261,8 @@ icmp_timestamp_reply(struct template *tmpl, struct ip_hdr *rip,
 	uint32_t milliseconds;
 
 	pkt = pool_alloc(pool_pkt);
+	/* Pool slots are reused: never send stale bytes as padding */
+	memset(pkt, 0, IP_HDR_LEN + ICMP_HDR_LEN + 16 + padding);
 
 	now = time(NULL);
 	now_tm = localtime(&now);
@@ -2266,7 +2278,8 @@ icmp_timestamp_reply(struct template *tmpl, struct ip_hdr *rip,
 
 	/* For now just do the following */
 	icmp_time.icmp_ts_orig = icmp_rip->icmp_ts_orig;
-	icmp_time.icmp_ts_rx = icmp_rip->icmp_ts_orig + milliseconds;
+	icmp_time.icmp_ts_rx = htonl(ntohl(icmp_rip->icmp_ts_orig) +
+	    milliseconds);
 	icmp_time.icmp_ts_tx = icmp_rip->icmp_ts_rx;
 		
 	iplen = IP_HDR_LEN + ICMP_HDR_LEN + 16 + padding; 
@@ -3366,10 +3379,17 @@ icmp_recv_cb(struct template *tmpl, u_char *pkt, u_short pktlen)
 			icmp_quote = (struct icmp_msg_quote *)(icmp + 1);
 			rip = (struct ip_hdr *)(&icmp_quote->icmp_ip);
 
+			/* The quoted IP and UDP headers must be present */
+			if (dlen < IP_HDR_LEN)
+				break;
+			if ((rip->ip_hl << 2) < IP_HDR_LEN ||
+			    dlen < (rip->ip_hl << 2) + UDP_HDR_LEN)
+				break;
+
 			if (rip->ip_p != IP_PROTO_UDP)
 				break;
 
-			udp = (struct udp_hdr *)((u_char *)rip + (ip->ip_hl<<2));
+			udp = (struct udp_hdr *)((u_char *)rip + (rip->ip_hl<<2));
 			tmpip.ip_src = rip->ip_dst;
 			tmpip.ip_dst = rip->ip_src;
 			tmpudp.uh_sport = udp->uh_dport;
@@ -3397,6 +3417,10 @@ icmp_recv_cb(struct template *tmpl, u_char *pkt, u_short pktlen)
 		{
 				/* Sometimes xp_print can be null here... probably shouldn't be, this is just a quick fix */
 				if (xp_print == NULL)
+					return;
+
+				/* Three timestamps follow id and seq (PM-SCR-002) */
+				if (dlen < 12)
 					return;
 
 			/* Happens only if xp_print != NULL */
