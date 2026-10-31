@@ -313,13 +313,15 @@ The value can be either an integer, a float, or a character string.
 The options are picked up when phantom-mirage reads the configuration file and
 can then be queried by the plugins.
 .Pp
-Five options under the plugin name
+Seven options under the plugin name
 .Va honeyd
-limit concurrent flows and ARP state:
+limit concurrent flows, script processes and ARP state:
 .Bd -literal -offset indent
 option honeyd max_template_flows 65535
 option honeyd max_source_flows 1000
 option honeyd max_udp_flows 32000
+option honeyd max_script_procs 512
+option honeyd max_script_procs_per_source 32
 option honeyd max_arp_pending 256
 option honeyd max_arp_entries 4096
 .Ed
@@ -334,6 +336,23 @@ source is refused while it is over the cap.
 caps the UDP flow state kept for all templates together; at the cap
 the least recently used UDP flow is dropped without an ICMP error to
 make room for the new one.
+.Va max_script_procs
+caps the script processes alive at one time, counted from fork until
+the process is reaped, and
+.Va max_script_procs_per_source
+caps those started for flows from one source address.
+At either cap no script is started: a TCP connection is reset and UDP
+data is dropped without an ICMP error, and one log line per second
+reports how many flows were refused.
+A value of 0 turns that cap off; a negative value keeps the default.
+Size
+.Va max_script_procs
+as the memory to spare divided by the memory of the heaviest script
+(a small shell script needs well under 1 MB, a python3 one a few MB).
+When a flow ends or is evicted, its script and every process the
+script started are killed.
+UDP scripts read and write one datagram per read or write, and see end
+of file when their flow ends.
 .Va max_arp_pending
 caps the ARP requests still waiting for a reply; a new request at the
 cap is refused and its queued packet is dropped.
