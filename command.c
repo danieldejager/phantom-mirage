@@ -810,7 +810,8 @@ cmd_subsystem_connect(struct tuple *hdr, struct command *cmd,
 	addr_ntos(&dst, (struct sockaddr *)&bundle.dst);
 	bundle.dst.sin_port = htons(hdr->dport);
 
-	if (send_fd(port->sub_fd, pair[1], &bundle, sizeof(bundle)) == -1) {
+	if (send_fd_timed(port->sub_fd, pair[1], &bundle, sizeof(bundle),
+	    SUBSYSTEM_IO_TIMEOUT) == -1) {
 		TRACE_RESET(pair[0], close(pair[0]));
 		TRACE_RESET(pair[1], close(pair[1]));
 		cmd->pfd = -1;

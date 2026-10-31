@@ -1,12 +1,14 @@
 # PM-SCR-111: control channel errors drop the command or the subsystem,
-# never the daemon, and never block or spin
+# never the daemon, and never block or spin, including on descriptors
+# the subsystem passed back
 cc_daemon subsys_ctl tests/security/subsys_ctl.c
 # The daemon's global configuration is never freed: leak checks off
 # (run_clean sets rc, so the case result is kept in bad)
 ASAN_OPTIONS=detect_leaks=0
 bad=0
 for c in fdpass_eof connect_unknown_src connect_foreign_port \
-    listen_shared_missing connect_no_fd short_command; do
+    listen_shared_missing connect_no_fd short_command \
+    localconnect_no_fd listen_full; do
 	run_clean subsys_ctl "$c" || { echo "case $c failed" >&2; bad=1; }
 	cp "$OUT/subsys_ctl.log" "$OUT/subsys_ctl.$c.log"
 done

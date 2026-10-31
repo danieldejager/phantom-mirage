@@ -40,6 +40,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <poll.h>
+#include <fcntl.h>
 #include <time.h>
 
 #include "fdpass.h"
@@ -195,8 +196,9 @@ receive_fd(int socket, void *base, socklen_t *len)
 
 /*
  * Like receive_fd, but waits at most timeout_ms for the descriptor when
- * the socket is non blocking. Returns -1 with errno ETIMEDOUT when the
- * peer sends nothing in time.
+ * the socket is non blocking, and makes the received descriptor non
+ * blocking. Returns -1 with errno ETIMEDOUT when the peer sends nothing
+ * in time.
  */
 int
 receive_fd_timed(int socket, void *base, socklen_t *len, int timeout_ms)
@@ -207,9 +209,19 @@ receive_fd_timed(int socket, void *base, socklen_t *len, int timeout_ms)
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 	for (;;) {
-		if ((fd = receive_fd(socket, base, len)) != -1 ||
-		    errno != EAGAIN)
+		if ((fd = receive_fd(socket, base, len)) != -1) {
+			/* Our end only: never block on what a peer sent */
+			if (fcntl(fd, F_SETFL,
+			    fcntl(fd, F_GETFL) | O_NONBLOCK) == -1) {
+				syslog(LOG_ERR, "%s: fcntl(O_NONBLOCK): %s",
+				    __func__, strerror(errno));
+				close(fd);
+				return (-1);
+			}
 			return (fd);
+		}
+		if (errno != EAGAIN)
+			return (-1);
 		clock_gettime(CLOCK_MONOTONIC, &now);
 		left = timeout_ms - (int)((now.tv_sec - start.tv_sec) * 1000 +
 		    (now.tv_nsec - start.tv_nsec) / 1000000);
@@ -221,6 +233,40 @@ receive_fd_timed(int socket, void *base, socklen_t *len, int timeout_ms)
 		}
 		pfd.fd = socket;
 		pfd.events = POLLIN;
+		if (poll(&pfd, 1, left) == -1 && errno != EINTR)
+			return (-1);
+	}
+}
+
+/*
+ * Like send_fd, but on a non blocking socket waits at most timeout_ms
+ * for room instead of failing at once. Returns -1 with errno ETIMEDOUT
+ * when the peer does not drain the socket in time.
+ */
+int
+send_fd_timed(int socket, int fd, void *base, size_t len, int timeout_ms)
+{
+	struct timespec start, now;
+	struct pollfd pfd;
+	int left;
+
+	clock_gettime(CLOCK_MONOTONIC, &start);
+	for (;;) {
+		if (send_fd(socket, fd, base, len) == 0)
+			return (0);
+		if (errno != EAGAIN)
+			return (-1);
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		left = timeout_ms - (int)((now.tv_sec - start.tv_sec) * 1000 +
+		    (now.tv_nsec - start.tv_nsec) / 1000000);
+		if (left <= 0) {
+			syslog(LOG_ERR, "%s: peer not draining after %d ms",
+			    __func__, timeout_ms);
+			errno = ETIMEDOUT;
+			return (-1);
+		}
+		pfd.fd = socket;
+		pfd.events = POLLOUT;
 		if (poll(&pfd, 1, left) == -1 && errno != EINTR)
 			return (-1);
 	}

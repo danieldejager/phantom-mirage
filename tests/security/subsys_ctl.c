@@ -7,6 +7,10 @@
  * EOF or EPIPE, and a short or missing message on the non blocking
  * control socket spun forever.
  *
+ * The descriptors a subsystem passes back were left blocking, so a
+ * subsystem that withheld the per connection descriptor, or did not
+ * drain its listen descriptor, still blocked the daemon.
+ *
  * Each case runs as its own process (argv[1]) under a watchdog alarm,
  * so a spin shows up as a failure. The subsystem side is a local
  * socketpair driven by the harness; nothing is forked.
@@ -41,6 +45,10 @@ void cmd_ready_fd(struct command *, struct callback *, void *);
 void subsystem_read(int, short, void *);
 struct port *port_insert(struct template *, int, int, struct action *);
 struct subsystem *template_subsystem_find(const char *);
+int cmd_subsystem_localconnect(struct tuple *, struct command *,
+    struct port *, void *);
+int cmd_subsystem_connect(struct tuple *, struct command *, struct port *,
+    void *);
 
 static const char config[] =
 	"create default\n"
@@ -205,6 +213,62 @@ main(int argc, char **argv)
 		subsystem_read(sub->cmd.pfd, EV_READ, sub);
 		return (expect(template_subsystem_find("/bin/true") == NULL,
 		    "short command drops the subsystem"));
+	}
+	if (strcmp(t, "localconnect_no_fd") == 0) {
+		/* Control descriptor arrives, the second one never does */
+		struct tuple hdr;
+		struct command cmd;
+
+		if ((p = port_insert(tmpl, IP_PROTO_TCP, 8000, &act)) == NULL)
+			abort();
+		p->sub = sub;
+		p->sub_fd = -1;
+		if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1)
+			abort();
+		if (send_fd(peer, sv[1], NULL, 0) == -1)
+			abort();
+		close(sv[1]);
+		memset(&hdr, 0, sizeof(hdr));
+		hdr.type = SOCK_STREAM;
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.pfd = cmd.perrfd = -1;
+		fd = cmd_subsystem_localconnect(&hdr, &cmd, p, NULL);
+		close(sv[0]);
+		return (expect(fd == -1, "withheld descriptor times out"));
+	}
+	if (strcmp(t, "listen_full") == 0) {
+		/* A listen descriptor whose peer never drains it */
+		struct tuple hdr;
+		struct command cmd;
+		char junk[4096];
+
+		if ((p = port_insert(tmpl, IP_PROTO_TCP, 9000, &act)) == NULL)
+			abort();
+		p->sub = sub;
+		mkcmd(&c, SUB_LISTEN, SOCK_STREAM, "10.0.0.2", 9000,
+		    "0.0.0.0", 0);
+		put(&c, sizeof(c));
+		if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1)
+			abort();
+		if (send_fd(peer, sv[1], NULL, 0) == -1)
+			abort();
+		/* Fill it without changing its blocking mode */
+		memset(junk, 0, sizeof(junk));
+		while (send(sv[1], junk, sizeof(junk), MSG_DONTWAIT) > 0)
+			;
+		close(sv[1]);
+		if (run() == -1 || p->sub_fd == -1) {
+			printf("FAIL: listen not set up\n");
+			return (1);
+		}
+		memset(&hdr, 0, sizeof(hdr));
+		hdr.type = SOCK_STREAM;
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.pfd = cmd.perrfd = -1;
+		fd = cmd_subsystem_connect(&hdr, &cmd, p, NULL);
+		close(sv[0]);
+		return (expect(fd == -1 && cmd.pfd == -1,
+		    "undrained listen descriptor times out"));
 	}
 	printf("FAIL: unknown case %s\n", t);
 	return (1);
