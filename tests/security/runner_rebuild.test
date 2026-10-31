@@ -9,7 +9,10 @@ mkdir -p "$S/tests/security/out"
 echo 'daemon_objs' > "$S/tests/security/zz_objs.test"
 SO=$S/tests/security/out/obj
 rc=0
-"$S/tests/security/run.sh" zz_objs >/dev/null 2>&1 || rc=1
+# The inner runner builds in the scratch copy, whatever OUT the outer
+# run was given
+inner() { OUT="$S/tests/security/out" "$S/tests/security/run.sh" zz_objs; }
+inner >/dev/null 2>&1 || rc=1
 [ $rc -eq 0 ] || echo "initial build failed" >&2
 
 # A header content change rebuilds the objects that include it
@@ -17,7 +20,7 @@ sleep 1
 echo '/* changed */' >> "$S/util.h"
 before=$(stat -c %Y "$SO/util.o")
 sleep 1
-"$S/tests/security/run.sh" zz_objs >/dev/null 2>&1 || rc=1
+inner >/dev/null 2>&1 || rc=1
 if [ "$(stat -c %Y "$SO/util.o")" = "$before" ]; then
 	echo "util.o not rebuilt after util.h changed" >&2; rc=1
 fi
@@ -26,7 +29,7 @@ fi
 sleep 1
 echo '/* changed */' >> "$S/parse.y"
 sleep 1
-"$S/tests/security/run.sh" zz_objs >/dev/null 2>&1 || rc=1
+inner >/dev/null 2>&1 || rc=1
 if [ "$S/parse.y" -nt "$S/parse.c" ]; then
 	echo "parse.c not regenerated from a newer parse.y" >&2; rc=1
 fi
