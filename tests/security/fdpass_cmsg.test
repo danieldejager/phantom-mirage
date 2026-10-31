@@ -1,0 +1,3 @@
+# PM-SCR-014: receive_fd validates the control message
+cc_san fdpass_cmsg tests/security/fdpass_cmsg.c fdpass.c
+run_clean fdpass_cmsg

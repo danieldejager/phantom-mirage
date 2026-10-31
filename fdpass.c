@@ -38,6 +38,7 @@
 #include <errno.h>
 #include <err.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "fdpass.h"
 
@@ -149,14 +150,33 @@ receive_fd(int socket, void *base, socklen_t *len)
 	if (msg.msg_accrightslen != sizeof(fd))
 	{
 		syslog(LOG_ERR,"%s: no fd", __func__);
-		exit(EXIT_FAILURE);
+		errno = EBADMSG;
+		return (-1);
 	}
 #else
 	cmsg = CMSG_FIRSTHDR(&msg);
-	if (cmsg->cmsg_type != SCM_RIGHTS)
-	{
-		syslog(LOG_ERR,"%s: expected type %d got %d", __func__, SCM_RIGHTS, cmsg->cmsg_type);
-		exit(EXIT_FAILURE);
+	if (cmsg == NULL || (msg.msg_flags & MSG_CTRUNC) ||
+	    cmsg->cmsg_level != SOL_SOCKET ||
+	    cmsg->cmsg_type != SCM_RIGHTS ||
+	    cmsg->cmsg_len != CMSG_LEN(sizeof(int))) {
+		/* Close any descriptor that did arrive with the message */
+		if (cmsg != NULL && cmsg->cmsg_level == SOL_SOCKET &&
+		    cmsg->cmsg_type == SCM_RIGHTS &&
+		    cmsg->cmsg_len >= CMSG_LEN(sizeof(int))) {
+			size_t i, n = (cmsg->cmsg_len - CMSG_LEN(0)) /
+			    sizeof(int);
+
+			for (i = 0; i < n && CMSG_LEN((i + 1) * sizeof(int)) <=
+			    msg.msg_controllen; i++) {
+				memcpy(&fd, CMSG_DATA(cmsg) + i * sizeof(int),
+				    sizeof(fd));
+				close(fd);
+			}
+		}
+		syslog(LOG_ERR, "%s: message without a single descriptor",
+		    __func__);
+		errno = EBADMSG;
+		return (-1);
 	}
 	memcpy(&fd, CMSG_DATA(cmsg), sizeof(fd));
 #endif
