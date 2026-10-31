@@ -10,6 +10,9 @@
  *  proxy_long a $host that overflows the 404 template: fixed 500, close
  *  greet_ok   a normal greeting on a direct SMTP connection: 220
  *  greet_long a $hostname too long for the greeting: fixed 421, close
+ *  greet_new  smtp_ta_new(greeting 1) whose greeting does not fit:
+ *             returns NULL, sends only the fixed 421, does not answer a
+ *             command sent meanwhile, closes and frees the session
  *  connect_long CONNECT to port 25 where the greeting does not fit:
  *             the new SMTP session is freed, fixed 500, close
  *
@@ -40,6 +43,18 @@ void proxy_handle_connect_cb(int, char, int, int, void *, void *);
 struct smtp_ta *__real_smtp_ta_new(int, struct sockaddr *, socklen_t,
     struct sockaddr *, socklen_t, int);
 static char *long_hostname;
+
+/* Linked with --wrap=kv_add so smtp_ta_new adds a long $hostname */
+void __real_kv_add(struct keyvalueq *, char *, char *);
+static char *new_hostname;
+
+void
+__wrap_kv_add(struct keyvalueq *head, char *key, char *value)
+{
+	if (new_hostname != NULL && strcmp(key, "$hostname") == 0)
+		value = new_hostname;
+	__real_kv_add(head, key, value);
+}
 
 int debug = 0;
 
@@ -254,6 +269,45 @@ greet_cases(void)
 }
 
 static int
+greet_new_case(void)
+{
+	struct sockaddr_in sin;
+	struct smtp_ta *ta;
+	size_t len;
+	int sv[2], closed, bad = 0;
+
+	peer(&sin, sv);
+	/* A command already waiting must not be read */
+	write(sv[1], "HELO x\r\n", 8);
+	new_hostname = malloc(1101);
+	memset(new_hostname, 'g', 1100);
+	new_hostname[1100] = '\0';
+	ta = smtp_ta_new(sv[0], (struct sockaddr *)&sin, sizeof(sin),
+	    NULL, 0, 1);
+	free(new_hostname);
+	new_hostname = NULL;
+	len = collect(sv[1], &closed);
+	printf("greet_new: smtp_ta_new returned %s, reply %zu bytes, "
+	    "starts \"%.4s\", replies %d, closed %d\n",
+	    ta == NULL ? "NULL" : "a session", len, reply,
+	    (int)(strstr(reply, "\r\n") != NULL) +
+	    (int)(strstr(reply, "\r\n") != NULL &&
+		strstr(strstr(reply, "\r\n") + 2, "\r\n") != NULL),
+	    closed);
+	if (ta != NULL || strncmp(reply, "421 ", 4) != 0 ||
+	    strstr(reply, "\r\n") + 2 != reply + len || !closed)
+		printf("FAIL greet_new\n"), bad = 1;
+	if (!closed) {
+		int dummy;
+
+		shutdown(sv[1], SHUT_WR);
+		collect(sv[1], &dummy);
+	}
+	close(sv[1]);
+	return (bad);
+}
+
+static int
 connect_case(void)
 {
 	struct sockaddr_in sin;
@@ -302,6 +356,7 @@ main(void)
 	bad |= smtp_cases();
 	bad |= proxy_case();
 	bad |= greet_cases();
+	bad |= greet_new_case();
 	bad |= connect_case();
 	if (bad)
 		printf("FAIL\n");

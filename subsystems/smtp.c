@@ -1028,8 +1028,17 @@ smtp_ta_new(int fd, struct sockaddr *sa, socklen_t salen,
 		ta->mailer_id = "postfix";
 	}
 
-	if (greeting)
-		smtp_greeting(ta);
+	if (greeting && smtp_greeting(ta) == -1) {
+		/*
+		 * The fixed 421 is queued and wantclose is set: do not read
+		 * from the client. smtp_writecb frees the session once the
+		 * 421 is written, or smtp_errorcb if the write fails. The
+		 * caller must not use it.
+		 */
+		fprintf(stderr, "%s: greeting does not fit, closing\n",
+		    __func__);
+		return (NULL);
+	}
 
 	bufferevent_enable(ta->bev, EV_READ);
 
