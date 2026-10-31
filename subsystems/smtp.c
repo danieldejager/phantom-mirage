@@ -277,9 +277,12 @@ smtp_handle_helo(struct smtp_ta *ta, char *line)
 	ta->dns_pending++;
 	if (evdns_resolve_reverse(&sin->sin_addr, 0,
 		smtp_handle_helo_cb, ta) != 0) {
-		/* Failed synchronously: no callback will ever run */
-		if (--ta->dns_pending == 0 && ta->dns_canceled)
-			smtp_ta_free(ta);
+		/*
+		 * Failed synchronously: no callback will ever run.
+		 * Run it now as a failed lookup, so a live client
+		 * gets the usual reply and a canceled one is freed.
+		 */
+		smtp_handle_helo_cb(DNS_ERR_UNKNOWN, 0, 0, 0, NULL, ta);
 	}
 
 	return (0);

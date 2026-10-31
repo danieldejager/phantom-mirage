@@ -1,0 +1,6 @@
+# R2 follow-up to PM-SCR-103: synchronous evdns failure on a live
+# transaction must answer the client (HELO reply or bad domain)
+cc_san dns_lifetime -I tests/security/stub tests/security/dns_lifetime.c \
+    tests/security/pcre_stub.c subsystems/smtp.c subsystems/proxy.c \
+    util.c atomicio.c sha1.c
+run_clean dns_lifetime syncreply
