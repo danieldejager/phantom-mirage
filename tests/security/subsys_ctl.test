@@ -1,13 +1,14 @@
-# PM-SCR-111: control channel errors drop the command or the subsystem,
+# PM-SCR-111, PM-SCR-199: control channel errors drop the command or the subsystem,
 # never the daemon, and never block or spin, including on descriptors
 # the subsystem passed back; a failed subsystem start is not fatal
-cc_daemon subsys_ctl tests/security/subsys_ctl.c
+cc_daemon subsys_ctl tests/security/subsys_ctl.c -Wl,--wrap=fdshare_dup
 # Leak checks on (start up leaks are suppressed in lsan.supp); every
 # case runs and any failure fails the test
 rc=0
 for c in ${SUBSYS_CTL_CASES:-fdpass_eof connect_unknown_src \
     connect_foreign_port listen_shared_missing connect_no_fd \
-    short_command localconnect_no_fd listen_full start_fail}; do
+    short_command localconnect_no_fd listen_full start_fail \
+    connect_dup_fail_tcp connect_dup_fail_udp localconnect_dup_fail}; do
 	run_clean subsys_ctl "$c" || { echo "case $c failed" >&2; rc=1; }
 	cp "$OUT/subsys_ctl.log" "$OUT/subsys_ctl.$c.log"
 done

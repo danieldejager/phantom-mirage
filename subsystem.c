@@ -674,6 +674,17 @@ subsystem_read(int fd, short what, void *arg)
 				goto out;
 			}
 			TRACE(nfd, sub_port->sub_fd = fdshare_dup(nfd));
+			if (sub_port->sub_fd == -1) {
+				/* CWE-252/CWE-775: nfd is not shared, close it */
+				syslog(LOG_ERR, "%s: fdshare_dup failed",
+				    __func__);
+				TRACE_RESET(nfd, close(nfd));
+				tcp_free(con);
+				subsystem_connect_unwind(tmpl, sub_port,
+				    local_port);
+				res = -1;
+				goto out;
+			}
 
 			/* Cross notify, only once the connect is complete */
 			con->port = sub_port;
@@ -725,6 +736,17 @@ subsystem_read(int fd, short what, void *arg)
 				goto out;
 			}
 			TRACE(nfd, sub_port->sub_fd = fdshare_dup(nfd));
+			if (sub_port->sub_fd == -1) {
+				/* CWE-252/CWE-775: nfd is not shared, close it */
+				syslog(LOG_ERR, "%s: fdshare_dup failed",
+				    __func__);
+				TRACE_RESET(nfd, close(nfd));
+				udp_free(con);
+				subsystem_connect_unwind(tmpl, sub_port,
+				    local_port);
+				res = -1;
+				goto out;
+			}
 
 			/* Cross notify, only once the connect is complete */
 			con->port = sub_port;
