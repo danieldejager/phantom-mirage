@@ -93,6 +93,7 @@ struct event_base *stats_libevent_base;
 struct event_base *libevent_base;
 
 static int fd_recv;
+static struct event *ev_recv;
 static struct evbuffer *evbuf_recv;
 static char *checkpoint_filename = NULL;
 static char *config_filename = "phantom-mirage-stats.config";
@@ -105,10 +106,6 @@ read_cb(int fd, short what, void *unused)
 	struct sockaddr_storage from;
 	socklen_t fromsz = sizeof(from);
 	int nread;
-
-	/* Reschedule the event */
-	struct event *ev_recv = event_new(stats_libevent_base, fd_recv, EV_READ, read_cb, NULL);
-	event_add(ev_recv, NULL);
 
 	nread = recvfrom(fd, buf, sizeof(buf), MSG_WAITALL,
 	    (struct sockaddr *)&from, &fromsz);
@@ -189,8 +186,13 @@ setup_socket(char *address, int port)
 
 	syslog(LOG_NOTICE, "Listening on %s:%d", address, port);
 
-	struct event *ev_recv = event_new(stats_libevent_base, fd_recv, EV_READ, read_cb, NULL);
-	event_add(ev_recv, NULL);
+	/* One persistent receive event for the life of the program */
+	ev_recv = event_new(stats_libevent_base, fd_recv, EV_READ | EV_PERSIST,
+	    read_cb, NULL);
+	if (ev_recv == NULL || event_add(ev_recv, NULL) == -1) {
+		syslog(LOG_ERR, "%s: event_add", __func__);
+		exit(EXIT_FAILURE);
+	}
 }
 
 void
