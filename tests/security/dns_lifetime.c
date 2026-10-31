@@ -31,10 +31,13 @@ int debug = 0;
 static evdns_callback_type cbs[8];
 static void *args[8];
 static int n;
+static int fail_resolve;	/* make evdns_resolve_* fail synchronously */
 
 static int
 record(evdns_callback_type cb, void *arg)
 {
+	if (fail_resolve)
+		return (-1);
 	cbs[n] = cb;
 	args[n] = arg;
 	n++;
@@ -113,7 +116,84 @@ proxy_case(const char *name, int (*handle)(struct proxy_ta *))
 	printf("proxy %s: second answer after close handled\n", name);
 }
 
-/* Optional argument: smtp, get or connect to run one case */
+/*
+ * Review fix: evdns_resolve_* fails synchronously, so no callback will
+ * ever run. Teardown must still free the transaction (LeakSanitizer).
+ */
+static int
+syncfail_case(void)
+{
+	struct sockaddr_in sin;
+	struct smtp_ta *sta;
+	struct proxy_ta *ta;
+	const char *in = "HELO a\r\n";
+	int sv[2], bad = 0;
+
+	fail_resolve = 1;
+	setup(sv, &sin);
+	sta = smtp_ta_new(sv[0], (struct sockaddr *)&sin, sizeof(sin),
+	    NULL, 0, 0);
+	write(sv[1], in, strlen(in));
+	event_loop(EVLOOP_ONCE);
+	if (sta->dns_pending != 0)
+		printf("FAIL smtp: dns_pending %d after failed lookup\n",
+		    sta->dns_pending), bad = 1;
+	smtp_errorcb(sta->bev, BEV_EVENT_EOF, sta);
+	close(sv[1]);
+
+	setup(sv, &sin);
+	ta = proxy_ta_new(sv[0], (struct sockaddr *)&sin, sizeof(sin),
+	    NULL, 0);
+	kv_replace(&ta->dictionary, "$rawhost", "example.invalid");
+	proxy_handle_get(ta);
+	proxy_handle_connect(ta);
+	if (ta->dns_pending != 0)
+		printf("FAIL proxy: dns_pending %d after failed lookups\n",
+		    ta->dns_pending), bad = 1;
+	proxy_errorcb(ta->bev, BEV_EVENT_EOF, ta);
+	close(sv[1]);
+	fail_resolve = 0;
+	printf("sync resolve failure: transactions freed\n");
+	return (bad);
+}
+
+/*
+ * Review fix: the deferred free path must stop I/O on remote_bev too,
+ * not only on bev, while lookups are still in flight.
+ */
+static int
+remote_case(void)
+{
+	struct sockaddr_in sin;
+	struct proxy_ta *ta;
+	int sv[2], rv[2], bad = 0;
+
+	setup(sv, &sin);
+	ta = proxy_ta_new(sv[0], (struct sockaddr *)&sin, sizeof(sin),
+	    NULL, 0);
+	socketpair(AF_UNIX, SOCK_STREAM, 0, rv);
+	ta->remote_fd = rv[0];
+	ta->remote_bev = bufferevent_socket_new(NULL, rv[0], 0);
+	bufferevent_enable(ta->remote_bev, EV_READ|EV_WRITE);
+	kv_replace(&ta->dictionary, "$rawhost", "example.invalid");
+	proxy_handle_get(ta);
+	proxy_errorcb(ta->bev, BEV_EVENT_EOF, ta);
+	if (bufferevent_get_enabled(ta->bev) != 0) {
+		printf("FAIL: bev still enabled on deferred free\n");
+		bad = 1;
+	}
+	if (bufferevent_get_enabled(ta->remote_bev) != 0) {
+		printf("FAIL: remote_bev still enabled on deferred free\n");
+		bad = 1;
+	}
+	answer(0);
+	close(sv[1]);
+	close(rv[1]);
+	printf("deferred free: remote_bev checked\n");
+	return (bad);
+}
+
+/* Optional argument: smtp, get, connect, syncfail or remote */
 int
 main(int argc, char **argv)
 {
@@ -126,5 +206,9 @@ main(int argc, char **argv)
 		proxy_case("GET", proxy_handle_get);
 	if (only == NULL || strcmp(only, "connect") == 0)
 		proxy_case("CONNECT", proxy_handle_connect);
+	if (only != NULL && strcmp(only, "syncfail") == 0)
+		return (syncfail_case());
+	if (only != NULL && strcmp(only, "remote") == 0)
+		return (remote_case());
 	return (0);
 }

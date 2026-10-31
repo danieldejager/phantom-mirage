@@ -454,8 +454,12 @@ proxy_handle_get(struct proxy_ta *ta)
 
 	/* Try to resolve the domain name */
 	ta->dns_pending++;
-	evdns_resolve_ipv4(kv_find(&ta->dictionary, "$host"), 0,
-	    proxy_handle_get_cb, ta);
+	if (evdns_resolve_ipv4(kv_find(&ta->dictionary, "$host"), 0,
+		proxy_handle_get_cb, ta) != 0) {
+		/* Failed synchronously: no callback will ever run */
+		if (--ta->dns_pending == 0 && ta->dns_canceled)
+			proxy_ta_free(ta);
+	}
 	return (0);
 }
 
@@ -545,8 +549,12 @@ proxy_handle_connect(struct proxy_ta *ta)
 
 	/* Try to resolve the domain name */
 	ta->dns_pending++;
-	evdns_resolve_ipv4(kv_find(&ta->dictionary, "$host"), 0,
-	    proxy_handle_connect_cb, ta);
+	if (evdns_resolve_ipv4(kv_find(&ta->dictionary, "$host"), 0,
+		proxy_handle_connect_cb, ta) != 0) {
+		/* Failed synchronously: no callback will ever run */
+		if (--ta->dns_pending == 0 && ta->dns_canceled)
+			proxy_ta_free(ta);
+	}
 	return (0);
 }
 
@@ -721,6 +729,9 @@ proxy_ta_free(struct proxy_ta *ta)
 		 */
 		ta->dns_canceled = 1;
 		bufferevent_disable(ta->bev, EV_READ|EV_WRITE);
+		if (ta->remote_bev != NULL)
+			bufferevent_disable(ta->remote_bev,
+			    EV_READ|EV_WRITE);
 		return;
 	}
 

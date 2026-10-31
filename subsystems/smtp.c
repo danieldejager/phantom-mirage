@@ -275,7 +275,12 @@ smtp_handle_helo(struct smtp_ta *ta, char *line)
 	kv_replace(&ta->dictionary, "$srcname", domainname);
 
 	ta->dns_pending++;
-	evdns_resolve_reverse(&sin->sin_addr, 0, smtp_handle_helo_cb, ta);
+	if (evdns_resolve_reverse(&sin->sin_addr, 0,
+		smtp_handle_helo_cb, ta) != 0) {
+		/* Failed synchronously: no callback will ever run */
+		if (--ta->dns_pending == 0 && ta->dns_canceled)
+			smtp_ta_free(ta);
+	}
 
 	return (0);
 }
