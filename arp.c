@@ -77,6 +77,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <time.h>
 #include <unistd.h>
 #include <assert.h>
 
@@ -126,6 +127,71 @@ SPLAY_PROTOTYPE(haarptree, arp_req, next_ha, ha_compare);
 SPLAY_GENERATE(haarptree, arp_req, next_ha, ha_compare);
 
 
+/*
+ * PM-SCR-139: entries created by arp_request() (pending, resolved and
+ * remembered failures) are attacker driven. They are kept on arp_extlru
+ * in creation order and capped; internal entries made by arp_new() for
+ * the configuration are never on the list, counted or evicted.
+ */
+static TAILQ_HEAD(arpextq, arp_req) arp_extlru =
+    TAILQ_HEAD_INITIALIZER(arp_extlru);
+/*
+ * "option honeyd max_arp_pending N" and "option honeyd max_arp_entries N"
+ * override these when set (values below 1 are ignored).
+ */
+static int arp_cap_pending = ARP_MAX_PENDING;
+static int arp_cap_entries = ARP_MAX_ENTRIES;
+static int arp_npending;	/* counted entries whose callback has not run */
+static int arp_nexternal;	/* entries on arp_extlru */
+static uint32_t arp_nrejected;	/* requests refused at the pending cap */
+static uint32_t arp_nevicted;	/* entries evicted at the entry cap */
+
+void
+arp_set_limits(int pending, int entries)
+{
+	arp_cap_pending = pending < 1 ? ARP_MAX_PENDING : pending;
+	arp_cap_entries = entries < 1 ? ARP_MAX_ENTRIES : entries;
+}
+
+int arp_max_pending(void) { return (arp_cap_pending); }
+int arp_max_entries(void) { return (arp_cap_entries); }
+int arp_pending_count(void) { return (arp_npending); }
+int arp_external_count(void) { return (arp_nexternal); }
+uint32_t arp_pending_rejected(void) { return (arp_nrejected); }
+uint32_t arp_external_evicted(void) { return (arp_nevicted); }
+
+/* Take a counted entry off the cap list; safe to call twice */
+static void
+arp_uncount(struct arp_req *req)
+{
+	if (req->flags & ARP_PENDING) {
+		req->flags &= ~ARP_PENDING;
+		arp_npending--;
+	}
+	if (req->flags & ARP_COUNTED) {
+		req->flags &= ~ARP_COUNTED;
+		TAILQ_REMOVE(&arp_extlru, req, next_ext);
+		arp_nexternal--;
+	}
+}
+
+/* LOG_DEBUG at most once a second, only when a counter moved */
+static void
+arp_cap_log(void)
+{
+	static time_t lastlog;
+	static uint32_t lastsum;
+	time_t now = time(NULL);
+
+	if (arp_nrejected + arp_nevicted == lastsum || now == lastlog)
+		return;
+	lastlog = now;
+	lastsum = arp_nrejected + arp_nevicted;
+	syslog(LOG_DEBUG, "arp caps: pending %d/%d rejected %u, "
+	    "entries %d/%d evicted %u", arp_npending, arp_cap_pending,
+	    arp_nrejected, arp_nexternal, arp_cap_entries, arp_nevicted);
+}
+
 void
 arp_init(void)
 {
@@ -158,6 +224,7 @@ arp_send(eth_t *eth, int op,
 void
 arp_free(struct arp_req *req)
 {
+	arp_uncount(req);
 	SPLAY_REMOVE(paarptree, &pa_arp_reqs, req);
 
 	/*
@@ -194,6 +261,10 @@ arp_callback(struct arp_req *req, int success)
 	void (*cb)(struct arp_req *, int, void *) = req->cb;
 	void *arg = req->arg;
 
+	if (req->flags & ARP_PENDING) {
+		req->flags &= ~ARP_PENDING;
+		arp_npending--;
+	}
 	if (cb == NULL)
 		return;
 	req->cb = NULL;
@@ -238,9 +309,15 @@ arp_discover(struct arp_req *req, struct addr *ha)
 
 		/* XXX - use reversemap on networks to find router ip */
 		evtimer_add(req->discover, &tv);
-	} else
+		req->cnt++;
+	} else {
+		/*
+		 * The callback may re-enter arp_request() and evict req at
+		 * the entry cap: do not touch req after it.
+		 */
+		req->cnt++;
 		arp_callback(req, 0);
-	req->cnt++;
+	}
 }
 
 static void
@@ -322,6 +399,46 @@ arp_request(struct interface *inter,
 	struct addr bcast;
 	struct timeval tv;
 
+	/*
+	 * Pending cap: refuse the request. Run the callback once with
+	 * failure on a detached request with no interface, so the caller's
+	 * failure path frees its queued packet and nothing is sent.
+	 */
+	int max_pending = honeyd_flow_option("max_arp_pending",
+	    arp_cap_pending);
+	int max_entries = honeyd_flow_option("max_arp_entries",
+	    arp_cap_entries);
+
+	if (arp_npending >= max_pending) {
+		struct arp_req tmp;
+
+		memset(&tmp, 0, sizeof(tmp));
+		if (addr != NULL)
+			tmp.pa = *addr;
+		tmp.cb = cb;
+		tmp.arg = arg;
+		arp_nrejected++;
+		arp_cap_log();
+		arp_callback(&tmp, 0);
+		return;
+	}
+
+	/*
+	 * Entry cap: evict the oldest counted entry. Take it off the list
+	 * first, so a callback that re-enters arp_request() cannot pick it
+	 * again, then fail its callback once (frees a queued packet), then
+	 * free it.
+	 */
+	while (arp_nexternal >= max_entries &&
+	    (req = TAILQ_FIRST(&arp_extlru)) != NULL) {
+		arp_uncount(req);
+		arp_nevicted++;
+		evtimer_del(req->discover);
+		arp_callback(req, 0);
+		arp_free(req);
+	}
+	arp_cap_log();
+
 	if ((req = arp_new(inter, src_pa, src_ha, addr, NULL)) == NULL) {
 		syslog(LOG_ERR, "calloc: %m");
 		return;
@@ -329,6 +446,10 @@ arp_request(struct interface *inter,
 			
 	req->cb = cb;
 	req->arg = arg;
+	req->flags |= ARP_COUNTED | ARP_PENDING;
+	TAILQ_INSERT_TAIL(&arp_extlru, req, next_ext);
+	arp_nexternal++;
+	arp_npending++;
 
 	timerclear(&tv);
 	tv.tv_sec = ARP_MAX_ACTIVE;
@@ -462,11 +583,11 @@ arp_recv_cb(u_char *u, const struct pcap_pkthdr *pkthdr, const u_char *pkt)
 				req->flags |= ARP_EXTERNAL;
 				req->cnt = ARP_REQUEST_SUCESS;
 				evtimer_del(req->discover);
-				if (!done)
-					arp_callback(req, 1);
-
 				syslog(LOG_DEBUG, "%s: %s at %s", __func__,
 				    addr_ntoa(&req->pa), addr_ntoa(&req->ha));
+				/* Last use of req: the callback may evict it */
+				if (!done)
+					arp_callback(req, 1);
 			}
 		}
 		break;

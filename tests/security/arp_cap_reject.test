@@ -1,0 +1,7 @@
+# PM-SCR-139 (ARP): pending and entry caps, mode reject
+cc_daemon arp_cap tests/security/arp_cap.c
+# Leak checks stay on; only the never freed daemon configuration is
+# suppressed, so a queued packet that is not freed is reported
+LSAN_OPTIONS=suppressions=$T/arp_cap.supp:print_suppressions=0
+export LSAN_OPTIONS
+run_clean arp_cap reject

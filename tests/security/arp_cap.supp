@@ -1,0 +1,3 @@
+# Daemon configuration loaded once by fuzz_honeyd_init() and never freed
+leak:personality_parse
+leak:parse_associations
