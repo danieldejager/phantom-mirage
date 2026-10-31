@@ -734,7 +734,10 @@ cmd_subsystem_connect_cb(int fd, short what, void *arg)
 		return;
 	}
 
-	cmd_subsystem_connect(hdr, cmd, port, con);
+	/* CWE-252: a connection the subsystem never got is dropped */
+	if (cmd_subsystem_connect(hdr, cmd, port, con) == -1 &&
+	    hdr->type == SOCK_STREAM)
+		tcp_connectfail(con);
 }
 
 int

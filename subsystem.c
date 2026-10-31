@@ -758,8 +758,20 @@ subsystem_read(int fd, short what, void *arg)
 			    SUBSYSTEM_IO_TIMEOUT));
                        
 			/* Connect our system to the subsystem */
-			cmd_subsystem_localconnect(&con->conhdr, &con->cmd,
-			    sub_port, con);
+			if (cmd_subsystem_localconnect(&con->conhdr, &con->cmd,
+			    sub_port, con) == -1) {
+				/*
+				 * CWE-252: drop the connection. The local
+				 * connect released the shared descriptor.
+				 */
+				syslog(LOG_ERR, "%s: local connect failed, "
+				    "connection dropped", __func__);
+				con->port = NULL;
+				sub_port->sub_conport = NULL;
+				udp_free(con);
+				subsystem_connect_unwind(tmpl, sub_port,
+				    local_port);
+			}
 			goto reschedule;
 		}
 	}

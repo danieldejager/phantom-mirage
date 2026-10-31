@@ -94,6 +94,16 @@ send_fd(int socket, int fd, void *base, size_t len)
 		errno = EPIPE;
 		return (-1);
 	}
+	if ((size_t)n != vec.iov_len) {
+		/*
+		 * CWE-252: the descriptor went with a partial message. The
+		 * peer cannot use it, and a retry would pass it twice.
+		 */
+		syslog(LOG_ERR, "%s: sendmsg: sent %ld of %lu bytes",
+		    __func__, (long)n, (unsigned long)vec.iov_len);
+		errno = EPIPE;
+		return (-1);
+	}
 #else
 	syslog(LOG_ERR, "%s: subsystems not supported due to lack of fd passing",__func__);
 			exit(EXIT_FAILURE);
