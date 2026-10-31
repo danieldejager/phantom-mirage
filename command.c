@@ -298,9 +298,11 @@ cmd_droppriv(uid_t uid, gid_t gid)
 
 	/* Lower privileges: supplementary groups, then gid, then uid */
 #ifdef HAVE_SETGROUPS
-	if (setgroups(1, &gid) == -1)
+	if (setgroups(1, &gid) == -1) {
 		SETERROR((errline, sizeof(errline),
 			     "%s: setgroups(%d) failed\n", __func__, gid));
+		goto error;
+	}
 #endif
 #ifdef __linux__
 	/* Real, effective and saved IDs in one call */
@@ -330,11 +332,11 @@ cmd_droppriv(uid_t uid, gid_t gid)
 #ifdef __OpenBSD__
 	if (seteuid(uid) == -1)
 		SETERROR((errline, sizeof(errline),
-			     "%s: seteuid(%d) failed\n", __func__, gid));
+			     "%s: seteuid(%d) failed\n", __func__, uid));
 #endif
 	if (setuid(uid) == -1)
 		SETERROR((errline, sizeof(errline),
-			     "%s: setuid(%d) failed\n", __func__, gid));
+			     "%s: setuid(%d) failed\n", __func__, uid));
 
 	if (getgid() != gid || getegid() != gid) {
 		SETERROR((errline, sizeof(errline),
@@ -367,6 +369,7 @@ cmd_droppriv(uid_t uid, gid_t gid)
 
 	return;
  error:
+ syslog(LOG_ERR, "%s", error);
  syslog(LOG_ERR,"%s: terminated",__func__);
  exit(EXIT_FAILURE);
 }

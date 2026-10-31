@@ -48,6 +48,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <ctype.h>
 #include <syslog.h>
@@ -1337,15 +1338,105 @@ pyextend_accept(int fd, short what, void *arg)
 	}
 }
 
+/*
+ * Fix ownership and modes below the webserver root (run as root with
+ * --fix-webserver-permissions). Every entry is reached through a
+ * directory descriptor and never through a symbolic link, so a link
+ * swapped in after the check cannot redirect chown or chmod.
+ */
+static void
+fix_permissions_fd(int dirfd, const char *path, uid_t uid, gid_t gid)
+{
+	DIR *dir;
+	struct dirent *file;
+	struct stat sb;
+	char procname[64];
+	int fd, sub;
+
+	if ((dir = fdopendir(dirfd)) == NULL)
+	{
+		syslog(LOG_ERR, "opendir(%s)", path);
+		exit(EXIT_FAILURE);
+	}
+
+	while ((file = readdir(dir)) != NULL) {
+		char *filename = file->d_name;
+		if (!strcmp(filename, "..") || !strcmp(filename, "CVS"))
+			continue;
+
+		/* Pin the entry itself; a symbolic link is opened as such */
+		if ((fd = openat(dirfd, filename, O_PATH|O_NOFOLLOW)) == -1 ||
+		    fstat(fd, &sb) == -1)
+		{
+			syslog(LOG_ERR, "lstat(%s/%s)", path, filename);
+			exit(EXIT_FAILURE);
+		}
+
+		/* We ignore symbolic links - shoot yourself in the foot */
+		if (S_ISLNK(sb.st_mode)) {
+			close(fd);
+			continue;
+		}
+
+		/* Change owner ship to us */
+		if (sb.st_uid != uid || sb.st_gid != gid) {
+			syslog(LOG_INFO, "Fixing ownership: %s/%s",
+			    path, filename);
+			if (fchownat(fd, "", uid, gid, AT_EMPTY_PATH) == -1)
+			{
+				syslog(LOG_ERR, "chown(%s/%s)", path, filename);
+				exit(EXIT_FAILURE);
+			}
+		}
+
+		if ((sb.st_mode & (S_IRUSR|S_IWUSR)) != (S_IRUSR|S_IWUSR) ||
+		    (sb.st_mode & S_IWOTH)) {
+			int mode = (sb.st_mode & 0777);
+			mode |= (S_IRUSR|S_IWUSR);
+			/* No write access for others */
+			mode &= ~S_IWOTH;
+
+			syslog(LOG_INFO, "Fixing modes: %s/%s", path, filename);
+			/* chmod through the pinned descriptor */
+			snprintf(procname, sizeof(procname),
+			    "/proc/self/fd/%d", fd);
+			if (chmod(procname, mode) == -1)
+			{
+				syslog(LOG_ERR, "chmod(%s/%s)", path, filename);
+				exit(EXIT_FAILURE);
+			}
+		}
+
+		if (S_ISDIR(sb.st_mode) && filename[0] != '.') {
+			char fullname[PATH_MAX];
+
+			if (snprintf(fullname, sizeof(fullname), "%s/%s",
+				path, filename) >= sizeof(fullname))
+			{
+				syslog(LOG_ERR, "directory name too long");
+				exit(EXIT_FAILURE);
+			}
+			sub = openat(dirfd, filename,
+			    O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+			if (sub == -1)
+			{
+				syslog(LOG_ERR, "opendir(%s)", fullname);
+				exit(EXIT_FAILURE);
+			}
+			fix_permissions_fd(sub, fullname, uid, gid);
+		}
+		close(fd);
+	}
+	closedir(dir);
+}
+
 void
 pyextend_webserver_fix_permissions(const char *path, uid_t uid, gid_t gid)
 {
 	static int created_dirs;
-	DIR *dir;
-	struct dirent *file;
 	struct stat sb;
 	char fullname[PATH_MAX];
-	int off;
+	int dirfd;
 
 	/* Create special directories */
 	if (!created_dirs) {
@@ -1358,7 +1449,7 @@ pyextend_webserver_fix_permissions(const char *path, uid_t uid, gid_t gid)
 		}
 		if (lstat(fullname, &sb) == -1 && errno == ENOENT) {
 			syslog(LOG_INFO, "Creating directory %s", fullname);
-			if (mkdir(fullname, 0722) == -1)
+			if (mkdir(fullname, 0750) == -1)
 			{
 				syslog(LOG_ERR, "mkdir(%s)", fullname);
 				exit(EXIT_FAILURE);
@@ -1373,66 +1464,13 @@ pyextend_webserver_fix_permissions(const char *path, uid_t uid, gid_t gid)
 		exit(EXIT_FAILURE);
 	}
 
-	dir = opendir(path);
-	if (dir == NULL)
+	dirfd = open(path, O_RDONLY|O_DIRECTORY);
+	if (dirfd == -1)
 	{
 		syslog(LOG_ERR, "opendir(%s)", path);
 		exit(EXIT_FAILURE);
 	}
-
-	strlcpy(fullname, path, sizeof (fullname));
-	off = strlen(fullname);
-	if (fullname[off - 1] != '/') {
-		strlcat(fullname, "/", sizeof(fullname));
-		off++;
-	}
-
-	while ((file = readdir(dir)) != NULL) {
-		char *filename = file->d_name;
-		if (!strcmp(filename, "..") || !strcmp(filename, "CVS"))
-			continue;
-
-		strlcpy(fullname + off, filename, sizeof(fullname) - off);
-
-		if (lstat(fullname, &sb) == -1)
-		{
-			syslog(LOG_ERR, "lstat(%s)", fullname);
-			exit(EXIT_FAILURE);
-		}
-
-		/* We ignore symbolic links - shoot yourself in the foot */
-		if (sb.st_mode & S_IFLNK)
-			continue;
-
-		/* Change owner ship to us */
-		if (sb.st_uid != uid || sb.st_gid != gid) {
-			syslog(LOG_INFO, "Fixing ownership: %s", fullname);
-			if (chown(fullname, uid, gid) == -1)
-			{
-				syslog(LOG_ERR, "chown(%s)", fullname);
-				exit(EXIT_FAILURE);
-			}
-		}
-
-		if ((sb.st_mode & (S_IRUSR|S_IWUSR)) != (S_IRUSR|S_IWUSR) ||
-		    (sb.st_mode & S_IWOTH)) {
-			int mode = (sb.st_mode & 0777);
-			mode |= (S_IRUSR|S_IWUSR);
-			/* No write access for others */
-			mode &= ~S_IWOTH;
-
-			syslog(LOG_INFO, "Fixing modes: %s", fullname);
-			if (chmod(fullname, mode) == -1)
-			{
-				syslog(LOG_ERR, "chmod(%s)", fullname);
-				exit(EXIT_FAILURE);
-			}
-		}
-
-		if ((sb.st_mode & S_IFDIR) && filename[0] != '.')
-			pyextend_webserver_fix_permissions(fullname, uid, gid);
-	}
-	closedir(dir);
+	fix_permissions_fd(dirfd, path, uid, gid);
 }
 
 void
