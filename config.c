@@ -430,8 +430,7 @@ template_deallocate(struct template *tmpl)
 
 	if (tmpl->dhcp_req != NULL) {
 		dhcp_release(tmpl);
-		dhcp_abort(tmpl);
-		free(tmpl->dhcp_req);
+		dhcp_req_free(tmpl);
 	}
 
 	free(tmpl->origin);

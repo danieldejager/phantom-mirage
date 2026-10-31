@@ -140,6 +140,7 @@ struct dhcp_msg {
 
 struct template;
 void dhcp_abort(struct template *);
+void dhcp_req_free(struct template *);
 int dhcp_release(struct template *);
 void queue_dhcp_discover(struct template *tmpl);
 void dhcp_send_discover();
