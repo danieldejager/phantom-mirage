@@ -1480,11 +1480,26 @@ tcp_new(const struct interface* iface, struct ip_hdr *ip, struct tcp_hdr *tcp, i
 		return (NULL);
 	}
 
-	honeyd_nconnects++;
 	honeyd_settcp(con, NULL, ip, tcp, local);
 	con->conhdr.iface = iface;
+
+	/*
+	 * CWE-476/CWE-252: make both timers before the connection is
+	 * counted or inserted; on failure free what was made and drop.
+	 */
 	con->conhdr.timeout = evtimer_new(libevent_base, honeyd_tcp_timeout, con);
 	con->retrans_timeout = evtimer_new(libevent_base, tcp_retrans_timeout, con);
+	if (con->conhdr.timeout == NULL || con->retrans_timeout == NULL) {
+		syslog(LOG_ERR, "%s: evtimer_new failed", __func__);
+		if (con->conhdr.timeout != NULL)
+			event_free(con->conhdr.timeout);
+		if (con->retrans_timeout != NULL)
+			event_free(con->retrans_timeout);
+		free(con);
+		return (NULL);
+	}
+
+	honeyd_nconnects++;
 
 	connection_insert(&tcpcons, &tcplru, &con->conhdr);
 
