@@ -357,14 +357,11 @@ subsystem_cmd_listen(int fd,
 	}
 
 	res = 0;
-	TRACE(fd, atomicio(vwrite, fd, &res, 1));
+	TRACE(fd, atomicio_timed(vwrite, fd, &res, 1, SUBSYSTEM_IO_TIMEOUT));
 	res = -1;
 
-	/* Repeat until we get a result */
-	while ((nfd = receive_fd(fd, NULL, NULL)) == -1) {
-		if (errno != EAGAIN)
-			break;
-	}
+	/* Wait a bounded time for the descriptor */
+	nfd = receive_fd_timed(fd, NULL, NULL, SUBSYSTEM_IO_TIMEOUT);
 
 	if (nfd == -1) {
 		syslog(LOG_WARNING, "%s: no file descriptor",__func__);
@@ -389,10 +386,10 @@ subsystem_cmd_listen(int fd,
 		SPLAY_FOREACH(cont, subtmpltree, &sub->root) {
 			tmpl = cont->tmpl;
 			sub_port = port_find(tmpl, proto, port);
-			if (sub_port == NULL)
-			{
-				syslog(LOG_ERR, "%s: no proto %d port %d", __func__, proto, port);
-				exit(EXIT_FAILURE);
+			if (sub_port == NULL) {
+				syslog(LOG_ERR, "%s: no proto %d port %d on %s",
+				    __func__, proto, port, tmpl->name);
+				continue;
 			}
 			if (sub_port->sub == NULL) {
 				syslog(LOG_DEBUG,
@@ -427,7 +424,8 @@ subsystem_read(int fd, short what, void *arg)
 	int proto, n;
 	char res = -1;
 
-	TRACE(fd, n = atomicio(read, fd, &cmd, sizeof(cmd)));
+	TRACE(fd, n = atomicio_timed(read, fd, &cmd, sizeof(cmd),
+	    SUBSYSTEM_IO_TIMEOUT));
 	if (n != sizeof(cmd)) {
 		subsystem_cleanup(sub);
 		return;
@@ -487,11 +485,13 @@ subsystem_read(int fd, short what, void *arg)
 		}
 
 		/* Confirm success or failure of this phase */
-		TRACE(fd, atomicio(vwrite, fd, &res, 1));
+		TRACE(fd, atomicio_timed(vwrite, fd, &res, 1,
+		    SUBSYSTEM_IO_TIMEOUT));
 			
 		/* On success, we also communicate the port back */
 		if (res != -1) {
-			TRACE(fd, atomicio(vwrite, fd, &port, sizeof(port)));
+			TRACE(fd, atomicio_timed(vwrite, fd, &port, sizeof(port),
+			    SUBSYSTEM_IO_TIMEOUT));
 		}
 		goto reschedule;
 	}
@@ -553,10 +553,10 @@ subsystem_read(int fd, short what, void *arg)
 		/* Find appropriate template */
 		if (strcmp(asrc, "0.0.0.0") != 0) {
 			tmpl = subsystem_template_find(sub, asrc);
-			if (tmpl == NULL)
-			{
-				syslog(LOG_ERR, "%s: source address %s not found", __func__, asrc);
-				exit(EXIT_FAILURE);
+			if (tmpl == NULL) {
+				syslog(LOG_ERR, "%s: source address %s not found",
+				    __func__, asrc);
+				goto out;
 			}
 		} else {
 			cont = SPLAY_ROOT(&sub->root);
@@ -591,7 +591,11 @@ subsystem_read(int fd, short what, void *arg)
 			goto out;
 		
 		/* Verify that we have the correct binding */
-		assert(sub_port->sub == sub);
+		if (sub_port->sub != sub) {
+			syslog(LOG_ERR, "%s: port %d not bound by subsystem %s",
+			    __func__, sub_port->number, sub->cmdstring);
+			goto out;
+		}
 
 		syslog(LOG_DEBUG, "Connect: allocated port %d",
 		    sub_port->number);
@@ -619,20 +623,23 @@ subsystem_read(int fd, short what, void *arg)
 
 			/* Confirm success of this phase */
 			res = 0;
-			TRACE(fd, atomicio(vwrite, fd, &res, 1));
+			TRACE(fd, atomicio_timed(vwrite, fd, &res, 1,
+			    SUBSYSTEM_IO_TIMEOUT));
 			
 			/* Now get the control fd */
-			while ((nfd = receive_fd(fd, NULL, NULL)) == -1) {
-				if (errno != EAGAIN) {
-					tcp_free(con);
-					goto out;
-				}
+			nfd = receive_fd_timed(fd, NULL, NULL,
+			    SUBSYSTEM_IO_TIMEOUT);
+			if (nfd == -1) {
+				tcp_free(con);
+				res = -1;
+				goto out;
 			}
 			TRACE(nfd, sub_port->sub_fd = fdshare_dup(nfd));
 
 			/* Confirm success again */
 			res = 0;
-			TRACE(nfd, atomicio(vwrite, nfd, &res, 1));
+			TRACE(nfd, atomicio_timed(vwrite, nfd, &res, 1,
+			    SUBSYSTEM_IO_TIMEOUT));
 			
 			/* Send out the SYN packet */
 			con->state = TCP_STATE_SYN_SENT;
@@ -661,20 +668,23 @@ subsystem_read(int fd, short what, void *arg)
 
 			/* Confirm success of this phase */
 			res = 0;
-			TRACE(fd, atomicio(vwrite, fd, &res, 1));
+			TRACE(fd, atomicio_timed(vwrite, fd, &res, 1,
+			    SUBSYSTEM_IO_TIMEOUT));
 
 			/* Now get the control fd */
-			while ((nfd = receive_fd(fd, NULL, NULL)) == -1) {
-				if (errno != EAGAIN) {
-					udp_free(con);
-					goto out;
-				}
+			nfd = receive_fd_timed(fd, NULL, NULL,
+			    SUBSYSTEM_IO_TIMEOUT);
+			if (nfd == -1) {
+				udp_free(con);
+				res = -1;
+				goto out;
 			}
 			TRACE(nfd, sub_port->sub_fd = fdshare_dup(nfd));
 
 			/* Confirm success again */
 			res = 0;
-			TRACE(nfd, atomicio(vwrite, nfd, &res, 1));
+			TRACE(nfd, atomicio_timed(vwrite, nfd, &res, 1,
+			    SUBSYSTEM_IO_TIMEOUT));
                        
 			/* Connect our system to the subsystem */
 			cmd_subsystem_localconnect(&con->conhdr, &con->cmd,
@@ -687,7 +697,7 @@ subsystem_read(int fd, short what, void *arg)
 	}
 
  out:
-	TRACE(fd, atomicio(vwrite, fd, &res, 1));
+	TRACE(fd, atomicio_timed(vwrite, fd, &res, 1, SUBSYSTEM_IO_TIMEOUT));
  reschedule:
 	/* Reschedule read */
 	TRACE(event_get_fd(sub->cmd.pread), event_add(sub->cmd.pread, NULL));

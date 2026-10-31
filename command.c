@@ -678,6 +678,10 @@ cmd_subsystem(struct template *tmpl, struct subsystem *sub,
 	TRACE(pair[0], cmd->pfd = pair[0]);
 	if (fcntl(cmd->pfd, F_SETFD, 1) == -1)
 		warn("fcntl(F_SETFD)");
+	/* Control channel reads and writes are bounded, never blocking */
+	if (fcntl(cmd->pfd, F_SETFL, O_NONBLOCK) == -1)
+		syslog(LOG_ERR, "%s: fcntl(O_NONBLOCK): %s", __func__,
+		    strerror(errno));
 
 	cmd->perrfd = -1;
 	cmd_ready_fd(cmd, &subsystem_cb, sub);
@@ -806,7 +810,8 @@ cmd_subsystem_connect(struct tuple *hdr, struct command *cmd,
 	addr_ntos(&dst, (struct sockaddr *)&bundle.dst);
 	bundle.dst.sin_port = htons(hdr->dport);
 
-	if (send_fd(port->sub_fd, pair[1], &bundle, sizeof(bundle)) == -1) {
+	if (send_fd_timed(port->sub_fd, pair[1], &bundle, sizeof(bundle),
+	    SUBSYSTEM_IO_TIMEOUT) == -1) {
 		TRACE_RESET(pair[0], close(pair[0]));
 		TRACE_RESET(pair[1], close(pair[1]));
 		cmd->pfd = -1;
@@ -853,16 +858,17 @@ cmd_subsystem_localconnect(struct tuple *hdr, struct command *cmd,
 	if (port->sub_fd == -1) {
 		char res;
 
-		while ((fd = receive_fd(sub->cmd.pfd, NULL, NULL)) == -1) {
-			if (errno != EAGAIN) {
-				warnx("%s: receive_fd", __func__);
-			}
-		}
+		fd = receive_fd_timed(sub->cmd.pfd, NULL, NULL,
+		    SUBSYSTEM_IO_TIMEOUT);
+		if (fd == -1)
+			syslog(LOG_ERR, "%s: receive_fd: %s", __func__,
+			    strerror(errno));
 
 		/* Confirm success of failure */
 		res = fd == -1 ? -1 : 0;
 		TRACE(sub->cmd.pfd,
-		    atomicio(vwrite, sub->cmd.pfd, &res, 1));
+		    atomicio_timed(vwrite, sub->cmd.pfd, &res, 1,
+		    SUBSYSTEM_IO_TIMEOUT));
 		if (fd == -1)
 			return (-1);
 
@@ -870,16 +876,16 @@ cmd_subsystem_localconnect(struct tuple *hdr, struct command *cmd,
 	}
 
 	/* Get another fd on this special thingy */
-	while ((fd = receive_fd(port->sub_fd, NULL, NULL)) == -1) {
-		if (errno != EAGAIN) {
-			TRACE(port->sub_fd, fdshare_close(port->sub_fd));
-			warnx("%s: receive_fd", __func__);
-			return (-1);
-		}
+	fd = receive_fd_timed(port->sub_fd, NULL, NULL, SUBSYSTEM_IO_TIMEOUT);
+	if (fd == -1) {
+		TRACE(port->sub_fd, fdshare_close(port->sub_fd));
+		port->sub_fd = -1;
+		syslog(LOG_ERR, "%s: receive_fd: %s", __func__,
+		    strerror(errno));
+		return (-1);
 	}
 
-        if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1)
-                warn("%s: fcntl(O_NONBLOCK)", __func__);
+	/* receive_fd_timed already made fd non blocking */
 
         if (fcntl(fd, F_SETFD, 1) == -1)
                 warn("%s: fcntl(F_SETFD)", __func__);
@@ -892,7 +898,8 @@ cmd_subsystem_localconnect(struct tuple *hdr, struct command *cmd,
 	si.sin_port = htons(hdr->dport);
 
 	/* Write the bound socket address to the other side */
-	if (atomicio(vwrite, port->sub_fd, &si, sizeof(si)) != sizeof(si)) {
+	if (atomicio_timed(vwrite, port->sub_fd, &si, sizeof(si),
+	    SUBSYSTEM_IO_TIMEOUT) != sizeof(si)) {
 		TRACE(port->sub_fd, fdshare_close(port->sub_fd));
 		port->sub_fd = -1;
 		TRACE_RESET(cmd->pfd, close(cmd->pfd));
