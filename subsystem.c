@@ -310,6 +310,16 @@ subsystem_listen(struct port *sub_port, char *ip, int nfd)
 	syslog(LOG_DEBUG, "Listen: %s:%d -> fd %d", 
 	    ip, sub_port->number, nfd);
 
+	/*
+	 * One descriptor per port: replacing it would leak the reference
+	 * held for the earlier listen or connection.
+	 */
+	if (sub_port->sub_fd != -1 || sub_port->sub_conport != NULL) {
+		syslog(LOG_WARNING, "%s: port %d already in use",
+		    __func__, sub_port->number);
+		return (-1);
+	}
+
 	/* We use this fd to notify the other side */
 	TRACE(nfd, sub_port->sub_fd = fdshare_dup(nfd));
 	if (sub_port->sub_fd == -1)
@@ -375,8 +385,10 @@ subsystem_cmd_listen(int fd,
 		return (-1);
 	}
 
+	/* Reply 0 on success, not the descriptor number */
+	res = 0;
 	if (strcmp(asrc, "0.0.0.0") != 0) {
-		TRACE(nfd, subsystem_listen(sub_port, asrc, nfd));
+		TRACE(nfd, res = subsystem_listen(sub_port, asrc, nfd));
 	} else {
 		/* 
 		 * Subsystem sharing means that we need to
@@ -411,6 +423,19 @@ subsystem_cmd_listen(int fd,
 	TRACE(nfd, fdshare_close(nfd));
 		
 	return (res);
+}
+
+/*
+ * Undo a SUB_CONNECT that failed before the connection took the port:
+ * a port allocated for this connect (local_port 0) is freed, a port
+ * the subsystem bound itself is left bound.
+ */
+static void
+subsystem_connect_unwind(struct template *tmpl, struct port *sub_port,
+    u_short local_port)
+{
+	if (local_port == 0)
+		port_free(tmpl, sub_port);
 }
 
 void
@@ -597,6 +622,18 @@ subsystem_read(int fd, short what, void *arg)
 			goto out;
 		}
 
+		/*
+		 * A port carries one connection back pointer and one shared
+		 * descriptor. A second connection, or a connection from a
+		 * listening port, would overwrite them and leave the first
+		 * user holding a port that is freed under it.
+		 */
+		if (sub_port->sub_conport != NULL || sub_port->sub_fd != -1) {
+			syslog(LOG_WARNING, "%s: port %d already in use",
+			    __func__, sub_port->number);
+			goto out;
+		}
+
 		syslog(LOG_DEBUG, "Connect: allocated port %d",
 		    sub_port->number);
 
@@ -613,13 +650,12 @@ subsystem_read(int fd, short what, void *arg)
 			tcp.th_sport = htons(port);
 			tcp.th_dport = htons(sub_port->number);
 
-			if ((con = tcp_new(NULL, &ip, &tcp, INITIATED_BY_SUBSYSTEM)) == NULL)
+			if ((con = tcp_new(NULL, &ip, &tcp, INITIATED_BY_SUBSYSTEM)) == NULL) {
+				subsystem_connect_unwind(tmpl, sub_port,
+				    local_port);
 				goto out;
+			}
 			con->tmpl = template_ref(tmpl);
-
-			/* Cross notify */
-			con->port = sub_port;
-			sub_port->sub_conport = &con->port;
 
 			/* Confirm success of this phase */
 			res = 0;
@@ -630,11 +666,18 @@ subsystem_read(int fd, short what, void *arg)
 			nfd = receive_fd_timed(fd, NULL, NULL,
 			    SUBSYSTEM_IO_TIMEOUT);
 			if (nfd == -1) {
+				/* The connection never owned the port */
 				tcp_free(con);
+				subsystem_connect_unwind(tmpl, sub_port,
+				    local_port);
 				res = -1;
 				goto out;
 			}
 			TRACE(nfd, sub_port->sub_fd = fdshare_dup(nfd));
+
+			/* Cross notify, only once the connect is complete */
+			con->port = sub_port;
+			sub_port->sub_conport = &con->port;
 
 			/* Confirm success again */
 			res = 0;
@@ -658,14 +701,13 @@ subsystem_read(int fd, short what, void *arg)
 			udp.uh_sport = htons(port);
 			udp.uh_dport = htons(sub_port->number);
 
-			if ((con = udp_new(&ip, &udp, INITIATED_BY_SUBSYSTEM)) == NULL)
+			if ((con = udp_new(&ip, &udp, INITIATED_BY_SUBSYSTEM)) == NULL) {
+				subsystem_connect_unwind(tmpl, sub_port,
+				    local_port);
 				goto out;
+			}
 			con->tmpl = template_ref(tmpl);
 			
-			/* Cross notify */
-			con->port = sub_port;
-			sub_port->sub_conport = &con->port;
-
 			/* Confirm success of this phase */
 			res = 0;
 			TRACE(fd, atomicio_timed(vwrite, fd, &res, 1,
@@ -675,11 +717,18 @@ subsystem_read(int fd, short what, void *arg)
 			nfd = receive_fd_timed(fd, NULL, NULL,
 			    SUBSYSTEM_IO_TIMEOUT);
 			if (nfd == -1) {
+				/* The connection never owned the port */
 				udp_free(con);
+				subsystem_connect_unwind(tmpl, sub_port,
+				    local_port);
 				res = -1;
 				goto out;
 			}
 			TRACE(nfd, sub_port->sub_fd = fdshare_dup(nfd));
+
+			/* Cross notify, only once the connect is complete */
+			con->port = sub_port;
+			sub_port->sub_conport = &con->port;
 
 			/* Confirm success again */
 			res = 0;
