@@ -1,4 +1,4 @@
-# PM-SCR-213: loading a duplicate fingerprint
+# PM-SCR-213, PM-SCR-214: loading a duplicate fingerprint or association
 # leaks nothing. LeakSanitizer runs with no suppression file, so the
 # test means the same with or without the start up suppressions.
 cc_daemon leak_loaders tests/security/leak_loaders.c
@@ -6,7 +6,7 @@ ASAN_OPTIONS=${ASAN_OPTIONS:+$ASAN_OPTIONS:}detect_leaks=1
 LSAN_OPTIONS=print_suppressions=0
 export ASAN_OPTIONS LSAN_OPTIONS
 rc=0
-for c in personality; do
+for c in personality assoc; do
 	run_clean leak_loaders "$c" || { echo "case $c failed" >&2; rc=1; }
 	cp "$OUT/leak_loaders.log" "$OUT/leak_loaders.$c.log"
 done

@@ -4,7 +4,10 @@
  * personality_free released only the name and the struct, not the TCP
  * option arrays of its tests (CWE-401).
  *
- * The case loads a small file with the same entry twice and exits; the
+ * PM-SCR-214, xprobe_assoc.c parse_associations: an association whose
+ * key was already loaded was neither inserted nor freed (CWE-401).
+ *
+ * Each case loads a small file with the same entry twice and exits; the
  * test runs LeakSanitizer with no suppressions.
  */
 #include <sys/types.h>
@@ -82,6 +85,22 @@ main(int argc, char **argv)
 		}
 		fclose(fp);
 		printf("ok: duplicate fingerprint loaded\n");
+		return (0);
+	}
+	if (strcmp(t, "assoc") == 0) {
+		static struct xp_fingerprint xp;
+
+		xprobe_personality_init();
+		associations_init();
+		xp.os_id = "Leak Test XP";
+		SPLAY_INSERT(xp_fprint_tree, &xp_fprints, &xp);
+		fp = twice("Leak Test OS;Leak Test XP\n");
+		if (parse_associations(fp) == -1) {
+			printf("FAIL: associations not loaded\n");
+			return (1);
+		}
+		fclose(fp);
+		printf("ok: duplicate association loaded\n");
 		return (0);
 	}
 	printf("FAIL: unknown case %s\n", t);
