@@ -597,6 +597,18 @@ subsystem_read(int fd, short what, void *arg)
 			goto out;
 		}
 
+		/*
+		 * A port carries one connection back pointer and one shared
+		 * descriptor. A second connection, or a connection from a
+		 * listening port, would overwrite them and leave the first
+		 * user holding a port that is freed under it.
+		 */
+		if (sub_port->sub_conport != NULL || sub_port->sub_fd != -1) {
+			syslog(LOG_WARNING, "%s: port %d already in use",
+			    __func__, sub_port->number);
+			goto out;
+		}
+
 		syslog(LOG_DEBUG, "Connect: allocated port %d",
 		    sub_port->number);
 
