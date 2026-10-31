@@ -221,7 +221,10 @@ newbcast    : BCAST template SRCPORT NUMBER DSTPORT NUMBER TIME NUMBER action
 			break;
 		}
 		
-		bcast_insert($2, $4, $6, $8, &$9);
+		if (bcast_insert($2, $4, $6, $8, &$9) == -1)
+			yyerror("Broadcast template name \"%s\" is too long, "
+			    "the limit is %zu bytes", $2->name,
+			    sizeof(((struct port *)0)->templateName) - 1);
 	}
 ;
 addition	: ADD template PROTO PORT NUMBER action

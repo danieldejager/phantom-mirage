@@ -548,6 +548,13 @@ void bcast_trigger(int fd, short what, void *ptr) {
 	struct port *bport = con->port;
 	struct template *tmpl = template_find((const char *)&bport->templateName);
 
+	if (tmpl == NULL || tmpl->inter == NULL) {
+		syslog(LOG_WARNING, "%s: no template \"%.*s\" for broadcast "
+		    "port %d", __func__, (int)sizeof(bport->templateName),
+		    bport->templateName, bport->number);
+		return;
+	}
+
 	struct in_addr honeypotAddress;
 	inet_aton(tmpl->name, &honeypotAddress);
 
@@ -588,16 +595,33 @@ void bcast_trigger(int fd, short what, void *ptr) {
 }
 
 // This lets you have a honeyd script run every n seconds and send out a broadcast UDP packet
-void bcast_insert(struct template *tmpl, int srcport, int dstport, int seconds, struct action *action)
+int bcast_insert(struct template *tmpl, int srcport, int dstport, int seconds, struct action *action)
 {
 	struct port *p;
+
+	/*
+	 * bcast_trigger finds the template again by the name kept in the
+	 * fixed size templateName: a name that does not fit would be
+	 * truncated and could find another template, or none.
+	 */
+	if (strlen(tmpl->name) >= sizeof(p->templateName)) {
+		syslog(LOG_ERR, "broadcast template name \"%s\" is %zu bytes, "
+		    "the limit is %zu", tmpl->name, strlen(tmpl->name),
+		    sizeof(p->templateName) - 1);
+		return (-1);
+	}
 	p = calloc(1, sizeof(struct port));
+	if (p == NULL) {
+		syslog(LOG_ERR, "%s: calloc", __func__);
+		exit(EXIT_FAILURE);
+	}
 	p->action = *action;
 	p->number = dstport;
 	p->srcport = srcport;
 	p->timeout = seconds;
 
 	SPLAY_INSERT(porttree, &tmpl->bcasts, p);
+	return (0);
 }
 
 struct port *
@@ -756,7 +780,9 @@ template_clone(const char *newname, const struct template *tmpl,
 	}
 
 	SPLAY_FOREACH(port, porttree, (struct porttree *)&tmpl->bcasts) {
-		bcast_insert(newtmpl, port->srcport, port->number, port->timeout,&port->action);
+		if (bcast_insert(newtmpl, port->srcport, port->number,
+			port->timeout, &port->action) == -1)
+			return (NULL);
 	}
 
 	if(tmpl == NULL)

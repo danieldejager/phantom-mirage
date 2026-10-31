@@ -1,13 +1,17 @@
 /*
- * config.c: template_insert() copies the template name into the fixed
- * 20 byte templateName of every broadcast port. strncpy left it without
- * a terminating NUL when the name was 20 bytes or longer, and the
- * broadcast timer later reads it as a string. The copy must always be
- * NUL terminated (the name is truncated to 19 bytes).
+ * config.c: every broadcast port keeps its template name in the fixed
+ * 20 byte templateName, and bcast_trigger() finds the template again
+ * by that name. A longer name was truncated, so the lookup could find
+ * another template or none, and bcast_trigger() then dereferenced
+ * NULL. A broadcast on a template name of 20 bytes or more must be
+ * refused at config time, and bcast_trigger() must not crash when the
+ * template is gone.
  *
  * Cases:
- *  bcast_fit  a 19 byte name: copied whole
- *  bcast_long a 30 byte name: truncated to 19 bytes and terminated
+ *  bcast_19      a 19 byte name: accepted, templateName holds it whole
+ *  bcast_20      a 20 byte name: refused at config time
+ *  bcast_30      a 30 byte name: refused at config time
+ *  trigger_gone  bcast_trigger() for a name with no template: no crash
  */
 #include <sys/types.h>
 #include <sys/param.h>
@@ -25,39 +29,73 @@
 #include "template.h"
 #include "fuzz_common.h"
 
+int parse_line(struct evbuffer *, char *);
+
+/* Returns 0 when the config was accepted */
 static int
-bcast_case(const char *label, size_t n)
+bcast_conf(const char *name, struct evbuffer *out)
 {
+	char line[256];
+
+	snprintf(line, sizeof(line), "create %s\n"
+	    "broadcast %s srcport 1024 dstport 9 time 3600 \"x\"\n",
+	    name, name);
+	return (parse_line(out, line));
+}
+
+static int
+bcast_case(const char *label, char c, size_t n, int want_ok)
+{
+	struct evbuffer *out = evbuffer_new();
 	struct template *tmpl;
-	struct action action;
 	struct port *bport;
 	char name[64];
-	size_t sz, want;
-	int terminated, bad = 0;
+	int rc, bad = 0;
 
-	memset(name, 'n', n);
+	memset(name, c, n);
 	name[n] = '\0';
-	name[0] = label[6];	/* unique per case */
-	tmpl = template_create(name);
-	template_remove(tmpl);
-	tmpl->honeypot_instance = 1;
-	memset(&action, 0, sizeof(action));
-	bcast_insert(tmpl, 1024, 9, 3600, &action);
-	template_insert(tmpl);
-
-	bport = SPLAY_ROOT(&tmpl->bcasts);
-	sz = sizeof(bport->templateName);
-	want = n < sz ? n : sz - 1;
-	terminated = memchr(bport->templateName, '\0', sz) != NULL;
-	printf("%s: name %zu bytes, templateName %s", label, n,
-	    terminated ? "terminated" : "NOT terminated");
-	if (terminated)
-		printf(", %zu bytes", strlen(bport->templateName));
-	printf("\n");
-	if (!terminated || strlen(bport->templateName) != want ||
-	    strncmp(bport->templateName, name, want) != 0)
+	rc = bcast_conf(name, out);
+	tmpl = template_find(name);
+	bport = tmpl != NULL ? SPLAY_ROOT(&tmpl->bcasts) : NULL;
+	printf("%s: name %zu bytes, config %s, broadcast port %s\n", label, n,
+	    rc == 0 ? "accepted" : "refused", bport ? "added" : "none");
+	if (rc != 0)
+		printf("%s: error: %.*s", label,
+		    (int)evbuffer_get_length(out),
+		    (char *)evbuffer_pullup(out, -1));
+	if (want_ok) {
+		if (rc != 0 || bport == NULL)
+			printf("FAIL %s\n", label), bad = 1;
+		else {
+			/* As template_insert() fills it for an instance */
+			strlcpy(bport->templateName, tmpl->name,
+			    sizeof(bport->templateName));
+			if (strcmp(bport->templateName, name) != 0)
+				printf("FAIL %s templateName\n", label),
+				    bad = 1;
+		}
+	} else if (rc == 0 || bport != NULL ||
+	    strstr((char *)evbuffer_pullup(out, -1), "too long") == NULL)
 		printf("FAIL %s\n", label), bad = 1;
+	evbuffer_free(out);
 	return (bad);
+}
+
+static int
+trigger_gone(void)
+{
+	struct udp_con con;
+	struct port port;
+
+	memset(&con, 0, sizeof(con));
+	memset(&port, 0, sizeof(port));
+	strlcpy(port.templateName, "no-such-template",
+	    sizeof(port.templateName));
+	port.number = 9;
+	con.port = &port;
+	bcast_trigger(-1, EV_TIMEOUT, &con);
+	printf("trigger_gone: returned\n");
+	return (0);
 }
 
 int
@@ -66,8 +104,10 @@ main(void)
 	int bad = 0;
 
 	fuzz_honeyd_init("create default\n");
-	bad |= bcast_case("bcast_fit", 19);
-	bad |= bcast_case("bcast_long", 30);
+	bad |= bcast_case("bcast_19", 'a', 19, 1);
+	bad |= bcast_case("bcast_20", 'b', 20, 0);
+	bad |= bcast_case("bcast_30", 'c', 30, 0);
+	bad |= trigger_gone();
 	if (bad)
 		printf("FAIL\n");
 	return (bad);

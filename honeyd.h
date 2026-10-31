@@ -414,7 +414,7 @@ void config_init(void);
 void config_read(char *);
 
 
-void bcast_insert(struct template *, int, int, int, struct action *);
+int bcast_insert(struct template *, int, int, int, struct action *);
 void bcast_trigger(int fd, short what, void *unused);
 
 struct port *port_insert(struct template *, int, int, struct action *);

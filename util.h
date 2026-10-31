@@ -105,4 +105,9 @@ int copy_bounded(char *, size_t, const char *, size_t);
 char *fgetln(FILE *, size_t *);
 char *strnsep(char **line, char *delim);
 
+/* Stats collector password (PM-SCR-028) */
+char *stats_read_password_file(const char *);
+void stats_redact_arg(char *[], int, const char *, char *, size_t);
+void stats_scrub_password(char *);
+
 #endif /* _UTIL_H_ */
