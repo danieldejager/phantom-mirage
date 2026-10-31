@@ -1185,6 +1185,21 @@ honeyd_delay_packet(struct template *tmpl, const struct interface* iface, struct
 
 	if (ms) {
 		delay->timeout = evtimer_new(libevent_base, honeyd_delay_callback, delay);
+		if (delay->timeout == NULL) {
+			/*
+			 * CWE-476/CWE-252: drop the packet. Free what the
+			 * callback would have freed: our packet copy (or the
+			 * caller's packet handed to us with DELAY_FREEPKT),
+			 * the template reference and the delay record.
+			 */
+			syslog(LOG_ERR, "%s: evtimer_new failed, packet dropped",
+			    __func__);
+			if (delay->flags & DELAY_FREEPKT)
+				pool_free(pool_pkt, delay->ip);
+			template_free(delay->tmpl);
+			pool_free(pool_delay, delay);
+			return;
+		}
 		timerclear(&tv);
 		tv.tv_sec = ms / 1000;
 		tv.tv_usec = (ms % 1000) * 1000;
@@ -1480,11 +1495,26 @@ tcp_new(const struct interface* iface, struct ip_hdr *ip, struct tcp_hdr *tcp, i
 		return (NULL);
 	}
 
-	honeyd_nconnects++;
 	honeyd_settcp(con, NULL, ip, tcp, local);
 	con->conhdr.iface = iface;
+
+	/*
+	 * CWE-476/CWE-252: make both timers before the connection is
+	 * counted or inserted; on failure free what was made and drop.
+	 */
 	con->conhdr.timeout = evtimer_new(libevent_base, honeyd_tcp_timeout, con);
 	con->retrans_timeout = evtimer_new(libevent_base, tcp_retrans_timeout, con);
+	if (con->conhdr.timeout == NULL || con->retrans_timeout == NULL) {
+		syslog(LOG_ERR, "%s: evtimer_new failed", __func__);
+		if (con->conhdr.timeout != NULL)
+			event_free(con->conhdr.timeout);
+		if (con->retrans_timeout != NULL)
+			event_free(con->retrans_timeout);
+		free(con);
+		return (NULL);
+	}
+
+	honeyd_nconnects++;
 
 	connection_insert(&tcpcons, &tcplru, &con->conhdr);
 
@@ -1971,6 +2001,7 @@ tcp_send(struct tcp_con *con, uint8_t flags, u_char *payload, u_int len)
 	int window = 16000;
 	int dontfragment = 0;
 	struct tcp_options options = {0, NULL};
+	struct tcp_option mss_option;
 	uint16_t id = rand_uint16(honeyd_rand);
 	struct spoof spoof;
 	struct template *tmpl = con->tmpl;
@@ -1997,10 +2028,17 @@ tcp_send(struct tcp_con *con, uint8_t flags, u_char *payload, u_int len)
 		}
 		else if (flags & TH_SYN)
 		{
+			/*
+			 * CWE-476/CWE-252/CWE-401: the MSS option was an
+			 * unchecked malloc() written at once and never
+			 * freed. tcp_personality_options() only reads it
+			 * before we return, so keep it on the stack.
+			 */
+			memset(&mss_option, 0, sizeof(mss_option));
+			mss_option.opt_type = 'M';
+			mss_option.value = 0;
 			options.count = 1;
-			options.options = malloc(sizeof(struct tcp_option));
-			options.options->opt_type = 'M';
-			options.options->value = 0;
+			options.options = &mss_option;
 		}
 	}
 

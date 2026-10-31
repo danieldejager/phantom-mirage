@@ -1,0 +1,9 @@
+# config.c template_insert: unchecked calloc/event_new for broadcast
+# ports (CWE-476/CWE-252), timer and argument never freed (CWE-401)
+cc_daemon bcast_timer tests/security/bcast_timer.c \
+    -Wl,--wrap=event_new,--wrap=event_free,--wrap=calloc
+# Leak checks stay on; only the never freed daemon configuration is
+# suppressed, so a leaked udp_con or timer is reported
+LSAN_OPTIONS=suppressions=$T/bcast_timer.supp:print_suppressions=0
+export LSAN_OPTIONS
+run_clean bcast_timer

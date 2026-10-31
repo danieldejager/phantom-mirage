@@ -349,6 +349,18 @@ template_remove(struct template *tmpl)
 		SPLAY_REMOVE(templtree, &templates, tmpl);
 }
 
+/* Stop a broadcast port's timer and free it and its argument */
+static void
+bcast_stop(struct port *bport)
+{
+	if (bport->bcast_ev != NULL) {
+		event_free(bport->bcast_ev);
+		bport->bcast_ev = NULL;
+	}
+	free(bport->bcast_con);
+	bport->bcast_con = NULL;
+}
+
 /* Insert a template into the system */
 
 int
@@ -375,14 +387,39 @@ template_insert(struct template *tmpl)
 			strlcpy(bport->templateName, tmpl->name,
 			    sizeof(bport->templateName));
 
+			/*
+			 * CWE-476/CWE-252: check every step; on failure free
+			 * what was made, log and skip this broadcast port.
+			 * CWE-401: the timer and its argument are kept on the
+			 * port so template_deallocate() and a later insert of
+			 * the same template free them.
+			 */
+			bcast_stop(bport);
+
 			struct udp_con *con = calloc(1, sizeof(struct udp_con));
+			if (con == NULL) {
+				syslog(LOG_ERR, "%s: calloc: broadcast port %d "
+				    "skipped", __func__, bport->number);
+				continue;
+			}
 			con->port = bport;
 
-
 			struct event *ev1 = event_new(libevent_base, -1, EV_TIMEOUT | EV_PERSIST, &bcast_trigger, (void*)con);
-			event_add(ev1, &every);
-
-			// TODO get rid of event when template destructed and garbage collect the ports
+			if (ev1 == NULL) {
+				syslog(LOG_ERR, "%s: event_new: broadcast port "
+				    "%d skipped", __func__, bport->number);
+				free(con);
+				continue;
+			}
+			if (event_add(ev1, &every) == -1) {
+				syslog(LOG_ERR, "%s: event_add: broadcast port "
+				    "%d skipped", __func__, bport->number);
+				event_free(ev1);
+				free(con);
+				continue;
+			}
+			bport->bcast_con = con;
+			bport->bcast_ev = ev1;
 		}
 	}
 
@@ -413,6 +450,10 @@ template_deallocate(struct template *tmpl)
 	/* Remove ports from template */
 	while ((port = SPLAY_ROOT(&tmpl->ports)) != NULL)
 		port_free(tmpl, port);
+
+	/* Stop broadcast timers; the broadcast ports themselves stay */
+	SPLAY_FOREACH(port, porttree, &tmpl->bcasts)
+		bcast_stop(port);
 
 	if (tmpl->person != NULL)
 		personality_declone(tmpl->person);

@@ -1,0 +1,7 @@
+# honeyd.c honeyd_delay_packet: unchecked evtimer_new (CWE-476/CWE-252)
+cc_daemon delay_timer tests/security/delay_timer.c -Wl,--wrap=event_new
+# Leak checks stay on; only the never freed daemon configuration is
+# suppressed, so a packet copy that is not freed is reported
+LSAN_OPTIONS=suppressions=$T/arp_cap.supp:print_suppressions=0
+export LSAN_OPTIONS
+run_clean delay_timer

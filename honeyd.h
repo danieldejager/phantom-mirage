@@ -147,6 +147,8 @@ struct port {
 	u_short srcport; /* Used for broadcast scripts */
 	int timeout; /* Used for periodic broadcast scripts */
 	char templateName[20]; /* Used for periodic broadcast scripts */
+	struct udp_con *bcast_con; /* Broadcast timer argument, owned */
+	struct event *bcast_ev; /* Broadcast timer, owned */
 
 	struct action action;
 

@@ -369,6 +369,22 @@ arp_new(struct interface *inter,
 	if ((req = calloc(1, sizeof(*req))) == NULL)
 		return (NULL);
 
+	/*
+	 * CWE-476/CWE-252: allocate both timers before the entry goes into
+	 * any tree, so a failure leaves nothing inserted or counted.
+	 */
+	req->active = evtimer_new(libevent_base, arp_timeout, req);
+	req->discover = evtimer_new(libevent_base, arp_discovercb, req);
+	if (req->active == NULL || req->discover == NULL) {
+		syslog(LOG_ERR, "%s: evtimer_new failed", __func__);
+		if (req->active != NULL)
+			event_free(req->active);
+		if (req->discover != NULL)
+			event_free(req->discover);
+		free(req);
+		return (NULL);
+	}
+
 	req->inter = inter;
 
 	if (src_pa != NULL)
@@ -387,9 +403,6 @@ arp_new(struct interface *inter,
 		SPLAY_INSERT(haarptree, &ha_arp_reqs, req);
 	}
 
-	req->active = evtimer_new(libevent_base, arp_timeout, req);
-	req->discover = evtimer_new(libevent_base, arp_discovercb, req);
-			
 	return (req);
 }
 
@@ -445,7 +458,20 @@ arp_request(struct interface *inter,
 	arp_cap_log();
 
 	if ((req = arp_new(inter, src_pa, src_ha, addr, NULL)) == NULL) {
-		syslog(LOG_ERR, "calloc: %m");
+		struct arp_req tmp;
+
+		/*
+		 * Nothing was inserted or counted. Fail the callback once on
+		 * a detached request, as for the pending cap, so the caller
+		 * frees its queued packet and nothing is sent.
+		 */
+		syslog(LOG_ERR, "%s: cannot create arp entry", __func__);
+		memset(&tmp, 0, sizeof(tmp));
+		if (addr != NULL)
+			tmp.pa = *addr;
+		tmp.cb = cb;
+		tmp.arg = arg;
+		arp_callback(&tmp, 0);
 		return;
 	}
 			
