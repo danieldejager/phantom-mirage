@@ -931,9 +931,18 @@ template_clone(const char *newname, const struct template *tmpl,
 	/* Clone dynamics */
 	TAILQ_FOREACH(condition, &tmpl->dynamic, next) {
 		if (template_insert_dynamic(newtmpl,
-			condition->tmpl, condition) == -1)
-			warn("%s: couldn't insert dynamic cond %s into %s",
-			    condition->tmpl->name, tmpl->name);
+			condition->tmpl, condition) == -1) {
+			/*
+			 * CWE-685: the message had three conversions and two
+			 * arguments. A clone missing a rule would answer
+			 * differently from its source, so fail the clone.
+			 */
+			syslog(LOG_ERR, "%s: couldn't insert dynamic cond %s "
+			    "into %s", __func__, condition->tmpl->name,
+			    newtmpl->name);
+			template_free(newtmpl);
+			return (NULL);
+		}
 	}
 
 	/* Clone subsystems */

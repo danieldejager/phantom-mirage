@@ -610,6 +610,13 @@ fdshare_close(int fd)
 	assert(fds_refs != NULL);
 	assert(fd >= 0 && fd < fds_refsize);
 
+	/* Never below zero, and never a second close of the same share */
+	if (fds_refs[fd] <= 0) {
+		syslog(LOG_WARNING, "%s: fd %d has no shared reference",
+		    __func__, fd);
+		return (-1);
+	}
+
 	if (--fds_refs[fd])
 		return (0);
 

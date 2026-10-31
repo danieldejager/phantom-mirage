@@ -18,9 +18,13 @@ OUT=${OUT:-$T/out}
 CC=${CC:-clang}
 SAN="-g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined"
 SAN="$SAN -fno-sanitize=alignment -fno-sanitize-recover=all"
+# A printf style call whose arguments do not match its format fails the build
+SAN="$SAN -Werror=format"
 ASAN_OPTIONS=${ASAN_OPTIONS:-detect_leaks=1}
 UBSAN_OPTIONS=${UBSAN_OPTIONS:-print_stacktrace=1:halt_on_error=1}
-export ASAN_OPTIONS UBSAN_OPTIONS
+# Leaks made while loading the daemon's data files at start up are known
+LSAN_OPTIONS=${LSAN_OPTIONS:-suppressions=$T/lsan.supp:print_suppressions=0}
+export ASAN_OPTIONS UBSAN_OPTIONS LSAN_OPTIONS
 
 if [ ! -f Makefile ]; then
 	echo "tests/security: run ./configure first" >&2
@@ -75,17 +79,19 @@ cc_daemon() {
 }
 
 # Run a built harness; fail on a non zero exit or any sanitizer report.
-# run_clean NAME [args...]; the log is $OUT/NAME.log
+# run_clean NAME [args...]; the log is $OUT/NAME.log. Only the return
+# value reports the result: a test's own variables, such as an rc that
+# collects several cases, are left alone.
 run_clean() {
-	n=$1; shift
-	rc=0
-	"$OUT/$n" "$@" > "$OUT/$n.log" 2>&1 || rc=$?
-	if [ $rc -ne 0 ] || grep -Eq \
+	_rc_n=$1; shift
+	_rc_x=0
+	"$OUT/$_rc_n" "$@" > "$OUT/$_rc_n.log" 2>&1 || _rc_x=$?
+	if [ $_rc_x -ne 0 ] || grep -Eq \
 	    'ERROR: (Address|Leak)Sanitizer|runtime error:|Assertion' \
-	    "$OUT/$n.log"; then
+	    "$OUT/$_rc_n.log"; then
 		grep -E 'ERROR|SUMMARY|runtime error|Assertion|FAIL' \
-		    "$OUT/$n.log" | head -5 >&2
-		echo "$n: exit $rc" >&2
+		    "$OUT/$_rc_n.log" | head -5 >&2
+		echo "$_rc_n: exit $_rc_x" >&2
 		return 1
 	fi
 	return 0

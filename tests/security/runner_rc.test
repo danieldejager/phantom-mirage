@@ -1,0 +1,11 @@
+# PM-SCR-195: a failing case followed by a passing one still fails the
+# test; run_clean must not reset the rc a test collects its cases in
+cc_san exit_with tests/security/exit_with.c
+rc=0
+run_clean exit_with 1 2>/dev/null || rc=1
+run_clean exit_with 0 || rc=1
+[ $rc -eq 1 ] || { echo "seeded failure was masked" >&2; exit 1; }
+# and the subsys_ctl loop fails when its first case fails
+( SUBSYS_CTL_CASES="no_such_case fdpass_eof"; . "$T/subsys_ctl.test" ) \
+    2>/dev/null && { echo "subsys_ctl passed a failing case" >&2; exit 1; }
+true

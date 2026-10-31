@@ -734,7 +734,10 @@ cmd_subsystem_connect_cb(int fd, short what, void *arg)
 		return;
 	}
 
-	cmd_subsystem_connect(hdr, cmd, port, con);
+	/* CWE-252: a connection the subsystem never got is dropped */
+	if (cmd_subsystem_connect(hdr, cmd, port, con) == -1 &&
+	    hdr->type == SOCK_STREAM)
+		tcp_connectfail(con);
 }
 
 int
@@ -863,6 +866,16 @@ cmd_subsystem_localconnect(struct tuple *hdr, struct command *cmd,
 		if (fd == -1)
 			syslog(LOG_ERR, "%s: receive_fd: %s", __func__,
 			    strerror(errno));
+		else {
+			TRACE(fd, port->sub_fd = fdshare_dup(fd));
+			if (port->sub_fd == -1) {
+				/* CWE-252/CWE-775: not shared, close it */
+				syslog(LOG_ERR, "%s: fdshare_dup failed",
+				    __func__);
+				TRACE_RESET(fd, close(fd));
+				fd = -1;
+			}
+		}
 
 		/* Confirm success of failure */
 		res = fd == -1 ? -1 : 0;
@@ -871,8 +884,6 @@ cmd_subsystem_localconnect(struct tuple *hdr, struct command *cmd,
 		    SUBSYSTEM_IO_TIMEOUT));
 		if (fd == -1)
 			return (-1);
-
-		TRACE(fd, port->sub_fd = fdshare_dup(fd));
 	}
 
 	/* Get another fd on this special thingy */

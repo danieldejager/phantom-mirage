@@ -60,6 +60,48 @@ static const char config[] =
 	"bind 10.0.0.3 linux\n"
 	"add 10.0.0.2 subsystem \"/bin/true\"\n";
 
+/* PM-SCR-199: fdshare_dup fails on demand */
+int __real_fdshare_dup(int);
+static int fail_dup;
+
+int
+__wrap_fdshare_dup(int fd)
+{
+	if (fail_dup)
+		return (-1);
+	return (__real_fdshare_dup(fd));
+}
+
+/* PM-SCR-197: sendmsg sends one byte short on demand */
+ssize_t __real_sendmsg(int, const struct msghdr *, int);
+static int short_send;
+
+ssize_t
+__wrap_sendmsg(int s, const struct msghdr *msg, int flags)
+{
+	struct msghdr m = *msg;
+	struct iovec v;
+
+	if (short_send && m.msg_iovlen == 1 && m.msg_iov[0].iov_len > 1) {
+		v = m.msg_iov[0];
+		v.iov_len--;
+		m.msg_iov = &v;
+	}
+	return (__real_sendmsg(s, &m, flags));
+}
+
+/* Descriptors open in this process */
+static int
+open_fds(void)
+{
+	int fd, n = 0;
+
+	for (fd = 0; fd < 1024; fd++)
+		if (fcntl(fd, F_GETFD) != -1)
+			n++;
+	return (n);
+}
+
 static struct subsystem *sub;
 static struct template *tmpl, *tmpl2;
 static int peer;
@@ -158,6 +200,23 @@ main(int argc, char **argv)
 		fd = send_fd(sv[0], 0, NULL, 0);
 		close(sv[0]);
 		return (expect(fd == -1, "send_fd on EPIPE returns -1"));
+	}
+
+	if (strcmp(t, "send_fd_partial") == 0) {
+		/* PM-SCR-197: a partial message is a failed send */
+		char bundle[16];
+
+		if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1)
+			abort();
+		memset(bundle, 0, sizeof(bundle));
+		short_send = 1;
+		errno = 0;
+		fd = send_fd(sv[0], sv[1], bundle, sizeof(bundle));
+		short_send = 0;
+		close(sv[0]);
+		close(sv[1]);
+		return (expect(fd == -1 && errno != EAGAIN,
+		    "partial send fails and is not retried"));
 	}
 
 	setup();
@@ -272,6 +331,89 @@ main(int argc, char **argv)
 		close(sv[0]);
 		return (expect(fd == -1 && cmd.pfd == -1,
 		    "undrained listen descriptor times out"));
+	}
+	if (strcmp(t, "connect_dup_fail_tcp") == 0 ||
+	    strcmp(t, "connect_dup_fail_udp") == 0) {
+		/* PM-SCR-199: the connection descriptor cannot be shared */
+		char b;
+		int n, tcp = strcmp(t, "connect_dup_fail_tcp") == 0;
+
+		n = open_fds();
+		mkcmd(&c, SUB_CONNECT, tcp ? SOCK_STREAM : SOCK_DGRAM,
+		    "10.0.0.2", 0, "192.0.2.1", 80);
+		put(&c, sizeof(c));
+		if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1)
+			abort();
+		if (send_fd(peer, sv[1], NULL, 0) == -1)
+			abort();
+		close(sv[1]);
+		fail_dup = 1;
+		fd = run();
+		fail_dup = 0;
+		if (expect(fd == -1, "connect refused"))
+			return (1);
+		/* The daemon closed its copy: the subsystem side sees EOF */
+		if (expect(read(sv[0], &b, 1) == 0, "descriptor closed"))
+			return (1);
+		close(sv[0]);
+		if (expect(TAILQ_EMPTY(&sub->ports), "port released"))
+			return (1);
+		return (expect(open_fds() == n, "no descriptor leaked"));
+	}
+	if (strcmp(t, "connect_udp_local_fail") == 0) {
+		/* PM-SCR-197: the local connect fails after SUB_CONNECT */
+		int n;
+
+		n = open_fds();
+		mkcmd(&c, SUB_CONNECT, SOCK_DGRAM, "10.0.0.2", 0,
+		    "192.0.2.1", 80);
+		put(&c, sizeof(c));
+		if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1)
+			abort();
+		if (send_fd(peer, sv[1], NULL, 0) == -1)
+			abort();
+		close(sv[1]);
+		/* The second descriptor never comes: the local connect fails */
+		run();
+		close(sv[0]);
+		if (expect(TAILQ_EMPTY(&sub->ports),
+		    "connection dropped and port released"))
+			return (1);
+		return (expect(open_fds() == n, "no descriptor leaked"));
+	}
+	if (strcmp(t, "localconnect_dup_fail") == 0) {
+		/* PM-SCR-199: as above, on the local connect path */
+		struct tuple hdr;
+		struct command cmd;
+		char b;
+		int n;
+
+		if ((p = port_insert(tmpl, IP_PROTO_TCP, 8000, &act)) == NULL)
+			abort();
+		p->sub = sub;
+		p->sub_fd = -1;
+		n = open_fds();
+		if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1)
+			abort();
+		if (send_fd(peer, sv[1], NULL, 0) == -1)
+			abort();
+		close(sv[1]);
+		memset(&hdr, 0, sizeof(hdr));
+		hdr.type = SOCK_STREAM;
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.pfd = cmd.perrfd = -1;
+		fail_dup = 1;
+		fd = cmd_subsystem_localconnect(&hdr, &cmd, p, NULL);
+		fail_dup = 0;
+		if (expect(fd == -1 && p->sub_fd == -1, "local connect fails"))
+			return (1);
+		if (expect(read(peer, &b, 1) == 1 && b == -1,
+		    "subsystem told of the failure"))
+			return (1);
+		if (expect(read(sv[0], &b, 1) == 0, "descriptor closed"))
+			return (1);
+		close(sv[0]);
+		return (expect(open_fds() == n, "no descriptor leaked"));
 	}
 	if (strcmp(t, "start_fail") == 0) {
 		/* fork() fails in the harness, so cmd_subsystem() fails */

@@ -1,0 +1,3 @@
+# PM-SCR-200: fdshare_close never takes the share count below zero
+cc_daemon fdshare_underflow tests/security/fdshare_underflow.c
+run_clean fdshare_underflow

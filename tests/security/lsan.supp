@@ -1,0 +1,4 @@
+# LeakSanitizer suppressions for tests/security. Only allocations made
+# while the harness loads the daemon's data files and configuration at
+# start up are suppressed; a leak from any later step is still reported.
+leak:fuzz_honeyd_init

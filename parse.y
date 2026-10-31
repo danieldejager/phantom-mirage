@@ -1004,7 +1004,7 @@ ui : LIST TEMPLATE
 	} else if (strcasecmp($2, "trace") == 0) {
 		struct evbuffer *evbuf = evbuffer_new();
 		if (evbuf == NULL)
-			err(1, "%s: malloc");
+			err(1, "%s: evbuffer_new", __func__);
 
 		trace_inspect($3, evbuf);
 
