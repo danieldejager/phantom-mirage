@@ -754,6 +754,13 @@ proxy_ta_free(struct proxy_ta *ta)
 		if (ta->remote_bev != NULL)
 			bufferevent_disable(ta->remote_bev,
 			    EV_READ|EV_WRITE);
+		/* Nobody is waiting for the upstream connect any more */
+		if (ta->connect_pending) {
+			event_del(&ta->connect_ev);
+			ta->connect_pending = 0;
+			close(ta->remote_fd);
+			ta->remote_fd = -1;
+		}
 		return;
 	}
 
