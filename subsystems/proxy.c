@@ -685,6 +685,11 @@ proxy_readcb(struct bufferevent *bev, void *arg)
 			return;
 		}
 	}
+
+	/* No end of line within MAX_LINE bytes: drop the connection */
+	if (!ta->justforward &&
+	    evbuffer_get_length(EVBUFFER_INPUT(bev)) >= MAX_LINE)
+		proxy_ta_free(ta);
 }
 
 void
@@ -760,6 +765,7 @@ proxy_ta_new(int fd, struct sockaddr *sa, socklen_t salen,
 	    proxy_readcb, proxy_writecb, proxy_errorcb, ta);
 	if (ta->bev == NULL)
 		goto error;
+	bufferevent_setwatermark(ta->bev, EV_READ, 0, MAX_LINE);
 
 	/* Create our tiny dictionary */
 	if (lsa != NULL) {
