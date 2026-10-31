@@ -299,19 +299,28 @@ char *
 proxy_corrupt(char *data, size_t len)
 {
 	static char buffer[4096];
-	int corruptions = len / CORRUPT_SPACE + 1;
-	int i;
+	size_t corruptions = len / CORRUPT_SPACE + 1;
+	size_t i;
+	char *out = buffer;
 
-	if (len > sizeof(buffer) || len <= 1)
+	if (len <= 1)
 		return (data);
 
-	memcpy(buffer, data, len);
+	/*
+	 * Over the static buffer, corrupt the caller's data in place
+	 * rather than relaying it intact (PM-SCR-105). Every caller
+	 * writes the result and then drops its copy of the data.
+	 */
+	if (len > sizeof(buffer))
+		out = data;
+	else
+		memcpy(buffer, data, len);
 	for (i = 0; i < corruptions; i++) {
-		int off = rand() % (len - 1);
-		buffer[off] = rand();
+		size_t off = (size_t)rand() % (len - 1);
+		out[off] = rand();
 	}
 
-	return (buffer);
+	return (out);
 }
 
 void
@@ -424,6 +433,27 @@ proxy_connect(struct proxy_ta *ta, char *host, int port)
 	ta->connect_pending = 1;
 }
 
+/*
+ * Destination port from the request: 1 to 65535, or -1 when it is
+ * missing, empty, not all digits or out of range (PM-SCR-108).
+ */
+static int
+proxy_parse_port(const char *str)
+{
+	long port = 0;
+
+	if (str == NULL || *str == '\0')
+		return (-1);
+	for (; *str != '\0'; str++) {
+		if (*str < '0' || *str > '9')
+			return (-1);
+		port = port * 10 + (*str - '0');
+		if (port > 65535)
+			return (-1);
+	}
+	return (port == 0 ? -1 : (int)port);
+}
+
 void
 proxy_handle_get_cb(int result, char type, int count, int ttl,
     void *addresses, void *arg)
@@ -431,7 +461,7 @@ proxy_handle_get_cb(int result, char type, int count, int ttl,
 	struct proxy_ta *ta = arg;
 	struct addr addr;
 	struct in_addr *in_addrs = addresses;
-	int port = atoi(kv_find(&ta->dictionary, "$port"));
+	int port = proxy_parse_port(kv_find(&ta->dictionary, "$port"));
 
 	ta->dns_pending--;
 	if (ta->dns_canceled) {
@@ -443,6 +473,12 @@ proxy_handle_get_cb(int result, char type, int count, int ttl,
 
 	if (result != DNS_ERR_NONE || type != DNS_IPv4_A || count == 0) {
 		proxy_write_response(ta, baddomain);
+		ta->wantclose = 1;
+		return;
+	}
+
+	if (port == -1) {
+		proxy_write_response(ta, badport);
 		ta->wantclose = 1;
 		return;
 	}
@@ -505,7 +541,7 @@ proxy_handle_connect_cb(int result, char type, int count, int ttl,
 {
 	struct proxy_ta *ta = arg;
 	char *host = kv_find(&ta->dictionary, "$host");
-	int port = atoi(kv_find(&ta->dictionary, "$port"));
+	int port = proxy_parse_port(kv_find(&ta->dictionary, "$port"));
 	char *response;
 	fprintf(stderr, "Connecting to %s port %d\n", host, port);
 
@@ -964,7 +1000,7 @@ proxy_init(void)
 	const char *error;
 	int erroroffset;
 	const char *exp_connect = "^connect\\s+(.*)\\s+http";
-	const char *exp_hostport = "^(.*):([0-9]+)$";
+	const char *exp_hostport = "^(.*):([0-9]*)$";
 	const char *exp_get = "^GET\\s+http://([^/ ]*)(/?[^ ]*)\\s+HTTP";
 
 	/* Compile regular expressions for command parsing */
