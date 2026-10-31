@@ -1,0 +1,5 @@
+# PM-SCR-025 / PM-SCR-135: per source flow cap, configurable template cap
+cc_daemon tcp_source_limit tests/security/tcp_source_limit.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean tcp_source_limit

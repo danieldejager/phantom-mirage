@@ -47,6 +47,7 @@ char *pm_getenv(const char *);
 #define HONEYD_MAX_INTERFACES	12
 
 #define HONEYD_MAX_CONNECTS	32000
+#define HONEYD_MAX_SOURCE_FLOWS	1000	/* default per source flow cap */
 
 #define HONEYD_CLOSE_WAIT	60
 #define HONEYD_SYN_WAIT		60
@@ -180,6 +181,7 @@ struct tuple {
 	struct event *timeout;
 
 	int local;	/* locally initiated */
+	int srccounted;	/* counted against the per source flow limit */
 
 	/* Potentially pending connection to subsystem */
 	struct port_encapsulate *pending;
@@ -398,6 +400,7 @@ void generic_timeout(struct event *, int);
 
 /* Network protocol related prototypes */
 int conhdr_compare(struct tuple *, struct tuple *);
+uint32_t honeyd_source_flows(ip_addr_t);
 
 void tcp_free(struct tcp_con *);
 int tcp_send(struct tcp_con *, uint8_t, u_char *, u_int);

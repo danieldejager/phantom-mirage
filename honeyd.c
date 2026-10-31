@@ -1331,6 +1331,113 @@ honeyd_check_data_file(const char *path, const char *what, const char *flag)
 	exit(EXIT_FAILURE);
 }
 
+/*
+ * Flow limits. "option honeyd max_template_flows N" caps the references
+ * on one template (default TEMPLATE_MAX_REFCNT); "option honeyd
+ * max_source_flows N" caps the concurrent flows initiated by one source
+ * address (default HONEYD_MAX_SOURCE_FLOWS). A value below 1 keeps the
+ * default.
+ */
+static uint32_t
+honeyd_flow_option(const char *name, uint32_t def)
+{
+	const struct honeyd_plugin_cfg *cfg;
+
+	cfg = plugins_config_find_item("honeyd", name, HD_CONFIG_INT);
+	if (cfg == NULL || cfg->cfg_int < 1)
+		return (def);
+	return ((uint32_t)cfg->cfg_int);
+}
+
+uint32_t
+template_max_refcnt(void)
+{
+	return (honeyd_flow_option("max_template_flows",
+		TEMPLATE_MAX_REFCNT));
+}
+
+/*
+ * Concurrent flows per source address. An entry exists only while its
+ * source has at least one counted flow and is freed when the count
+ * drops to zero, so the tree never holds more entries than there are
+ * live flows.
+ */
+struct srcflow {
+	SPLAY_ENTRY(srcflow) node;
+	ip_addr_t addr;
+	uint32_t nflows;
+};
+
+static int
+srcflow_compare(struct srcflow *a, struct srcflow *b)
+{
+	if (a->addr < b->addr)
+		return (-1);
+	return (a->addr > b->addr);
+}
+
+SPLAY_HEAD(srcflowtree, srcflow) srcflows = SPLAY_INITIALIZER(&srcflows);
+SPLAY_PROTOTYPE(srcflowtree, srcflow, node, srcflow_compare);
+SPLAY_GENERATE(srcflowtree, srcflow, node, srcflow_compare);
+
+static struct srcflow *
+srcflow_find(ip_addr_t addr)
+{
+	struct srcflow tmp;
+
+	tmp.addr = addr;
+	return (SPLAY_FIND(srcflowtree, &srcflows, &tmp));
+}
+
+/* Number of counted flows from this source */
+uint32_t
+honeyd_source_flows(ip_addr_t addr)
+{
+	struct srcflow *sf = srcflow_find(addr);
+
+	return (sf != NULL ? sf->nflows : 0);
+}
+
+/* True if a new flow from this source must be refused */
+static int
+honeyd_source_full(ip_addr_t addr)
+{
+	return (honeyd_source_flows(addr) >= honeyd_flow_option(
+		    "max_source_flows", HONEYD_MAX_SOURCE_FLOWS));
+}
+
+/* Count a new flow against its source; on failure it is not counted */
+static void
+honeyd_source_take(struct tuple *hdr)
+{
+	struct srcflow *sf = srcflow_find(hdr->ip_src);
+
+	if (sf == NULL) {
+		if ((sf = calloc(1, sizeof(*sf))) == NULL)
+			return;
+		sf->addr = hdr->ip_src;
+		SPLAY_INSERT(srcflowtree, &srcflows, sf);
+	}
+	sf->nflows++;
+	hdr->srccounted = 1;
+}
+
+static void
+honeyd_source_release(struct tuple *hdr)
+{
+	struct srcflow *sf;
+
+	if (!hdr->srccounted)
+		return;
+	hdr->srccounted = 0;
+	if ((sf = srcflow_find(hdr->ip_src)) == NULL)
+		return;
+	if (--sf->nflows == 0) {
+		SPLAY_REMOVE(srcflowtree, &srcflows, sf);
+		free(sf);
+	}
+}
+
 struct tcp_con *
 tcp_new(const struct interface* iface, struct ip_hdr *ip, struct tcp_hdr *tcp, int local)
 {
@@ -1375,6 +1482,7 @@ tcp_free(struct tcp_con *con)
 		port_free(port->subtmpl, port);
 
 	connection_remove(&tcpcons, &tcplru, &con->conhdr);
+	honeyd_source_release(&con->conhdr);
 
 	hooks_dispatch(IP_PROTO_TCP, HD_INCOMING_STREAM, &con->conhdr,
 	    NULL, 0);
@@ -1469,6 +1577,7 @@ udp_free(struct udp_con *con)
 		port_free(port->subtmpl, port);
 
 	connection_remove(&udpcons, &udplru, &con->conhdr);
+	honeyd_source_release(&con->conhdr);
 
 	hooks_dispatch(IP_PROTO_TCP, HD_INCOMING_STREAM, &con->conhdr,
 	    NULL, 0);
@@ -2479,10 +2588,18 @@ tcp_recv_cb(struct template *tmpl, const struct interface* iface, u_char *pkt, u
 			goto kill;
 		}
 
+		/* Refuse the flow if its source has too many flows */
+		if (honeyd_source_full(ip->ip_src)) {
+			syslog(LOG_WARNING, "Too many flows from source: tcp %s",
+			    honeyd_contoa(&honeyd_tmp.conhdr));
+			goto kill;
+		}
+
 		/* Out of memory is dealt with by killing the connection */
 		if ((con = tcp_new(iface, ip, tcp, INITIATED_BY_EXTERNAL)) == NULL) {
 			goto kill;
 		}
+		honeyd_source_take(&con->conhdr);
 		con->rcv_flags = tiflags;
 
 		/* Check if this connection is a tar pit */
@@ -2943,6 +3060,16 @@ handle_udp_packet(struct template *tmpl, void *wrapper)
 				return 0;
 		}
 
+		/* Refuse the flow if its source has too many flows */
+		if (honeyd_source_full(ip->ip_src)) {
+			syslog(LOG_WARNING, "Too many flows from source: udp %s",
+			    honeyd_contoa(&honeyd_udp.conhdr));
+			if (unicast)
+				goto closed;
+			else
+				return 0;
+		}
+
 		/* Out of memory is dealt by having the port closed */
 		if ((con = calloc(1, sizeof(struct udp_con))) == NULL) {
 			syslog(LOG_WARNING, "calloc: %m");
@@ -2958,6 +3085,7 @@ handle_udp_packet(struct template *tmpl, void *wrapper)
 			con->conhdr.ip_dst = templateIp;
 
 		connection_insert(&udpcons, &udplru, &con->conhdr);
+		honeyd_source_take(&con->conhdr);
 		con->conhdr.timeout = evtimer_new(libevent_base, honeyd_udp_timeout, con);
 		honeyd_log_flownew(honeyd_logfp, IP_PROTO_UDP, &con->conhdr);
 
