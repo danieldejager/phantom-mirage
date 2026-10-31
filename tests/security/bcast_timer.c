@@ -158,7 +158,10 @@ main(void)
 	printf("insert again: %d live, %d pending\n", n, p);
 	check(n == 1 && p == 1, "insert again: old timer freed, one pending");
 
-	/* 4: deallocating the template frees the timer and its argument */
+	/*
+	 * 4: deallocating the template frees the timer, its argument and
+	 * the broadcast port (CWE-401; leak checks report a leaked port)
+	 */
 	template_deallocate(tmpl);
 	check(live(&p) == 0, "template_deallocate frees the broadcast timer");
 

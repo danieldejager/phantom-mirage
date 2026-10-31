@@ -456,9 +456,17 @@ template_deallocate(struct template *tmpl)
 	while ((port = SPLAY_ROOT(&tmpl->ports)) != NULL)
 		port_free(tmpl, port);
 
-	/* Stop broadcast timers; the broadcast ports themselves stay */
-	SPLAY_FOREACH(port, porttree, &tmpl->bcasts)
+	/*
+	 * Stop broadcast timers and free the broadcast ports. CWE-401:
+	 * the ports were never freed. Each is owned by this template
+	 * alone (template_clone() makes new ones) and its action is a
+	 * shallow copy, so only the struct itself is freed.
+	 */
+	while ((port = SPLAY_ROOT(&tmpl->bcasts)) != NULL) {
 		bcast_stop(port);
+		SPLAY_REMOVE(porttree, &tmpl->bcasts, port);
+		free(port);
+	}
 
 	if (tmpl->person != NULL)
 		personality_declone(tmpl->person);
