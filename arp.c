@@ -177,6 +177,25 @@ arp_timeout(int fd, short event, void *arg)
 	arp_free(req);
 }
 
+/*
+ * Run the request's callback at most once. The callback may free its
+ * argument (honeyd_ether_send_cb() frees the queued packet), so clear
+ * cb and arg before calling it; later replies or a late failure then
+ * find nothing to run.
+ */
+static void
+arp_callback(struct arp_req *req, int success)
+{
+	void (*cb)(struct arp_req *, int, void *) = req->cb;
+	void *arg = req->arg;
+
+	if (cb == NULL)
+		return;
+	req->cb = NULL;
+	req->arg = NULL;
+	(*cb)(req, success, arg);
+}
+
 static void
 arp_discover(struct arp_req *req, struct addr *ha)
 {
@@ -215,7 +234,7 @@ arp_discover(struct arp_req *req, struct addr *ha)
 		/* XXX - use reversemap on networks to find router ip */
 		evtimer_add(req->discover, &tv);
 	} else
-		(*req->cb)(req, 0, req->arg);
+		arp_callback(req, 0);
 	req->cnt++;
 }
 
@@ -428,12 +447,18 @@ arp_recv_cb(u_char *u, const struct pcap_pkthdr *pkthdr, const u_char *pkt)
 			if ( !(req->flags & ARP_INTERNAL) ) {
 				addr_pack(&req->ha, ADDR_TYPE_ETH,
 				    ETH_ADDR_BITS, ethip->ar_sha, ETH_ADDR_LEN);
-				/* Signal success */
+				/*
+				 * Signal success once. A repeated reply, or
+				 * one after the request already failed, must
+				 * not run the callback again.
+				 */
+				int done = (req->flags & ARP_EXTERNAL) ||
+				    req->cb == NULL;
 				req->flags |= ARP_EXTERNAL;
 				req->cnt = ARP_REQUEST_SUCESS;
-				assert(req->cb != NULL);
-				(*req->cb)(req, 1, req->arg);
 				evtimer_del(req->discover);
+				if (!done)
+					arp_callback(req, 1);
 
 				syslog(LOG_DEBUG, "%s: %s at %s", __func__,
 				    addr_ntoa(&req->pa), addr_ntoa(&req->ha));
