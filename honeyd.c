@@ -3160,24 +3160,36 @@ handle_udp_packet(struct template *tmpl, void *wrapper)
 				return 0;
 		}
 
-		/* Out of memory is dealt by having the port closed */
-		udp_make_room();
+		/*
+		 * PM-SCR-160: allocate before making room under the UDP flow
+		 * cap, so a failed allocation never evicts a live flow. Out of
+		 * memory drops the packet quietly, without an ICMP error.
+		 */
 		if ((con = calloc(1, sizeof(struct udp_con))) == NULL) {
-			syslog(LOG_WARNING, "calloc: %m");
-
-			if (unicast)
-				goto closed;
-			else
-				return 0;
+			syslog(LOG_ERR, "%s: calloc: %m", __func__);
+			return 0;
 		}
 		honeyd_setudp(con, ip, udp, INITIATED_BY_EXTERNAL);
 
 		if (!unicast && isBroadcast)
 			con->conhdr.ip_dst = templateIp;
 
+		/*
+		 * PM-SCR-159: create the idle timer before the flow is listed,
+		 * counted or takes a source reference, so a failure leaves
+		 * nothing to undo but the allocation.
+		 */
+		con->conhdr.timeout = evtimer_new(libevent_base, honeyd_udp_timeout, con);
+		if (con->conhdr.timeout == NULL) {
+			syslog(LOG_ERR, "%s: evtimer_new failed", __func__);
+			free(con);
+			return 0;
+		}
+
+		/* The new flow is not on udplru yet, so it is never evicted */
+		udp_make_room();
 		udp_insert(con);
 		honeyd_source_take(&con->conhdr);
-		con->conhdr.timeout = evtimer_new(libevent_base, honeyd_udp_timeout, con);
 		honeyd_log_flownew(honeyd_logfp, IP_PROTO_UDP, &con->conhdr);
 
 		con->tmpl = template_ref(tmpl);
