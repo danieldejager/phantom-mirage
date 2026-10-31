@@ -1,0 +1,5 @@
+# PM-SCR-132: stats collector leaks one event per datagram
+cc_san stats_evleak tests/security/stats_evleak.c honeydstats.c tagging.c \
+    stats.c util.c histogram.c analyze.c untagging.c filter.c keycount.c sha1.c \
+    -Wl,--wrap=make_socket -Wl,--wrap=signature_process -lz
+run_clean stats_evleak

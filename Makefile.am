@@ -231,3 +231,8 @@ DISTCLEANFILES = *~
 LEX_OUTPUT_ROOT = lex.hyd
 LFLAGS  = -Phyd
 YFLAGS  = -d
+
+# Sanitizer regression tests (tests/security); needs clang
+check-security:
+	$(SHELL) $(srcdir)/tests/security/run.sh
+.PHONY: check-security
