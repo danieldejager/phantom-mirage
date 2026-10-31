@@ -36,6 +36,10 @@
 #define X_FORWARDED "X-Forwarded-For:"
 #define CORRUPT_SPACE	20
 
+/* Limits on the header lines of one request, discarded lines included */
+#define PROXY_MAX_HEADER_LINES	100
+#define PROXY_MAX_HEADER_BYTES	(64 * 1024)
+
 struct proxy_ta {
 	int fd;
 	struct bufferevent *bev;
@@ -58,6 +62,9 @@ struct proxy_ta {
 	socklen_t salen;
 
 	int (*empty_cb)(struct proxy_ta *);
+
+	size_t hdr_lines;	/* header lines received so far */
+	size_t hdr_bytes;	/* their bytes, line ends included */
 
 	int dns_pending;	/* evdns lookups in flight */
 	int dns_canceled;
