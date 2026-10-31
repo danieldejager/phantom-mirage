@@ -352,6 +352,85 @@ decoymapped(void)
 	return (0);
 }
 
+/* Cloud metadata addresses are hard as exact addresses only */
+static int
+metadata(void)
+{
+	static const char *meta[] = {
+		"169.254.169.254", "100.100.100.200", "fd00:ec2::254",
+		"::ffff:169.254.169.254", "::ffff:100.100.100.200",
+		"::169.254.169.254", NULL
+	};
+	static const struct {
+		const char *range, *neighbour;
+	} broad[] = {
+		{ "169.254.0.0/16", "169.254.169.253" },
+		{ "100.64.0.0/10", "100.100.100.201" },
+		{ "fc00::/7", "fd00:ec2::255" },
+		{ "0.0.0.0/0", "::ffff:198.18.0.1" },
+		{ "::/0", "fe80::1" },
+		{ NULL, NULL }
+	};
+	int i;
+
+	if (proxy_allow_range == NULL) {
+		printf("FAIL: no allow range option\n");
+		return (1);
+	}
+	for (i = 0; broad[i].range != NULL; i++) {
+		expect(broad[i].neighbour, 0);	/* denied until reopened */
+		if (proxy_allow_range(broad[i].range) != 0) {
+			printf("FAIL: allow range %s not accepted\n",
+			    broad[i].range);
+			return (1);
+		}
+		printf("with -A %s\n", broad[i].range);
+		expect(broad[i].neighbour, 1);
+		table(meta, 0);
+	}
+	return (0);
+}
+
+/* A mapped or compatible range shorter than /96 is refused */
+static int
+shortmapped(void)
+{
+	static const char *refused[] = {
+		"::ffff:0:0/80", "::ffff:0:0/95", "::ffff:10.0.0.0/88",
+		"::ffff:0:0/64", "::/95", "::/80", "::10.0.0.0/88", NULL
+	};
+	static const char *accepted[] = {
+		"::/0", "::/79", "::ffff:10.30.0.0/112", "::10.31.0.0/112",
+		"::ffff:11.0.0.0/104", NULL
+	};
+	const char **r;
+	int rc = 0, got;
+
+	if (proxy_allow_range == NULL || proxy_decoy_range == NULL) {
+		printf("FAIL: no range options\n");
+		return (1);
+	}
+	for (r = refused; *r != NULL; r++) {
+		got = proxy_allow_range(*r);
+		printf("%s: -A %s refused\n", got < 0 ? "ok" : "FAIL", *r);
+		rc |= got >= 0;
+		got = proxy_decoy_range(*r);
+		printf("%s: -D %s refused\n", got < 0 ? "ok" : "FAIL", *r);
+		rc |= got >= 0;
+	}
+	/* Still accepted, and mapped ranges are stored as IPv4 */
+	for (r = accepted; *r != NULL; r++) {
+		got = proxy_decoy_range(*r);
+		printf("%s: -D %s accepted\n", got == 0 ? "ok" : "FAIL", *r);
+		rc |= got != 0;
+	}
+	rc |= proxy_allow_range("10.0.0.0/8") != 0;
+	expect("10.30.1.1", 0);		/* decoy from ::ffff:10.30.0.0/112 */
+	expect("10.31.1.1", 0);		/* decoy from ::10.31.0.0/112 */
+	expect("10.32.1.1", 1);
+	return (rc);
+}
+
 static int
 override(void)
 {
@@ -403,6 +482,10 @@ main(int argc, char **argv)
 		table(special_edges_allowed, 1);
 	} else if (strcmp(g, "hardallow") == 0) {
 		rc = hardallow();
+	} else if (strcmp(g, "metadata") == 0) {
+		rc = metadata();
+	} else if (strcmp(g, "shortmapped") == 0) {
+		rc = shortmapped();
 	} else if (strcmp(g, "limit") == 0) {
 		rc = limit();
 	} else if (strcmp(g, "decoymapped") == 0) {

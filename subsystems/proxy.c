@@ -181,7 +181,12 @@ proxy_write_response(struct proxy_ta *ta, struct keyvalue data[])
  * Teredo prefixes are refused whole rather than judged by the IPv4
  * address they carry: a translator or relay can reach any IPv4
  * address, so the outer address is what the proxy actually talks to.
- * -A and -D each take up to PROXY_MAX_RANGES ranges.
+ * The cloud metadata addresses are hard as exact addresses only, so a
+ * soft range that holds one can still be reopened around it.
+ * -A and -D each take up to PROXY_MAX_RANGES ranges. A range written in
+ * the IPv4 mapped form, or one of /80 to /95 inside ::/80, is refused
+ * when shorter than /96: addresses there are judged as IPv4, so such a
+ * range would never match anything.
  */
 struct proxy_range {
 	int af;			/* AF_INET or AF_INET6 */
@@ -205,8 +210,10 @@ static const struct {
 	{ "0.0.0.0", 8, PROXY_HARD },		/* this network */
 	{ "10.0.0.0", 8, 0 },			/* RFC 1918 */
 	{ "100.64.0.0", 10, 0 },		/* shared address space, CGNAT */
+	{ "100.100.100.200", 32, PROXY_HARD },	/* cloud metadata */
 	{ "127.0.0.0", 8, PROXY_HARD },		/* loopback */
-	{ "169.254.0.0", 16, 0 },		/* link local, cloud metadata */
+	{ "169.254.0.0", 16, 0 },		/* link local */
+	{ "169.254.169.254", 32, PROXY_HARD },	/* cloud metadata */
 	{ "172.16.0.0", 12, 0 },		/* RFC 1918 */
 	{ "192.0.0.0", 24, 0 },			/* IETF protocol assignments */
 	{ "192.0.2.0", 24, PROXY_HARD },	/* documentation */
@@ -231,6 +238,7 @@ static const struct {
 	{ "2002::", 16, PROXY_HARD },		/* 6to4 */
 	{ "5f00::", 16, PROXY_HARD },		/* SRv6 SIDs */
 	{ "fc00::", 7, 0 },			/* unique local */
+	{ "fd00:ec2::254", 128, PROXY_HARD },	/* cloud metadata */
 	{ "fe80::", 10, 0 },			/* link local */
 	{ "fec0::", 10, PROXY_HARD },		/* site local, deprecated */
 	{ "ff00::", 8, 0 },			/* multicast */
@@ -308,6 +316,14 @@ proxy_parse_range(const char *s, struct proxy_range *r)
 			return (-1);
 		r->bits = bits;
 	}
+	if (r->af == AF_INET6 && r->bits < 96) {
+		static const u_char zero[10];
+
+		if (memcmp(r->net, zero, 10) == 0 &&
+		    ((r->net[10] == 0xff && r->net[11] == 0xff) ||
+		     r->bits >= 80))
+			return (-2);	/* could never match */
+	}
 	/*
 	 * A mapped or compatible range that covers only embedded IPv4
 	 * addresses is stored as the IPv4 range, the same way addresses
@@ -332,8 +348,12 @@ proxy_parse_range(const char *s, struct proxy_range *r)
 static int
 proxy_add_range(struct proxy_range *list, int *n, const char *s)
 {
-	if (*n >= PROXY_MAX_RANGES || proxy_parse_range(s, &list[*n]) == -1)
+	int rc;
+
+	if (*n >= PROXY_MAX_RANGES)
 		return (-1);
+	if ((rc = proxy_parse_range(s, &list[*n])) != 0)
+		return (rc);
 	(*n)++;
 	return (0);
 }

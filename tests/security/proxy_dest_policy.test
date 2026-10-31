@@ -5,6 +5,6 @@ cc_san proxy_dest_policy -I tests/security/stub \
     tests/security/proxy_dest_policy.c tests/security/pcre_stub.c \
     subsystems/proxy.c subsystems/smtp.c util.c atomicio.c sha1.c
 for g in v4 v6 mapped special name own decoy decoymapped override \
-    hardallow limit recheck; do
+    hardallow limit metadata shortmapped recheck; do
 	run_clean proxy_dest_policy $g
 done

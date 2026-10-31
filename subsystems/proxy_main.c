@@ -88,12 +88,13 @@ usage(char *progname)
 	    "\t              private, link local and similar special purpose\n"
 	    "\t              ranges, for example 10.1.0.0/16; never reopens\n"
 	    "\t              loopback, 0/8, ::, documentation, NAT64, 6to4,\n"
-	    "\t              Teredo, discard, site local, broadcast, own\n"
-	    "\t              interface or decoy addresses; up to 32 ranges,\n"
-	    "\t              none by default\n"
+	    "\t              Teredo, discard, site local, broadcast, cloud\n"
+	    "\t              metadata, own interface or decoy addresses; up\n"
+	    "\t              to 32 ranges, none by default\n"
 	    "\t -D range   - refuses the decoy address range, for example\n"
 	    "\t              10.20.0.0/16; IPv4 mapped forms are the same\n"
-	    "\t              range; up to 32 ranges\n",
+	    "\t              range and must be /96 or longer; up to 32\n"
+	    "\t              ranges\n",
 	    progname);
 	exit(EXIT_SUCCESS);
 }
@@ -105,7 +106,7 @@ main(int argc, char **argv)
 	char *progname = argv[0];
 	char *logfile = NULL;
 	char *mail_logfile = NULL;
-	int ch;
+	int ch, rc;
 	char *ports = NULL;
 	u_short port = 2525;
 
@@ -133,11 +134,19 @@ main(int argc, char **argv)
 			mail_logfile = optarg;
 			break;
 		case 'A':
-			if (proxy_allow_range(optarg) == -1)
+			if ((rc = proxy_allow_range(optarg)) == -2)
+				errx(EXIT_FAILURE, "Bad -A range: %s: an IPv4 "
+				    "mapped or compatible range must be /96 or "
+				    "longer", optarg);
+			if (rc != 0)
 				errx(EXIT_FAILURE, "Bad -A range: %s", optarg);
 			break;
 		case 'D':
-			if (proxy_decoy_range(optarg) == -1)
+			if ((rc = proxy_decoy_range(optarg)) == -2)
+				errx(EXIT_FAILURE, "Bad -D range: %s: an IPv4 "
+				    "mapped or compatible range must be /96 or "
+				    "longer", optarg);
+			if (rc != 0)
 				errx(EXIT_FAILURE, "Bad -D range: %s", optarg);
 			break;
 		case 'd': {
