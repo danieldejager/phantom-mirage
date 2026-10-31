@@ -230,7 +230,11 @@ _dhcp_getconf(struct template *tmpl)
 
 	req->ntries = 0;
 
-	req->timeoutEv = evtimer_new(libevent_base, _dhcp_timeout_cb, tmpl);
+	/* One timer per request, reused for every attempt */
+	if (req->timeoutEv == NULL &&
+	    (req->timeoutEv = evtimer_new(libevent_base, _dhcp_timeout_cb,
+	    tmpl)) == NULL)
+		return (-1);
 	evtimer_add(req->timeoutEv, &_timeout_tv);
 
 	return (0);
@@ -277,8 +281,11 @@ _dhcp_renew_cb(int fd, short ev, void *arg)
 	event_del(tmpl->dhcp_req->renewEv);
 
 	// Start a timer to trigger if the renew fails
-	tmpl->dhcp_req->renewTimeoutEv = evtimer_new(libevent_base, _dhcp_renew_timeout_cb, tmpl);
-	evtimer_add(tmpl->dhcp_req->renewTimeoutEv, &_timeout_tv);
+	if (tmpl->dhcp_req->renewTimeoutEv == NULL)
+		tmpl->dhcp_req->renewTimeoutEv = evtimer_new(libevent_base,
+		    _dhcp_renew_timeout_cb, tmpl);
+	if (tmpl->dhcp_req->renewTimeoutEv != NULL)
+		evtimer_add(tmpl->dhcp_req->renewTimeoutEv, &_timeout_tv);
 
 	_unicast(tmpl, _pack_renew);
 }
@@ -481,8 +488,12 @@ _dhcp_reply(struct template *tmpl, u_char *buf, size_t buflen)
 		{
 			req->renewTimer.tv_usec = 0;
 			req->renewTimer.tv_sec = leaseTime / 2;
-			req->renewEv = evtimer_new(libevent_base, _dhcp_renew_cb, tmpl);
-			evtimer_add(req->renewEv, &req->renewTimer);
+			/* Reuse the renewal timer: every ACK reschedules it */
+			if (req->renewEv == NULL)
+				req->renewEv = evtimer_new(libevent_base,
+				    _dhcp_renew_cb, tmpl);
+			if (req->renewEv != NULL)
+				evtimer_add(req->renewEv, &req->renewTimer);
 		}
 
 		// If this is a successful renewal, drop out here

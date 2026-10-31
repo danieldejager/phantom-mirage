@@ -227,7 +227,8 @@ rrdtool_init(const char *path_rrdtool)
 void
 rrdtool_free(struct rrdtool_drv *drv)
 {
-	event_del(drv->ev_timeout);
+	if (drv->ev_timeout != NULL)
+		event_free(drv->ev_timeout);	/* also deletes it */
 
 	bufferevent_free(drv->evb);
 

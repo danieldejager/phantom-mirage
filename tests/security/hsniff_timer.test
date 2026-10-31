@@ -1,0 +1,12 @@
+# PM-SCR-007: the sniffer unscheduled the per connection timeout but
+# never freed it. hsniff.c with its main() renamed, no capture device.
+# shellcheck disable=SC2086
+$CC $SAN $CF -Dmain=hsniff_main -c hsniff.c -o "$OUT/obj/hsniff_main.o"
+cc_san hsniff_timer tests/security/hsniff_timer.c \
+    "$OUT/obj/hsniff_main.o" tagging.c stats.c util.c hooks.c \
+    interface.c pfctl_osfp.c pf_osfp.c osfp.c network.c sha1.c \
+    -Wl,--wrap=event_new,--wrap=event_free
+# hsniff's globals are never freed: leak checks off. The test counts
+# live events itself.
+ASAN_OPTIONS=detect_leaks=0
+run_clean hsniff_timer
