@@ -1,0 +1,7 @@
+# ipfrag.c ip_fragment_new: unchecked evtimer_new (CWE-476/CWE-252)
+cc_daemon ipfrag_new_timer tests/security/ipfrag_new_timer.c \
+    -Wl,--wrap=event_new
+# The daemon's global configuration is never freed: leak checks off.
+# The test checks the fragment tree and counters itself.
+ASAN_OPTIONS=detect_leaks=0
+run_clean ipfrag_new_timer
