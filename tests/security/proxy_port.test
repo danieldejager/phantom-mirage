@@ -1,0 +1,13 @@
+# PM-SCR-108: missing or invalid $port in the proxy lookup callbacks
+cc_san proxy_port -I tests/security/stub -Wl,--wrap=make_socket \
+    tests/security/proxy_port.c tests/security/pcre_stub.c \
+    subsystems/proxy.c subsystems/smtp.c util.c atomicio.c sha1.c
+for p in none empty 0 65536 99999 -1 80x " 80" 4294967376; do
+	run_clean proxy_port get "$p" || exit 1
+done
+for p in none empty 0 65536 4294967321; do
+	run_clean proxy_port connect "$p" || exit 1
+done
+run_clean proxy_port get 80 80 || exit 1
+run_clean proxy_port get 65535 65535 || exit 1
+run_clean proxy_port get 1 1
