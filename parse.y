@@ -192,7 +192,8 @@ creation	: CREATE STRING
 		struct template *tmpl;
 		if ((tmpl = template_create($2)) == NULL)
 			yyerror("Template \"%s\" exists already", $2);
-		tmpl->flags |= TEMPLATE_DYNAMIC;
+		else
+			tmpl->flags |= TEMPLATE_DYNAMIC;
 		free($2);
 	}
 ;

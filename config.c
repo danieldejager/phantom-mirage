@@ -282,7 +282,12 @@ template_create(const char *name)
 			exit(EXIT_FAILURE);
 		}
 
-	tmpl->name = strdup(name);
+	/* CWE-476/CWE-252: nothing is inserted without a name */
+	if ((tmpl->name = strdup(name)) == NULL) {
+		syslog(LOG_ERR, "%s: strdup", __func__);
+		free(tmpl);
+		return (NULL);
+	}
 
 	/* UDP ports are closed by default */
 	tmpl->udp.status = PORT_CLOSED;
@@ -816,6 +821,12 @@ template_clone(const char *newname, const struct template *tmpl,
 	/* Remember the configured template name for logging */
 	newtmpl->origin = strdup(tmpl->origin != NULL ?
 	    tmpl->origin : tmpl->name);
+	/* CWE-476/CWE-252: drop the new template if the copy failed */
+	if (newtmpl->origin == NULL) {
+		syslog(LOG_ERR, "%s: strdup", __func__);
+		template_free(newtmpl);
+		return (NULL);
+	}
 
 	SPLAY_FOREACH(port, porttree, (struct porttree *)&tmpl->ports) {
 		if (port_insert(newtmpl, port->proto, port->number,
