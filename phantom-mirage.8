@@ -311,6 +311,23 @@ configuration option, and a value.
 The value can be either an integer, a float, or a character string.
 The options are picked up when phantom-mirage reads the configuration file and
 can then be queried by the plugins.
+.Pp
+Two options under the plugin name
+.Va honeyd
+limit concurrent flows:
+.Bd -literal -offset indent
+option honeyd max_template_flows 65535
+option honeyd max_source_flows 1000
+.Ed
+.Pp
+.Va max_template_flows
+caps the references held on one template; a new TCP or UDP flow to a
+template at its cap is refused.
+.Va max_source_flows
+caps the concurrent flows started by one source address; only that
+source is refused while it is over the cap.
+The values shown are the defaults, and a value below 1 keeps the
+default.
 .It Fl i Ar interface
 Listen on
 .Ar interface .
