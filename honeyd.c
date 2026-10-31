@@ -1625,9 +1625,15 @@ udp_new(struct ip_hdr *ip, struct udp_hdr *udp, int local)
 
 	honeyd_setudp(con, ip, udp, local);
 
-	udp_insert(con);
-
+	/* Create the idle timer before the flow is listed or counted */
 	con->conhdr.timeout = evtimer_new(libevent_base, honeyd_udp_timeout, con);
+	if (con->conhdr.timeout == NULL) {
+		syslog(LOG_ERR, "%s: evtimer_new failed", __func__);
+		free(con);
+		return (NULL);
+	}
+
+	udp_insert(con);
 
 	honeyd_log_flownew(honeyd_logfp, IP_PROTO_UDP, &con->conhdr);
 
