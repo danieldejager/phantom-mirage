@@ -100,13 +100,13 @@ proxy_logline(struct proxy_ta *ta)
 
 	if (!strcasecmp("connect", cmd)) {
 		snprintf(line, sizeof(line),
-		    "%d %s: CONNECT %s:%s",
-		    time(NULL), srcipaddress,
+		    "%lld %s: CONNECT %s:%s",
+		    (long long)time(NULL), srcipaddress,
 		    host, port);
 	} else {
 		snprintf(line, sizeof(line),
-		    "%d %s: GET %s:%s%s", 
-		    time(NULL), srcipaddress,
+		    "%lld %s: GET %s:%s%s", 
+		    (long long)time(NULL), srcipaddress,
 		    host, port, uri);
 	}
 
