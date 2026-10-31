@@ -59,7 +59,7 @@ struct smtp_ta {
 	struct sockaddr_storage lsa;	/* local host */
 	socklen_t lsalen;
 
-	int dns_pending;
+	int dns_pending;	/* evdns lookups in flight */
 	int dns_canceled;
 };
 

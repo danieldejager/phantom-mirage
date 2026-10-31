@@ -399,11 +399,13 @@ proxy_handle_get_cb(int result, char type, int count, int ttl,
 	int port = atoi(kv_find(&ta->dictionary, "$port"));
 	char *response;
 
+	ta->dns_pending--;
 	if (ta->dns_canceled) {
-		proxy_ta_free(ta);
+		/* Torn down while lookups were in flight: last one frees */
+		if (ta->dns_pending == 0)
+			proxy_ta_free(ta);
 		return;
 	}
-	ta->dns_pending = 0;
 
 	if (result != DNS_ERR_NONE || type != DNS_IPv4_A || count == 0) {
 		response = proxy_response(ta, baddomain);
@@ -451,9 +453,9 @@ proxy_handle_get(struct proxy_ta *ta)
 	}
 
 	/* Try to resolve the domain name */
+	ta->dns_pending++;
 	evdns_resolve_ipv4(kv_find(&ta->dictionary, "$host"), 0,
 	    proxy_handle_get_cb, ta);
-	ta->dns_pending = 1;
 	return (0);
 }
 
@@ -467,11 +469,13 @@ proxy_handle_connect_cb(int result, char type, int count, int ttl,
 	char *response;
 	fprintf(stderr, "Connecting to %s port %d\n", host, port);
 
+	ta->dns_pending--;
 	if (ta->dns_canceled) {
-		proxy_ta_free(ta);
+		/* Torn down while lookups were in flight: last one frees */
+		if (ta->dns_pending == 0)
+			proxy_ta_free(ta);
 		return;
 	}
-	ta->dns_pending = 0;
 
 	if (result != DNS_ERR_NONE) {
 		response = proxy_response(ta, baddomain);
@@ -540,9 +544,9 @@ proxy_handle_connect(struct proxy_ta *ta)
 	}
 
 	/* Try to resolve the domain name */
+	ta->dns_pending++;
 	evdns_resolve_ipv4(kv_find(&ta->dictionary, "$host"), 0,
 	    proxy_handle_connect_cb, ta);
-	ta->dns_pending = 1;
 	return (0);
 }
 
@@ -710,9 +714,13 @@ proxy_ta_free(struct proxy_ta *ta)
 {
 	struct keyvalue *entry;
 
-	if (ta->dns_pending && !ta->dns_canceled) {
-		/* if we have a pending dns lookup, tell it to cancel */
+	if (ta->dns_pending > 0) {
+		/*
+		 * Lookups in flight hold a pointer to us: stop all I/O and
+		 * let the last callback free the transaction.
+		 */
 		ta->dns_canceled = 1;
+		bufferevent_disable(ta->bev, EV_READ|EV_WRITE);
 		return;
 	}
 

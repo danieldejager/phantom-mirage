@@ -238,11 +238,13 @@ smtp_handle_helo_cb(int result, char type, int count, int ttl,
 	struct smtp_ta *ta = arg;
 	char *response;
 
+	ta->dns_pending--;
 	if (ta->dns_canceled) {
-		smtp_ta_free(ta);
+		/* Torn down while lookups were in flight: last one frees */
+		if (ta->dns_pending == 0)
+			smtp_ta_free(ta);
 		return;
 	}
-	ta->dns_pending = 0;
 
 	if (result == DNS_ERR_NONE && count == 1) {
 		char *hostname = *(char **)addresses;
@@ -272,8 +274,8 @@ smtp_handle_helo(struct smtp_ta *ta, char *line)
 	domainname = strsep(&line, " ");
 	kv_replace(&ta->dictionary, "$srcname", domainname);
 
+	ta->dns_pending++;
 	evdns_resolve_reverse(&sin->sin_addr, 0, smtp_handle_helo_cb, ta);
-	ta->dns_pending = 1;
 
 	return (0);
 }
@@ -891,9 +893,13 @@ smtp_ta_free(struct smtp_ta *ta)
 {
 	struct keyvalue *entry;
 
-	if (ta->dns_pending && !ta->dns_canceled) {
-		/* if we have a pending dns lookup, tell it to cancel */
+	if (ta->dns_pending > 0) {
+		/*
+		 * Lookups in flight hold a pointer to us: stop all I/O and
+		 * let the last callback free the transaction.
+		 */
 		ta->dns_canceled = 1;
+		bufferevent_disable(ta->bev, EV_READ|EV_WRITE);
 		return;
 	}
 
