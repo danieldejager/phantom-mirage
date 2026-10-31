@@ -47,6 +47,7 @@ char *pm_getenv(const char *);
 #define HONEYD_MAX_INTERFACES	12
 
 #define HONEYD_MAX_CONNECTS	32000
+#define HONEYD_MAX_UDP		32000	/* default global UDP flow cap */
 #define HONEYD_MAX_SOURCE_FLOWS	1000	/* default per source flow cap */
 
 #define HONEYD_CLOSE_WAIT	60
@@ -408,6 +409,7 @@ void tcp_senddata(struct tcp_con *, uint8_t);
 void tcp_sendfin(struct tcp_con *);
 
 void udp_free(struct udp_con *);
+uint32_t honeyd_flow_option(const char *, uint32_t);
 int udp_send(struct udp_con *con, u_char *payload, u_int len);
 
 void config_init(void);

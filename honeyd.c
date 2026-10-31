@@ -160,6 +160,8 @@ struct pool			*pool_delay;
 rand_t				*honeyd_rand;
 int					honeyd_sig;
 int					honeyd_nconnects;
+int					honeyd_nudp;	/* live UDP flows on udplru */
+uint32_t				honeyd_udp_evicted;	/* UDP flows evicted at the cap */
 int					honeyd_nchildren;
 int					honeyd_ttl = HONEYD_DFL_TTL;
 struct tcp_con		honeyd_tmp;
@@ -1352,7 +1354,7 @@ honeyd_check_data_file(const char *path, const char *what, const char *flag)
  * address (default HONEYD_MAX_SOURCE_FLOWS). A value below 1 keeps the
  * default.
  */
-static uint32_t
+uint32_t
 honeyd_flow_option(const char *name, uint32_t def)
 {
 	const struct honeyd_plugin_cfg *cfg;
@@ -1557,11 +1559,58 @@ tcp_retrans_timeout(int fd, short event, void *arg)
 	}
 }
 
+/*
+ * PM-SCR-139: global cap on UDP flow state. "option honeyd max_udp_flows N"
+ * sets it (default HONEYD_MAX_UDP). At the cap the least recently used
+ * flow, the tail of udplru, is freed through udp_free() like the idle
+ * timer does; no ICMP is sent for it. Called before the new flow is
+ * inserted, so the flow being created is never the one evicted.
+ */
+static void
+udp_make_room(void)
+{
+	static time_t lastlog;
+	static uint32_t lastcount;
+	struct udp_con *old;
+	uint32_t max = honeyd_flow_option("max_udp_flows", HONEYD_MAX_UDP);
+	time_t now;
+
+	while ((uint32_t)honeyd_nudp >= max &&
+	    (old = (struct udp_con *)TAILQ_LAST(&udplru, conlru)) != NULL) {
+		honeyd_udp_evicted++;
+		udp_free(old);
+	}
+
+	now = time(NULL);
+	if (honeyd_udp_evicted != lastcount && now != lastlog) {
+		syslog(LOG_DEBUG, "UDP flow cap %u reached: %u flows evicted",
+		    max, honeyd_udp_evicted);
+		lastlog = now;
+		lastcount = honeyd_udp_evicted;
+	}
+}
+
+static void
+udp_insert(struct udp_con *con)
+{
+	connection_insert(&udpcons, &udplru, &con->conhdr);
+	honeyd_nudp++;
+}
+
+/* Move a UDP flow to the head of udplru on every packet in either direction */
+static void
+udp_lru_update(struct udp_con *con)
+{
+	TAILQ_REMOVE(&udplru, &con->conhdr, next);
+	TAILQ_INSERT_HEAD(&udplru, &con->conhdr, next);
+}
+
 struct udp_con *
 udp_new(struct ip_hdr *ip, struct udp_hdr *udp, int local)
 {
 	struct udp_con *con;
 
+	udp_make_room();
 	if ((con = calloc(1, sizeof(struct udp_con))) == NULL) {
 			syslog(LOG_WARNING, "calloc: %m");
 			return (NULL);
@@ -1569,7 +1618,7 @@ udp_new(struct ip_hdr *ip, struct udp_hdr *udp, int local)
 
 	honeyd_setudp(con, ip, udp, local);
 
-	connection_insert(&udpcons, &udplru, &con->conhdr);
+	udp_insert(con);
 
 	con->conhdr.timeout = evtimer_new(libevent_base, honeyd_udp_timeout, con);
 
@@ -1592,6 +1641,7 @@ udp_free(struct udp_con *con)
 		port_free(port->subtmpl, port);
 
 	connection_remove(&udpcons, &udplru, &con->conhdr);
+	honeyd_nudp--;
 	honeyd_source_release(&con->conhdr);
 
 	hooks_dispatch(IP_PROTO_TCP, HD_INCOMING_STREAM, &con->conhdr,
@@ -2960,6 +3010,7 @@ udp_send(struct udp_con *con, u_char *payload, u_int len)
 	honeyd_ip_send(pkt, iplen, spoof);
 
 	generic_timeout(con->conhdr.timeout, HONEYD_UDP_WAIT);
+	udp_lru_update(con);
 
 	return (len);
 }
@@ -3099,6 +3150,7 @@ handle_udp_packet(struct template *tmpl, void *wrapper)
 		}
 
 		/* Out of memory is dealt by having the port closed */
+		udp_make_room();
 		if ((con = calloc(1, sizeof(struct udp_con))) == NULL) {
 			syslog(LOG_WARNING, "calloc: %m");
 
@@ -3112,7 +3164,7 @@ handle_udp_packet(struct template *tmpl, void *wrapper)
 		if (!unicast && isBroadcast)
 			con->conhdr.ip_dst = templateIp;
 
-		connection_insert(&udpcons, &udplru, &con->conhdr);
+		udp_insert(con);
 		honeyd_source_take(&con->conhdr);
 		con->conhdr.timeout = evtimer_new(libevent_base, honeyd_udp_timeout, con);
 		honeyd_log_flownew(honeyd_logfp, IP_PROTO_UDP, &con->conhdr);
@@ -3123,6 +3175,7 @@ handle_udp_packet(struct template *tmpl, void *wrapper)
 
 	/* Keep this state active */
 	generic_timeout(con->conhdr.timeout, HONEYD_UDP_WAIT);
+	udp_lru_update(con);
 	con->softerrors = 0;
 
 	/* Statistics */
