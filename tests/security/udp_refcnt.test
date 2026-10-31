@@ -1,0 +1,5 @@
+# PM-SCR-025: template reference counter wraps at 65536 flows
+cc_daemon udp_refcnt tests/security/udp_refcnt.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean udp_refcnt

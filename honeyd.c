@@ -2472,6 +2472,13 @@ tcp_recv_cb(struct template *tmpl, const struct interface* iface, u_char *pkt, u
 				goto justlog;
 		}
 
+		/* Refuse the flow if the template has too many references */
+		if (template_ref_full(tmpl)) {
+			syslog(LOG_WARNING, "Too many flows for template: tcp %s",
+			    honeyd_contoa(&honeyd_tmp.conhdr));
+			goto kill;
+		}
+
 		/* Out of memory is dealt with by killing the connection */
 		if ((con = tcp_new(iface, ip, tcp, INITIATED_BY_EXTERNAL)) == NULL) {
 			goto kill;
@@ -2925,6 +2932,16 @@ handle_udp_packet(struct template *tmpl, void *wrapper)
 		/* Otherwise create a new udp connection */
 		syslog(LOG_DEBUG, "Connection: udp %s",
 			honeyd_contoa(&honeyd_udp.conhdr));
+
+		/* Refuse the flow if the template has too many references */
+		if (template_ref_full(tmpl)) {
+			syslog(LOG_WARNING, "Too many flows for template: udp %s",
+			    honeyd_contoa(&honeyd_udp.conhdr));
+			if (unicast)
+				goto closed;
+			else
+				return 0;
+		}
 
 		/* Out of memory is dealt by having the port closed */
 		if ((con = calloc(1, sizeof(struct udp_con))) == NULL) {
