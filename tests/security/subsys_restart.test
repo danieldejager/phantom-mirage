@@ -1,0 +1,10 @@
+# PM-SCR-198: a failed subsystem restart is retried, a bounded number
+# of times
+cc_daemon subsys_restart tests/security/subsys_restart.c \
+    -Wl,--wrap=cmd_subsystem
+rc=0
+for c in retry bounded; do
+	run_clean subsys_restart "$c" || { echo "case $c failed" >&2; rc=1; }
+	cp "$OUT/subsys_restart.log" "$OUT/subsys_restart.$c.log"
+done
+[ $rc -eq 0 ]

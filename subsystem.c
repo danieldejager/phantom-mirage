@@ -160,10 +160,39 @@ subsystem_restart(int fd, short what, void *arg)
 	struct subsystem *sub = arg;
 	struct template_container *cont = TAILQ_FIRST(&sub->templates);
 	struct template *tmpl = cont->tmpl;
+	struct timeval tv;
+
 	template_subsystem_free_ports(sub);
 	cmd_free(&sub->cmd);
 	syslog(LOG_INFO, "Restarting subsystem \"%s\"", sub->cmdstring);
 	template_subsystem_start(tmpl, sub);
+	if (sub->cmd.pid != -1) {
+		sub->restart_tries = 0;
+		return;
+	}
+
+	/*
+	 * CWE-754: a failed restart was never tried again. Retry with a
+	 * doubling delay, capped, and stop after a bounded number of
+	 * failures in a row; the template runs on without the subsystem.
+	 */
+	if (++sub->restart_tries >= SUBSYSTEM_RESTART_TRIES) {
+		syslog(LOG_ERR, "Subsystem \"%s\" not restarted after %d "
+		    "tries", sub->cmdstring, sub->restart_tries);
+		return;
+	}
+	timerclear(&tv);
+	tv.tv_sec = SUBSYSTEM_RESTART_INTERVAL;
+	for (int i = 1; i < sub->restart_tries &&
+	    tv.tv_sec < SUBSYSTEM_RESTART_MAX_DELAY; i++)
+		tv.tv_sec *= 2;
+	if (tv.tv_sec > SUBSYSTEM_RESTART_MAX_DELAY)
+		tv.tv_sec = SUBSYSTEM_RESTART_MAX_DELAY;
+	syslog(LOG_WARNING, "Subsystem \"%s\" restart failed, retry in "
+	    "%ld s", sub->cmdstring, (long)tv.tv_sec);
+	if (event_base_once(libevent_base, -1, EV_TIMEOUT, subsystem_restart,
+	    sub, &tv) == -1)
+		syslog(LOG_ERR, "%s: event_base_once", __func__);
 }
 
 void
