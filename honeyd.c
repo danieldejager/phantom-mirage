@@ -2001,6 +2001,7 @@ tcp_send(struct tcp_con *con, uint8_t flags, u_char *payload, u_int len)
 	int window = 16000;
 	int dontfragment = 0;
 	struct tcp_options options = {0, NULL};
+	struct tcp_option mss_option;
 	uint16_t id = rand_uint16(honeyd_rand);
 	struct spoof spoof;
 	struct template *tmpl = con->tmpl;
@@ -2027,10 +2028,17 @@ tcp_send(struct tcp_con *con, uint8_t flags, u_char *payload, u_int len)
 		}
 		else if (flags & TH_SYN)
 		{
+			/*
+			 * CWE-476/CWE-252/CWE-401: the MSS option was an
+			 * unchecked malloc() written at once and never
+			 * freed. tcp_personality_options() only reads it
+			 * before we return, so keep it on the stack.
+			 */
+			memset(&mss_option, 0, sizeof(mss_option));
+			mss_option.opt_type = 'M';
+			mss_option.value = 0;
 			options.count = 1;
-			options.options = malloc(sizeof(struct tcp_option));
-			options.options->opt_type = 'M';
-			options.options->value = 0;
+			options.options = &mss_option;
 		}
 	}
 
