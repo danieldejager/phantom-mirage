@@ -384,6 +384,7 @@ int cmd_python(struct tuple *, struct command *, void *);
 #define CMD_FORK_CAP	-2	/* cmd_fork: refused at the script cap */
 void cmd_script_reaped(pid_t);
 uint32_t cmd_script_procs(void);
+uint32_t cmd_script_udp_procs(void);
 uint32_t cmd_script_source_procs(ip_addr_t);
 int cmd_subsystem(struct template *, struct subsystem *, char *, char **);
 

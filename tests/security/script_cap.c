@@ -10,7 +10,8 @@
  * process (ip_send and eth_send are stubbed). Each mode is one case:
  *
  *  global      max_script_procs caps live scripts over many sources;
- *              a TCP flow at the cap gets a RST
+ *              UDP takes at most half, TCP the rest, and a TCP flow
+ *              at the cap gets a RST
  *  source      one source churning UDP flows stops at the per source
  *              cap; ending flows lets it start new scripts
  *  tcpkill     TCP script that ignores stdin dies when its flow ends
@@ -21,6 +22,8 @@
  *  seqpacket   with signals suppressed, a UDP script still sees EOF
  *  udpdrop     a UDP flow at the cap gets no script and no ICMP
  *  disabled    0 disables both caps
+ *  udpshare    PM-SCR-221: spoofed UDP sources fill only the UDP share
+ *              (half of max_script_procs); TCP scripts still start
  */
 #include <sys/types.h>
 #include <sys/param.h>
@@ -54,6 +57,7 @@ extern struct conlru tcplru, udplru;
 
 /* Present only with the fix; a NULL here is a FAIL, not a crash */
 uint32_t cmd_script_procs(void) __attribute__((weak));
+uint32_t cmd_script_udp_procs(void) __attribute__((weak));
 extern uint32_t cmd_script_refused __attribute__((weak));
 
 #define DST	0x0a000002
@@ -327,8 +331,11 @@ t_global(void)
 	option("option honeyd max_script_procs_per_source 0\n");
 	for (i = 0; i < 10; i++)
 		udp_pkt(0x0b000001 + i, 4000, 53);
+	for (i = 0; i < 10; i++)
+		tcp_open(0x0d000001 + i, 5000, 80);
 	reap_to(-1);
-	printf("10 sources, cap 6: %d live scripts\n", honeyd_nchildren);
+	printf("10 UDP and 10 TCP sources, cap 6: %d live scripts\n",
+	    honeyd_nchildren);
 	check(honeyd_nchildren == 6, "global cap holds live scripts at 6");
 
 	sent_rst = 0;
@@ -537,6 +544,34 @@ t_disabled(void)
 	check(honeyd_nchildren == 0 && procs() == 0, "all reaped");
 }
 
+static void
+t_udpshare(void)
+{
+	int i, tcp = 0;
+
+	option("option honeyd max_script_procs 8\n");
+	option("option honeyd max_script_procs_per_source 0\n");
+	/* a spoofer sends one datagram from each of many sources */
+	for (i = 0; i < 50; i++)
+		udp_pkt(0x0b000001 + i, 4000, 53);
+	printf("50 spoofed UDP sources, cap 8: %d live scripts, udp %u\n",
+	    honeyd_nchildren,
+	    cmd_script_udp_procs != NULL ? cmd_script_udp_procs() : 0);
+	check(honeyd_nchildren == 4, "UDP scripts stop at half the cap");
+
+	sent_rst = 0;
+	for (i = 0; i < 4; i++) {
+		tcp_open(0x0c000001 + i, 5000, 80);
+		if (find(&tcplru, 0x0c000001 + i, 5000) != NULL)
+			tcp++;
+	}
+	printf("real TCP flows: %d of 4 started, %d RST\n", tcp, sent_rst);
+	check(tcp == 4 && sent_rst == 0 && honeyd_nchildren == 8,
+	    "TCP scripts still start while spoofed UDP holds its share");
+	tcp_open(0x0c000009, 5000, 80);
+	check(sent_rst == 1, "TCP at the full cap is still reset");
+}
+
 static const struct {
 	const char *name;
 	void (*fn)(void);
@@ -546,6 +581,7 @@ static const struct {
 	{ "reaped", t_reaped }, { "nchildren", t_nchildren },
 	{ "sigchld", t_sigchld }, { "seqpacket", t_seqpacket },
 	{ "udpdrop", t_udpdrop }, { "disabled", t_disabled },
+	{ "udpshare", t_udpshare },
 };
 
 int
