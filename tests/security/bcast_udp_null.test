@@ -1,0 +1,6 @@
+# Finding 150: bcast_trigger must handle a NULL udp_new result when the
+# broadcast helper flow allocation fails
+cc_daemon bcast_udp_null tests/security/bcast_udp_null.c -Wl,--wrap=calloc
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean bcast_udp_null

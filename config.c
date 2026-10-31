@@ -566,6 +566,11 @@ void bcast_trigger(int fd, short what, void *ptr) {
 	udp.uh_dport = htons(bport->srcport);
 
 	struct udp_con *udpcon = udp_new(&ip, &udp, 0);
+	if (udpcon == NULL) {
+		syslog(LOG_ERR, "%s: cannot create flow for broadcast "
+		    "port %d", __func__, bport->number);
+		return;
+	}
 	udpcon->tmpl = template_ref(tmpl);;
 
 	char *argv[32];
