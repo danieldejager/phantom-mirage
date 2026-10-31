@@ -1,0 +1,5 @@
+# PM-SCR-139: global UDP flow cap with LRU eviction
+cc_daemon udp_cap tests/security/udp_cap.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean udp_cap

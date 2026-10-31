@@ -123,9 +123,11 @@ make_prompt(void)
 	static char tmp[128];
 	extern int honeyd_nconnects;
 	extern int honeyd_nchildren;
+	extern int honeyd_nudp;
+	extern uint32_t honeyd_udp_evicted;
 
-	snprintf(tmp, sizeof(tmp), "%dC %dP %s",
-	    honeyd_nconnects, honeyd_nchildren,
+	snprintf(tmp, sizeof(tmp), "%dC %dU %uE %dP %s",
+	    honeyd_nconnects, honeyd_nudp, honeyd_udp_evicted, honeyd_nchildren,
 	    PROMPT);
 
 	return (tmp);
