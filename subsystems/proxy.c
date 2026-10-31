@@ -132,13 +132,36 @@ proxy_response(struct proxy_ta *ta, struct keyvalue data[]) {
 	if (cur->key == NULL)
 		return (NULL);
 
-	strlcpy(line, cur->value, sizeof(line));
+	if (copy_bounded(line, sizeof(line), cur->value,
+		strlen(cur->value)) == -1)
+		return (NULL);
 
+	/* NULL if an expansion does not fit, never a partial template */
 	TAILQ_FOREACH(cur, &ta->dictionary, next) {
-		strrpl(line, sizeof(line), cur->key, cur->value);
+		if (strrpl_bounded(line, sizeof(line), cur->key, cur->value,
+			NULL) == -1)
+			return (NULL);
 	}
 	
 	return (line);
+}
+
+static const char proxy_fail[] = "HTTP/1.0 500 Internal error\r\n\r\n";
+
+/*
+ * Expands a response template and writes it to the client. If it
+ * cannot be expanded, writes a fixed 500 reply instead. Either way the
+ * caller closes once it is written.
+ */
+static void
+proxy_write_response(struct proxy_ta *ta, struct keyvalue data[])
+{
+	char *response = proxy_response(ta, data);
+
+	if (response == NULL)
+		bufferevent_write(ta->bev, proxy_fail, sizeof(proxy_fail) - 1);
+	else
+		bufferevent_write(ta->bev, response, strlen(response));
 }
 
 int
@@ -232,8 +255,7 @@ proxy_allowed_get(struct proxy_ta *ta, struct keyvalue data[])
 int
 proxy_bad_connection(struct proxy_ta *ta)
 {
-	char *response = proxy_response(ta, badconnection);
-	bufferevent_write(ta->bev, response, strlen(response));
+	proxy_write_response(ta, badconnection);
 	ta->wantclose = 1;
 	return (0);
 }
@@ -306,7 +328,6 @@ proxy_connect_cb(int fd, short what, void *arg)
 	/* Check if the connection completed */
 	if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &errsz) == -1 ||
 	    error) {
-		char *response;
 		fprintf(stderr, "%s: connection failed: %s\n",
 		    __func__, strerror(error));
 		close(fd);
@@ -314,8 +335,7 @@ proxy_connect_cb(int fd, short what, void *arg)
 
 		/* Give them a connect error message */
 		kv_replace(&ta->dictionary, "$reason", strerror(error));
-		response = proxy_response(ta, badconnect);
-		bufferevent_write(ta->bev, response, strlen(response));
+		proxy_write_response(ta, badconnect);
 
 		ta->wantclose = 1;
 		return;
@@ -385,12 +405,10 @@ proxy_connect(struct proxy_ta *ta, char *host, int port)
 		}
 	}
 	if (ta->remote_fd == -1) {
-		char *response;
 		fprintf(stderr, "%s: failed to connect: %s\n",
 		    __func__, strerror(errno));
 		kv_replace(&ta->dictionary, "$reason", strerror(errno));
-		response = proxy_response(ta, badconnect);
-		bufferevent_write(ta->bev, response, strlen(response));
+		proxy_write_response(ta, badconnect);
 		ta->wantclose = 1;
 		return;
 	}
@@ -414,7 +432,6 @@ proxy_handle_get_cb(int result, char type, int count, int ttl,
 	struct addr addr;
 	struct in_addr *in_addrs = addresses;
 	int port = atoi(kv_find(&ta->dictionary, "$port"));
-	char *response;
 
 	ta->dns_pending--;
 	if (ta->dns_canceled) {
@@ -425,8 +442,7 @@ proxy_handle_get_cb(int result, char type, int count, int ttl,
 	}
 
 	if (result != DNS_ERR_NONE || type != DNS_IPv4_A || count == 0) {
-		response = proxy_response(ta, baddomain);
-		bufferevent_write(ta->bev, response, strlen(response));
+		proxy_write_response(ta, baddomain);
 		ta->wantclose = 1;
 		return;
 	}
@@ -502,15 +518,13 @@ proxy_handle_connect_cb(int result, char type, int count, int ttl,
 	}
 
 	if (result != DNS_ERR_NONE) {
-		response = proxy_response(ta, baddomain);
-		bufferevent_write(ta->bev, response, strlen(response));
+		proxy_write_response(ta, baddomain);
 		ta->wantclose = 1;
 		return;
 	}
 
 	if (port != 25 || !proxy_allowed_network(host)) {
-		response = proxy_response(ta, badport);
-		bufferevent_write(ta->bev, response, strlen(response));
+		proxy_write_response(ta, badport);
 		ta->wantclose = 1;
 	} else {
 		struct smtp_ta *smtp_ta = NULL;
@@ -521,16 +535,28 @@ proxy_handle_connect_cb(int result, char type, int count, int ttl,
 			    (struct sockaddr *)&ta->sa, ta->salen, 
 			    NULL, 0, 0);
 		if (smtp_ta != NULL) {
+			char *greeting;
+
+			/* Both must fit before anything is written */
 			response = proxy_response(ta, goodport);
+			greeting = response != NULL ?
+			    smtp_greeting_response(smtp_ta) : NULL;
+			if (greeting == NULL) {
+				smtp_ta_free(smtp_ta);
+				bufferevent_write(ta->bev, proxy_fail,
+				    sizeof(proxy_fail) - 1);
+				ta->wantclose = 1;
+				return;
+			}
 			bufferevent_write(smtp_ta->bev,
 			    response, strlen(response));
-			smtp_greeting(smtp_ta);
+			bufferevent_write(smtp_ta->bev,
+			    greeting, strlen(greeting));
 
 			proxy_ta_free(ta);
 		} else {
 			kv_add(&ta->dictionary, "$host", host);
-			response = proxy_response(ta, badport);
-			bufferevent_write(ta->bev, response, strlen(response));
+			proxy_write_response(ta, badport);
 			ta->wantclose = 1;
 		}
 	}

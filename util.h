@@ -100,6 +100,8 @@ void name_from_addr(struct sockaddr *sa, socklen_t salen,
 struct addr;
 int addr_contained(struct addr *, struct addr *);
 char *strrpl(char *, size_t, char *, char *);
+int strrpl_bounded(char *, size_t, const char *, const char *, char **);
+int copy_bounded(char *, size_t, const char *, size_t);
 char *fgetln(FILE *, size_t *);
 char *strnsep(char **line, char *delim);
 

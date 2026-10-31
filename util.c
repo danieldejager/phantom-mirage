@@ -130,8 +130,30 @@ pcap_dloff(pcap_t *pd)
 	return (offset);
 }
 
-char *
-strrpl(char *str, size_t size, char *match, char *value)
+/*
+ * Copies srclen bytes of src and a terminating NUL into dst. Returns 0,
+ * or -1 without writing anything when the result and its NUL do not
+ * fit in dstlen bytes.
+ */
+int
+copy_bounded(char *dst, size_t dstlen, const char *src, size_t srclen)
+{
+	if (dstlen == 0 || srclen >= dstlen)
+		return (-1);
+	memcpy(dst, src, srclen);
+	dst[srclen] = '\0';
+	return (0);
+}
+
+/*
+ * Replaces the first occurrence of match in str, a buffer of size
+ * bytes, by value. Returns 1 and sets *where (if not NULL) to the
+ * replacement when replaced, 0 when there is no match, and -1 when the
+ * result and its terminating NUL would not fit; str is unchanged then.
+ */
+int
+strrpl_bounded(char *str, size_t size, const char *match, const char *value,
+    char **where)
 {
 	char *p, *e;
 	size_t len, rlen;
@@ -148,22 +170,35 @@ strrpl(char *str, size_t size, char *match, char *value)
 		p += 1;
 
 		if (p >= e)
-			return (NULL);
+			return (0);
 		    
 	}
 
 	if (p == NULL)
-		return (NULL);
+		return (0);
 
 	rlen = strlen(value);
 
 	/* The result and its terminating NUL must fit in size bytes */
 	if (strlen(str) - len + rlen >= size)
-		return (NULL);
+		return (-1);
 
 	memmove(p + rlen, p + len, strlen(p + len) + 1);
 	memcpy(p, value, rlen);
 
+	if (where != NULL)
+		*where = p;
+	return (1);
+}
+
+/* Like strrpl_bounded, but NULL for both no match and no room */
+char *
+strrpl(char *str, size_t size, char *match, char *value)
+{
+	char *p;
+
+	if (strrpl_bounded(str, size, match, value, &p) != 1)
+		return (NULL);
 	return (p);
 }
 

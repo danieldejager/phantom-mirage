@@ -371,7 +371,9 @@ template_insert(struct template *tmpl)
 			every.tv_sec = bport->timeout;
 			every.tv_usec = 0;
 
-			strncpy(bport->templateName, tmpl->name, sizeof(bport->templateName));
+			/* Truncates a long name, always NUL terminated */
+			strlcpy(bport->templateName, tmpl->name,
+			    sizeof(bport->templateName));
 
 			struct udp_con *con = calloc(1, sizeof(struct udp_con));
 			con->port = bport;
