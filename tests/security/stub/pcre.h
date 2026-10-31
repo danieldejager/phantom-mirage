@@ -4,6 +4,7 @@
  */
 #ifndef TESTS_SECURITY_STUB_PCRE_H
 #define TESTS_SECURITY_STUB_PCRE_H
+#define PCRE_CASELESS	0x00000001
 typedef struct real_pcre pcre;
 typedef struct pcre_extra pcre_extra;
 pcre *pcre_compile(const char *, int, const char **, int *,
