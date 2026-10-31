@@ -59,10 +59,17 @@ struct arp_req {
 	
 	int flags;
 	struct template	       *owner;	/* template this req refers to */
+	TAILQ_ENTRY(arp_req)	next_ext;	/* creation order, counted only */
 };
 
 #define ARP_INTERNAL	0x01	/* an internal address, created by us */
 #define ARP_EXTERNAL	0x02	/* an address discovered by us */
+#define ARP_COUNTED	0x04	/* created by arp_request, on the cap list */
+#define ARP_PENDING	0x08	/* counted and its callback has not run */
+
+/* Caps on state created by arp_request() (PM-SCR-139) */
+#define ARP_MAX_PENDING	256
+#define ARP_MAX_ENTRIES	4096
 
 void arp_init(void);
 void arp_recv_cb(u_char *, const struct pcap_pkthdr *, const u_char *);
@@ -76,6 +83,16 @@ void arp_request(struct interface *,
     struct addr *src_pa, struct addr *src_ha,
     struct addr *dst, void (*)(struct arp_req *, int, void *), void *);
 struct arp_req *arp_find(struct addr *);
+
+/* Values below 1 keep the defaults ARP_MAX_PENDING and ARP_MAX_ENTRIES */
+void arp_set_limits(int pending, int entries);
+int arp_max_pending(void);
+int arp_max_entries(void);
+/* Live counts and drop counters for state created by arp_request() */
+int arp_pending_count(void);
+int arp_external_count(void);
+uint32_t arp_pending_rejected(void);
+uint32_t arp_external_evicted(void);
 
 /* Set if we need to listen to arp traffic */
 extern int need_arp;
