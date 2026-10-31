@@ -1,0 +1,7 @@
+# New Medium finding from the review of PR 199: a freed template stayed on
+# the DHCP discover queue and was later handed to _dhcp_getconf
+cc_daemon dhcp_queue tests/security/dhcp_queue.c \
+    -Wl,--wrap=event_new,--wrap=event_free
+# The daemon's global configuration is never freed: leak checks off.
+ASAN_OPTIONS=detect_leaks=0
+run_clean dhcp_queue
