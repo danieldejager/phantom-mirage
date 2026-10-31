@@ -727,17 +727,17 @@ cmd_subsystem_connect_cb(int fd, short what, void *arg)
 	 */
 	port_encapsulation_free(tmp);
 
-	if (what != EV_WRITE) {
-		/* We encountered some error with this */
+	/*
+	 * CWE-252/CWE-404: a connection the subsystem never got is dropped
+	 * now; a UDP flow is freed rather than left to its idle timeout.
+	 */
+	if (what != EV_WRITE ||
+	    cmd_subsystem_connect(hdr, cmd, port, con) == -1) {
 		if (hdr->type == SOCK_STREAM)
 			tcp_connectfail(con);
-		return;
+		else
+			udp_free(con);
 	}
-
-	/* CWE-252: a connection the subsystem never got is dropped */
-	if (cmd_subsystem_connect(hdr, cmd, port, con) == -1 &&
-	    hdr->type == SOCK_STREAM)
-		tcp_connectfail(con);
 }
 
 int

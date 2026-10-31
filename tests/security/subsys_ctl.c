@@ -51,6 +51,12 @@ int cmd_subsystem_localconnect(struct tuple *, struct command *,
 int cmd_subsystem_connect(struct tuple *, struct command *, struct port *,
     void *);
 void template_subsystem_start(struct template *, struct subsystem *);
+int cmd_subsystem_schedule_connect(struct tuple *, struct command *,
+    struct port *, void *);
+void subsystem_readyport(struct port *, struct subsystem *,
+    struct template *);
+extern int honeyd_nudp;
+
 
 static const char config[] =
 	"create default\n"
@@ -74,7 +80,7 @@ __wrap_fdshare_dup(int fd)
 
 /* PM-SCR-197: sendmsg sends one byte short on demand */
 ssize_t __real_sendmsg(int, const struct msghdr *, int);
-static int short_send;
+static int short_send, fail_send;
 
 ssize_t
 __wrap_sendmsg(int s, const struct msghdr *msg, int flags)
@@ -82,6 +88,10 @@ __wrap_sendmsg(int s, const struct msghdr *msg, int flags)
 	struct msghdr m = *msg;
 	struct iovec v;
 
+	if (fail_send) {
+		errno = EPIPE;
+		return (-1);
+	}
 	if (short_send && m.msg_iovlen == 1 && m.msg_iov[0].iov_len > 1) {
 		v = m.msg_iov[0];
 		v.iov_len--;
@@ -105,6 +115,36 @@ open_fds(void)
 static struct subsystem *sub;
 static struct template *tmpl, *tmpl2;
 static int peer;
+
+/* An incoming UDP flow to 10.0.0.2:53 with a subsystem port */
+static struct udp_con *
+udp_flow(struct port **pp, int *subside)
+{
+	struct ip_hdr ip;
+	struct udp_hdr udp;
+	struct action a;
+	struct udp_con *con;
+	int sv[2];
+
+	memset(&ip, 0, sizeof(ip));
+	memset(&udp, 0, sizeof(udp));
+	inet_pton(AF_INET, "192.0.2.9", &ip.ip_src);
+	inet_pton(AF_INET, "10.0.0.2", &ip.ip_dst);
+	udp.uh_sport = htons(5000);
+	udp.uh_dport = htons(53);
+	if ((con = udp_new(&ip, &udp, 0)) == NULL)
+		abort();
+	memset(&a, 0, sizeof(a));
+	a.status = PORT_SUBSYSTEM;
+	if ((*pp = port_insert(tmpl, IP_PROTO_UDP, 53, &a)) == NULL)
+		abort();
+	subsystem_readyport(*pp, sub, tmpl);
+	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1)
+		abort();
+	(*pp)->sub_fd = sv[0];
+	*subside = sv[1];
+	return (con);
+}
 
 static void
 setup(void)
@@ -414,6 +454,25 @@ main(int argc, char **argv)
 			return (1);
 		close(sv[0]);
 		return (expect(open_fds() == n, "no descriptor leaked"));
+	}
+	if (strcmp(t, "connect_udp_fail") == 0) {
+		/* PM-SCR-205: a failed UDP connect drops the flow at once */
+		struct udp_con *con;
+		int other, nudp;
+
+		con = udp_flow(&p, &other);
+		nudp = honeyd_nudp;
+		if (cmd_subsystem_schedule_connect(&con->conhdr, &con->cmd, p,
+		    con) == -1)
+			abort();
+		fail_send = 1;
+		for (int i = 0; i < 20 && honeyd_nudp == nudp; i++)
+			event_base_loop(libevent_base,
+			    EVLOOP_ONCE | EVLOOP_NONBLOCK);
+		fail_send = 0;
+		close(other);
+		return (expect(honeyd_nudp == nudp - 1,
+		    "flow dropped without waiting for the idle timeout"));
 	}
 	if (strcmp(t, "start_fail") == 0) {
 		/* fork() fails in the harness, so cmd_subsystem() fails */
