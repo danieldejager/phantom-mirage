@@ -293,7 +293,13 @@ dhcp_abort(struct template *tmpl)
 	if (req->state == 0)
 		return;
 
-	event_del(req->timeoutEv);
+	/* No timer of the aborted request may fire later (PM-SCR-148) */
+	if (req->timeoutEv != NULL)
+		event_del(req->timeoutEv);
+	if (req->renewEv != NULL)
+		event_del(req->renewEv);
+	if (req->renewTimeoutEv != NULL)
+		event_del(req->renewTimeoutEv);
 
 	req->state = 0;
 }
@@ -571,8 +577,12 @@ _dhcp_reply(struct template *tmpl, u_char *buf, size_t buflen)
 		syslog(LOG_NOTICE, "[%s] got DHCP offer: %s",
 		    inter->if_ent.intf_name, addr_ntoa(&addr));
 
-		dhcp_abort(tmpl);
-		//Abort resets the state variable, so we have to set it again afterward
+		/*
+		 * The request is answered: stop its timeout only. dhcp_abort
+		 * would also cancel the renewal just scheduled above.
+		 */
+		if (req->timeoutEv != NULL)
+			event_del(req->timeoutEv);
 		req->state = DHREQ_STATE_GOTACK;
 
 

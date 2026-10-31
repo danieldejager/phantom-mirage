@@ -1,0 +1,5 @@
+# PM-SCR-148: dhcp_abort leaves the renewal timers scheduled
+cc_daemon dhcp_abort tests/security/dhcp_abort.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean dhcp_abort
