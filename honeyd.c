@@ -233,6 +233,7 @@ static struct option honeyd_long_opts[] = {
 	{"sandbox-daemon", 0, &honeyd_sandbox_daemon, 1},
 	{"sandbox-allow-write", required_argument, NULL, 'S'},
 	{"sandbox-script-net", required_argument, NULL, 'N'},
+	{"stats-password-file", required_argument, NULL, 'K'},
 	{0, 0, 0, 0}
 };
 
@@ -244,6 +245,100 @@ honeyd_heartbeat_cb(evutil_socket_t fd, short which, void *arg)
 	gettimeofday(&now, NULL);
 	honeyd_json_heartbeat(now.tv_sec - honeyd_start_tv.tv_sec,
 	    honeyd_pkts_in, honeyd_pkts_out, honeyd_json_connections);
+}
+
+/*
+ * Reads the stats collector password from path. The file must be a
+ * regular file, not a symlink, owned by the running user and not
+ * accessible by group or others. The first line is the password.
+ * On error prints a message naming the file (never its contents) and
+ * returns NULL.
+ */
+static int
+honeyd_secret_stat_bad(const char *path, const struct stat *st)
+{
+	if (!S_ISREG(st->st_mode)) {
+		fprintf(stderr, "stats password file %s: not a regular file\n",
+		    path);
+		return (-1);
+	}
+	if (st->st_uid != geteuid()) {
+		fprintf(stderr, "stats password file %s: not owned by the "
+		    "running user (uid %lu)\n", path, (unsigned long)geteuid());
+		return (-1);
+	}
+	if (st->st_mode & (S_IRWXG | S_IRWXO)) {
+		fprintf(stderr, "stats password file %s: mode %04o is too "
+		    "open, use 0600\n", path, (unsigned)(st->st_mode & 07777));
+		return (-1);
+	}
+	return (0);
+}
+
+static char *
+honeyd_read_secret_file(const char *path)
+{
+	char buf[1024], *secret;
+	struct stat st;
+	ssize_t n;
+	size_t len;
+	int fd;
+
+	if (lstat(path, &st) == -1) {
+		fprintf(stderr, "stats password file %s: %s\n", path,
+		    strerror(errno));
+		return (NULL);
+	}
+	if (S_ISLNK(st.st_mode)) {
+		fprintf(stderr, "stats password file %s: refusing a symlink\n",
+		    path);
+		return (NULL);
+	}
+	if (honeyd_secret_stat_bad(path, &st) == -1)
+		return (NULL);
+	if ((fd = open(path, O_RDONLY | O_NOFOLLOW | O_NOCTTY)) == -1) {
+		fprintf(stderr, "stats password file %s: %s\n", path,
+		    strerror(errno));
+		return (NULL);
+	}
+	/* Check the opened file again in case it was swapped */
+	if (fstat(fd, &st) == -1) {
+		fprintf(stderr, "stats password file %s: %s\n", path,
+		    strerror(errno));
+		close(fd);
+		return (NULL);
+	}
+	if (honeyd_secret_stat_bad(path, &st) == -1) {
+		close(fd);
+		return (NULL);
+	}
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n < 0) {
+		fprintf(stderr, "stats password file %s: %s\n", path,
+		    strerror(errno));
+		return (NULL);
+	}
+	buf[n] = '\0';
+	len = strcspn(buf, "\r\n");
+	buf[len] = '\0';
+	if (len == 0) {
+		fprintf(stderr, "stats password file %s: empty password\n",
+		    path);
+		return (NULL);
+	}
+	secret = strdup(buf);
+	{
+		volatile char *v = buf;
+		size_t i;
+
+		for (i = 0; i < sizeof(buf); i++)
+			v[i] = 0;
+	}
+	if (secret == NULL)
+		fprintf(stderr, "stats password file %s: out of memory\n",
+		    path);
+	return (secret);
 }
 
 void
@@ -277,7 +372,11 @@ usage(void)
 	    "  -g gid		  Set the gid the daemon should run as.\n"
 		"  -m file				  Read nmap-mac-prefixes from file. \n"
 	    "  -f configfile          Read configuration from file.\n"
-	    "  -c host:port:name:pass Reports starts to collector.\n"
+	    "  -c host:port:name      Reports stats to collector.\n"
+	    "  --stats-password-file=FILE\n"
+	    "                         Read the -c password from FILE (mode 0600,\n"
+	    "                         owned by the running user, not a symlink).\n"
+	    "  -c host:port:name:pass Deprecated: password on the command line.\n"
 	    "  --webserver-address=address Address on which webserver listens.\n"
 	    "  --webserver-port=port  Port on which webserver listens.\n"
 	    "  --webserver-root=path  Root of document tree.\n"
@@ -388,6 +487,67 @@ tuple_iterate(struct conlru *head, int (*f)(struct tuple *, void *), void *arg)
 	return (0);
 }
 
+#define HONEYD_OPTSTRING	"VPTdc:i:p:x:a:u:g:f:t:l:s:0:R:m:h?"
+
+/*
+ * For a short option argument such as "-dc", returns the first option
+ * in it that takes a value, and sets *rest to the attached value, or to
+ * NULL when the value is the next argument. Returns 0 if none.
+ */
+static int
+honeyd_shortopt_value(const char *a, const char **rest)
+{
+	const char *p, *o;
+
+	*rest = NULL;
+	if (a[0] != '-' || a[1] == '-' || a[1] == '\0')
+		return (0);
+	for (p = a + 1; *p != '\0'; p++) {
+		if ((o = strchr(HONEYD_OPTSTRING, *p)) == NULL || o[1] != ':')
+			continue;
+		if (p[1] != '\0')
+			*rest = p + 1;
+		return (*p);
+	}
+	return (0);
+}
+
+/*
+ * Copies argv[i] to out, masking the password field of a -c
+ * host:port:name:password value given as "-c VALUE", "-cVALUE" or in a
+ * cluster such as "-dc VALUE".
+ */
+static void
+honeyd_redact_arg(char *argv[], int i, char *out, size_t len)
+{
+	const char *cval = NULL, *rest, *p;
+	int opt, n;
+
+	strlcpy(out, argv[i], len);
+
+	opt = i > 1 ? honeyd_shortopt_value(argv[i - 1], &rest) : 0;
+	if (opt != 0 && rest == NULL) {
+		/* argv[i] is the value of the previous option */
+		if (opt == 'c')
+			cval = argv[i];
+	} else if (honeyd_shortopt_value(argv[i], &rest) == 'c')
+		cval = rest;
+	if (cval == NULL)
+		return;
+
+	/* Keep host:port:name: and mask the rest */
+	for (p = cval, n = 0; *p != '\0'; p++)
+		if (*p == ':' && ++n == 3)
+			break;
+	if (n == 3 && p[1] != '\0') {
+		size_t keep = (p + 1) - argv[i];
+
+		if (keep < len)
+			out[keep] = '\0';
+		strlcat(out, "*****", len);
+	}
+}
+
 static void
 syslog_init(int argc, char *argv[])
 {
@@ -407,9 +567,13 @@ syslog_init(int argc, char *argv[])
 
 	buf[0] = '\0';
 	for (i = 1; i < argc; i++) {
+		char arg[MAXPATHLEN];
+
 		if (i > 1 && strlcat(buf, " ", sizeof(buf)) >= sizeof(buf))
 			break;
-		if (strlcat(buf, argv[i], sizeof(buf)) >= sizeof(buf))
+		/* Never log a stats password given with -c */
+		honeyd_redact_arg(argv, i, arg, sizeof(arg));
+		if (strlcat(buf, arg, sizeof(buf)) >= sizeof(buf))
 			break;
 	}
 
@@ -3958,6 +4122,7 @@ pm_daemon_main(int argc, char *argv[])
 	u_short stats_port = 0;
 	char *stats_username = NULL;
 	char *stats_password = NULL;
+	const char *stats_password_file = NULL;
 	int want_unittest = 0;
 	int setrand = 0;
 	int i, c, orig_argc, ninterfaces = 0;
@@ -3993,7 +4158,7 @@ pm_daemon_main(int argc, char *argv[])
 	orig_argc = argc;
 	orig_argv = argv;
 	syslog_init(orig_argc, orig_argv);
-	while ((c = getopt_long(argc, argv, "VPTdc:i:p:x:a:u:g:f:t:l:s:0:R:m:h?",
+	while ((c = getopt_long(argc, argv, HONEYD_OPTSTRING,
 				honeyd_long_opts, NULL)) != -1) {
 		char *ep;
 		switch (c) {
@@ -4038,8 +4203,8 @@ pm_daemon_main(int argc, char *argv[])
 				usage();
 			if ((name = strsep(&p, ":")) == NULL)
 				usage();
-			if ((password = strsep(&p, ":")) == NULL)
-				usage();
+			/* The password field is optional */
+			password = strsep(&p, ":");
 			if (p != NULL && *p != '\0')
 				usage();
 
@@ -4055,8 +4220,16 @@ pm_daemon_main(int argc, char *argv[])
 			}
 
 			stats_username = strdup(name);
-			stats_password = strdup(password);
+			if (password != NULL) {
+				fprintf(stderr, "Warning: a password in -c is "
+				    "deprecated, it is visible to other users; "
+				    "use --stats-password-file\n");
+				stats_password = strdup(password);
+			}
 		}
+			break;
+		case 'K':
+			stats_password_file = optarg;
 			break;
 		case 'u':
 			honeyd_uid = strtoul(optarg, &ep, 10);
@@ -4163,6 +4336,26 @@ pm_daemon_main(int argc, char *argv[])
 			usage();
 			break;
 		}
+	}
+
+	if (stats_password_file != NULL) {
+		if (stats_username == NULL) {
+			fprintf(stderr, "--stats-password-file needs -c "
+			    "host:port:name\n");
+			exit(EXIT_FAILURE);
+		}
+		if (stats_password != NULL) {
+			fprintf(stderr, "use either a password in -c or "
+			    "--stats-password-file, not both\n");
+			exit(EXIT_FAILURE);
+		}
+		if ((stats_password =
+			honeyd_read_secret_file(stats_password_file)) == NULL)
+			exit(EXIT_FAILURE);
+	} else if (stats_username != NULL && stats_password == NULL) {
+		fprintf(stderr, "-c needs a password: use "
+		    "--stats-password-file\n");
+		exit(EXIT_FAILURE);
 	}
 
 	if (honeyd_show_version) {
