@@ -32,10 +32,10 @@ jobs:
       image: debian:13
     env:
       # The run.sh defaults, spelled out. LSan is on unless a test turns
-      # it off itself; tests/security/lsan.supp covers the start up loaders.
+      # it off itself. There is no leak suppressions file, so LSAN_OPTIONS
+      # is left unset and every leak is reported with its stack trace.
       ASAN_OPTIONS: detect_leaks=1
       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
-      LSAN_OPTIONS: suppressions=tests/security/lsan.supp:print_suppressions=0
     steps:
       - uses: actions/checkout@v4
 
@@ -67,7 +67,6 @@ jobs:
           set -o pipefail
           runuser -u builder -- env CC=clang \
             ASAN_OPTIONS="$ASAN_OPTIONS" UBSAN_OPTIONS="$UBSAN_OPTIONS" \
-            LSAN_OPTIONS="suppressions=$PWD/tests/security/lsan.supp:print_suppressions=0" \
             sh -c 'id -u && sh tests/security/run.sh' 2>&1 | tee security.log
           if grep -q '^FAIL' security.log; then exit 1; fi
           n=$(grep -c '^PASS' security.log || true)
