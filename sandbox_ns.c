@@ -185,8 +185,12 @@ ns_run(struct ns_req *req, char *strs, int fd_io, int fd_err, int have_ns)
 			    execcmd);
 			_exit(EXIT_FAILURE);
 		}
-		sethostname("phantom-mirage-script",
-		    strlen("phantom-mirage-script"));
+		if (sethostname("phantom-mirage-script",
+		    strlen("phantom-mirage-script")) == -1) {
+			syslog(LOG_ERR, "sandbox: hostname for %s: %m",
+			    execcmd);
+			_exit(EXIT_FAILURE);
+		}
 		sandbox_script_private_tmp = 1;
 
 		/* the script becomes pid 1 of the new PID namespace */

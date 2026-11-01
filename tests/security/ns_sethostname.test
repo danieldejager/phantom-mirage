@@ -1,0 +1,3 @@
+# PM-SCR-242: unchecked sethostname in ns_run (sandbox_ns.c)
+cc_san ns_sethostname tests/security/ns_sethostname.c
+run_clean ns_sethostname
