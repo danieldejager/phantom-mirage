@@ -7,6 +7,10 @@
  * PM-SCR-214, xprobe_assoc.c parse_associations: an association whose
  * key was already loaded was neither inserted nor freed (CWE-401).
  *
+ * PM-SCR-231, personality.c parse_option: a fingerprint test line that
+ * repeats its O= field allocated a second options array over the first
+ * one (CWE-401).
+ *
  * Each case loads a small file with the same entry twice and exits; the
  * test runs LeakSanitizer with no suppressions.
  */
@@ -48,6 +52,13 @@ static const char fingerprint[] =
 	"IE(DFI=S%T=FA-104%TG=FF%CD=S)\n"
 	"\n";
 
+/* T2 repeats O=; the second value wins */
+static const char dupfield[] =
+	"Fingerprint Dup Field OS\n"
+	"Class Test | embedded || test\n"
+	"T2(R=Y%DF=Y%W=0%O=WANM109T10S%S=Z%A=S%F=AR%O=M5B4NNS%RD=0%Q=)\n"
+	"\n";
+
 static FILE *
 twice(const char *text)
 {
@@ -85,6 +96,34 @@ main(int argc, char **argv)
 		}
 		fclose(fp);
 		printf("ok: duplicate fingerprint loaded\n");
+		return (0);
+	}
+	if (strcmp(t, "dupfield") == 0) {
+		struct personality *pers;
+
+		personality_init();
+		xprobe_personality_init();
+		associations_init();
+		if ((fp = tmpfile()) == NULL)
+			abort();
+		fputs(dupfield, fp);
+		rewind(fp);
+		if (personality_parse(fp) == -1 ||
+		    (pers = personality_find("Dup Field OS")) == NULL) {
+			printf("FAIL: fingerprint not loaded\n");
+			return (1);
+		}
+		fclose(fp);
+		printf("T2 options: %u, first %c\n",
+		    pers->t_tests[1].options.count,
+		    pers->t_tests[1].options.count ?
+		    pers->t_tests[1].options.options[0].opt_type : '-');
+		if (pers->t_tests[1].options.count != 4 ||
+		    pers->t_tests[1].options.options[0].opt_type != 'M') {
+			printf("FAIL: the last O= value is not the one kept\n");
+			return (1);
+		}
+		printf("ok: repeated field loaded\n");
 		return (0);
 	}
 	if (strcmp(t, "assoc") == 0) {

@@ -1959,6 +1959,9 @@ parse_option(struct tcp_options *options, char *line)
 	//Allocate memory for the Options array
 	uint numOptions = CountCharsInString(line, "LNSMWT");
 	uint dataSize = sizeof(struct tcp_option) * numOptions;
+	/* A field repeated within one test line: the last value wins and
+	 * the earlier array is freed (PM-SCR-231, CWE-401) */
+	free(options->options);
 	options->options = (struct tcp_option *)malloc(dataSize);
 	options->count = numOptions;
 

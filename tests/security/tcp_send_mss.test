@@ -1,9 +1,7 @@
 # honeyd.c tcp_send: unchecked, leaked MSS option malloc
 # (CWE-476/CWE-252, CWE-401)
 cc_daemon tcp_send_mss tests/security/tcp_send_mss.c -Wl,--wrap=malloc
-# Leak checks stay on; only the never freed daemon configuration is
-# suppressed, so a leaked option is reported
-LSAN_OPTIONS=suppressions=$T/arp_cap.supp:print_suppressions=0
-export LSAN_OPTIONS
+# Leak checks stay on with no suppressions, so
+# a leaked option is reported
 run_clean tcp_send_mss leak
 run_clean tcp_send_mss fail
