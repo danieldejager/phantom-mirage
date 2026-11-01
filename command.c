@@ -108,7 +108,10 @@ cmd_trigger_write(struct command *cmd, int size)
  * the live script processes (default HONEYD_MAX_SCRIPT_PROCS) and
  * "option honeyd max_script_procs_per_source N" caps those started for
  * one source address (default HONEYD_MAX_SCRIPT_PROCS_SOURCE); 0 means
- * no limit. The entry remembers the command that owns the child, and
+ * no limit. UDP scripts may hold at most half of max_script_procs
+ * (rounded up), so a sender that spoofs many UDP source addresses
+ * cannot take every slot: TCP needs a completed handshake and keeps the
+ * rest (PM-SCR-221, CWE-770). The entry remembers the command that owns the child, and
  * cmd_free() only signals a pid that is still in the map for that same
  * command, so a reaped (and possibly reused) pid is never signalled.
  */
@@ -116,6 +119,7 @@ struct scriptproc {
 	SPLAY_ENTRY(scriptproc) node;
 	pid_t pid;
 	ip_addr_t src;
+	int udp;		/* started for a UDP flow */
 	struct command *cmd;	/* NULL once cmd_free() let go of it */
 };
 
@@ -147,6 +151,7 @@ SPLAY_PROTOTYPE(scriptsrctree, scriptsrc, node, scriptsrc_compare);
 SPLAY_GENERATE(scriptsrctree, scriptsrc, node, scriptsrc_compare);
 
 static uint32_t script_nprocs;
+static uint32_t script_nudp;	/* of those, started for UDP flows */
 uint32_t cmd_script_refused;	/* flows refused at the cap, ever */
 
 static struct scriptsrc *
@@ -183,9 +188,16 @@ cmd_script_source_procs(ip_addr_t addr)
 	return (ss != NULL ? ss->nprocs : 0);
 }
 
+/* Live script processes started for UDP flows */
+uint32_t
+cmd_script_udp_procs(void)
+{
+	return (script_nudp);
+}
+
 /* True if a new script process for this source must be refused */
 static int
-cmd_script_full(ip_addr_t src)
+cmd_script_full(ip_addr_t src, int udp)
 {
 	uint32_t max;
 
@@ -193,11 +205,21 @@ cmd_script_full(ip_addr_t src)
 	    HONEYD_MAX_SCRIPT_PROCS);
 	if (max != 0 && script_nprocs >= max)
 		return (1);
+	/* UDP share: half of the global cap, rounded up */
+	if (max != 0 && udp && script_nudp >= max - max / 2)
+		return (1);
 	max = honeyd_limit_option("max_script_procs_per_source",
 	    HONEYD_MAX_SCRIPT_PROCS_SOURCE);
 	if (max != 0 && cmd_script_source_procs(src) >= max)
 		return (1);
 	return (0);
+}
+
+/* True if a script for this flow would not be refused at the cap */
+int
+cmd_script_room(struct tuple *hdr)
+{
+	return (!cmd_script_full(hdr->ip_src, hdr->type == SOCK_DGRAM));
 }
 
 /* At most one log line per second, with the count since the last one */
@@ -230,6 +252,8 @@ cmd_script_reaped(pid_t pid)
 		return;
 	SPLAY_REMOVE(scriptproctree, &scriptprocs, sp);
 	script_nprocs--;
+	if (sp->udp)
+		script_nudp--;
 	if ((ss = scriptsrc_find(sp->src)) != NULL && --ss->nprocs == 0) {
 		SPLAY_REMOVE(scriptsrctree, &scriptsrcs, ss);
 		free(ss);
@@ -593,7 +617,7 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 	 * unlike SOCK_DGRAM, gives the script EOF when the flow ends */
 	int type = hdr->type == SOCK_DGRAM ? SOCK_SEQPACKET : hdr->type;
 
-	if (cmd_script_full(hdr->ip_src)) {
+	if (cmd_script_full(hdr->ip_src, hdr->type == SOCK_DGRAM)) {
 		cmd_script_refuse(hdr);
 		cmd->pfd = -1;
 		return (CMD_FORK_CAP);
@@ -684,9 +708,12 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 	setpgid(cmd->pid, cmd->pid);
 	sp->pid = cmd->pid;
 	sp->src = hdr->ip_src;
+	sp->udp = hdr->type == SOCK_DGRAM;
 	sp->cmd = cmd;
 	SPLAY_INSERT(scriptproctree, &scriptprocs, sp);
 	script_nprocs++;
+	if (sp->udp)
+		script_nudp++;
 
 	TRACE_RESET(pair[1], close(pair[1]));
 	TRACE(pair[0], cmd->pfd = pair[0]);

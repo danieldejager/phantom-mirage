@@ -341,6 +341,12 @@ caps the script processes alive at one time, counted from fork until
 the process is reaped, and
 .Va max_script_procs_per_source
 caps those started for flows from one source address.
+Scripts for UDP flows may hold at most half of
+.Va max_script_procs ,
+rounded up, so that UDP from spoofed source addresses cannot take the
+slots that TCP scripts need.
+A UDP flow refused at a cap starts its script on a later datagram once
+there is room; datagrams that arrive while it is refused are dropped.
 At either cap no script is started: a TCP connection is reset and UDP
 data is dropped without an ICMP error, and one log line per second
 reports how many flows were refused.
