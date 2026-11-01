@@ -45,24 +45,21 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             build-essential autoconf automake libtool bison flex pkg-config \
             libpcap-dev libevent-dev libdumbnet-dev zlib1g-dev libedit-dev \
-            python3-dev clang libclang-rt-19-dev
+            clang libclang-rt-19-dev
           clang --version | head -1
 
       - name: Create a non root user (uid 1000)
-        # Some tests skip or test differently as root (droppriv_perms,
-        # stats_secret_file), so the suite runs as an ordinary user.
+        # Some tests skip or test differently as root (stats_secret_file,
+        # and droppriv_perms when built with Python), so the suite runs as an ordinary user.
         run: |
           useradd -m -u 1000 -s /bin/sh builder
           chown -R builder:builder "$GITHUB_WORKSPACE"
 
       - name: Configure
-        run: |
-          runuser -u builder -- sh -c './autogen.sh && ./configure --with-python'
-          grep -q '^#define HAVE_PYTHON 1' config.h
-          # With Python the daemon link line names the pyextend objects,
-          # so every harness needs them (droppriv_perms.test builds them
-          # too, but only when its turn comes).
-          runuser -u builder -- make -s pyextend.o pydataprocessing.o pydatahoneyd.o
+        # Default configure (no Python), as the local runs use. With
+        # --with-python the harnesses that do not link the whole daemon
+        # fail to link, so droppriv_perms (which needs Python) skips here.
+        run: runuser -u builder -- sh -c './autogen.sh && ./configure'
 
       - name: tests/security/run.sh
         shell: bash
