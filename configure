@@ -653,6 +653,10 @@ ac_func_c_list=
 ac_subst_vars='am__EXEEXT_FALSE
 am__EXEEXT_TRUE
 LTLIBOBJS
+HARDEN_PIE_LDFLAGS
+HARDEN_LDFLAGS
+HARDEN_PIE_CFLAGS
+HARDEN_CFLAGS
 PLUGINSDECLARE
 PLUGINS
 PLUGINLIB
@@ -17754,6 +17758,263 @@ fi
 
 
 CFLAGS="$user_CFLAGS"
+
+
+
+
+HARDEN_CFLAGS=""
+HARDEN_PIE_CFLAGS=""
+HARDEN_LDFLAGS=""
+HARDEN_PIE_LDFLAGS=""
+
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether $CC accepts -fstack-protector-strong" >&5
+printf %s "checking whether $CC accepts -fstack-protector-strong... " >&6; }
+  pm_save_CFLAGS="$CFLAGS"
+  CFLAGS="$CFLAGS -Werror -fstack-protector-strong"
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <stdio.h>
+int
+main (void)
+{
+char b[16]; snprintf(b, sizeof(b), "%s", "x"); puts(b);
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"
+then :
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+printf "%s\n" "yes" >&6; }; HARDEN_CFLAGS="$HARDEN_CFLAGS -fstack-protector-strong"
+else case e in #(
+  e) { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+printf "%s\n" "no" >&6; } ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
+  CFLAGS="$pm_save_CFLAGS"
+
+
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether $CC accepts -Wformat -Werror=format-security" >&5
+printf %s "checking whether $CC accepts -Wformat -Werror=format-security... " >&6; }
+  pm_save_CFLAGS="$CFLAGS"
+  CFLAGS="$CFLAGS -Werror -Wformat -Werror=format-security"
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <stdio.h>
+int
+main (void)
+{
+char b[16]; snprintf(b, sizeof(b), "%s", "x"); puts(b);
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"
+then :
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+printf "%s\n" "yes" >&6; }; HARDEN_CFLAGS="$HARDEN_CFLAGS -Wformat -Werror=format-security"
+else case e in #(
+  e) { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+printf "%s\n" "no" >&6; } ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
+  CFLAGS="$pm_save_CFLAGS"
+
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether to add -D_FORTIFY_SOURCE=2" >&5
+printf %s "checking whether to add -D_FORTIFY_SOURCE=2... " >&6; }
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+#ifndef __OPTIMIZE__
+#error not optimised
+#endif
+#include <stdio.h>
+#ifdef _FORTIFY_SOURCE
+#error already set
+#endif
+
+int
+main (void)
+{
+
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"
+then :
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+printf "%s\n" "yes" >&6; }; HARDEN_CFLAGS="$HARDEN_CFLAGS -D_FORTIFY_SOURCE=2"
+else case e in #(
+  e) { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no, not optimised or already set" >&5
+printf "%s\n" "no, not optimised or already set" >&6; } ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
+
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether $CC accepts -fPIE" >&5
+printf %s "checking whether $CC accepts -fPIE... " >&6; }
+  pm_save_CFLAGS="$CFLAGS"
+  CFLAGS="$CFLAGS -Werror -fPIE"
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <stdio.h>
+int
+main (void)
+{
+char b[16]; snprintf(b, sizeof(b), "%s", "x"); puts(b);
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"
+then :
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+printf "%s\n" "yes" >&6; }; HARDEN_PIE_CFLAGS="$HARDEN_PIE_CFLAGS -fPIE"
+else case e in #(
+  e) { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+printf "%s\n" "no" >&6; } ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
+  CFLAGS="$pm_save_CFLAGS"
+
+if test x"$HARDEN_PIE_CFLAGS" != x; then
+
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether the linker accepts -pie" >&5
+printf %s "checking whether the linker accepts -pie... " >&6; }
+  pm_save_CFLAGS="$CFLAGS"
+  pm_save_LDFLAGS="$LDFLAGS"
+  CFLAGS="$CFLAGS -Werror -fPIE"
+  LDFLAGS="$LDFLAGS -pie"
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <stdio.h>
+int
+main (void)
+{
+char b[16]; snprintf(b, sizeof(b), "%s", "x"); puts(b);
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+printf "%s\n" "yes" >&6; }; HARDEN_PIE_LDFLAGS="$HARDEN_PIE_LDFLAGS -pie"
+else case e in #(
+  e) { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+printf "%s\n" "no" >&6; } ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+  CFLAGS="$pm_save_CFLAGS"
+  LDFLAGS="$pm_save_LDFLAGS"
+
+fi
+
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether the linker accepts -Wl,-z,relro" >&5
+printf %s "checking whether the linker accepts -Wl,-z,relro... " >&6; }
+  pm_save_CFLAGS="$CFLAGS"
+  pm_save_LDFLAGS="$LDFLAGS"
+  CFLAGS="$CFLAGS -Werror "
+  LDFLAGS="$LDFLAGS -Wl,-z,relro"
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <stdio.h>
+int
+main (void)
+{
+char b[16]; snprintf(b, sizeof(b), "%s", "x"); puts(b);
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+printf "%s\n" "yes" >&6; }; HARDEN_LDFLAGS="$HARDEN_LDFLAGS -Wl,-z,relro"
+else case e in #(
+  e) { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+printf "%s\n" "no" >&6; } ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+  CFLAGS="$pm_save_CFLAGS"
+  LDFLAGS="$pm_save_LDFLAGS"
+
+
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether the linker accepts -Wl,-z,now" >&5
+printf %s "checking whether the linker accepts -Wl,-z,now... " >&6; }
+  pm_save_CFLAGS="$CFLAGS"
+  pm_save_LDFLAGS="$LDFLAGS"
+  CFLAGS="$CFLAGS -Werror "
+  LDFLAGS="$LDFLAGS -Wl,-z,now"
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <stdio.h>
+int
+main (void)
+{
+char b[16]; snprintf(b, sizeof(b), "%s", "x"); puts(b);
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+printf "%s\n" "yes" >&6; }; HARDEN_LDFLAGS="$HARDEN_LDFLAGS -Wl,-z,now"
+else case e in #(
+  e) { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+printf "%s\n" "no" >&6; } ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+  CFLAGS="$pm_save_CFLAGS"
+  LDFLAGS="$pm_save_LDFLAGS"
+
+
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether the linker accepts -Wl,-z,noexecstack" >&5
+printf %s "checking whether the linker accepts -Wl,-z,noexecstack... " >&6; }
+  pm_save_CFLAGS="$CFLAGS"
+  pm_save_LDFLAGS="$LDFLAGS"
+  CFLAGS="$CFLAGS -Werror "
+  LDFLAGS="$LDFLAGS -Wl,-z,noexecstack"
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <stdio.h>
+int
+main (void)
+{
+char b[16]; snprintf(b, sizeof(b), "%s", "x"); puts(b);
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+printf "%s\n" "yes" >&6; }; HARDEN_LDFLAGS="$HARDEN_LDFLAGS -Wl,-z,noexecstack"
+else case e in #(
+  e) { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+printf "%s\n" "no" >&6; } ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+  CFLAGS="$pm_save_CFLAGS"
+  LDFLAGS="$pm_save_LDFLAGS"
+
+
+
+
+
 
 ac_config_files="$ac_config_files Makefile regress/Makefile"
 

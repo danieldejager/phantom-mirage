@@ -1,0 +1,62 @@
+# PM-SCR-022, R4-2 and R4-3: the installed programs are built hardened.
+# Builds the programs and the preload library with the configured flags
+# and checks each ELF file with readelf and nm:
+#   programs: ELF type DYN with the PIE flag, GNU_RELRO, BIND_NOW, a non
+#   executable GNU_STACK, __stack_chk_fail and at least one __*_chk
+#   (FORTIFY) import.
+#   libphantom-mirage.so: a shared object without the PIE flag (it must
+#   never be linked with -pie), GNU_RELRO, BIND_NOW, non executable stack.
+# smtp and proxy are only built when configure finds libpcre; when they
+# are not configured they are reported as not checked, not passed.
+# Needs an ELF toolchain with readelf and nm.
+for tool in readelf nm; do
+	command -v $tool >/dev/null 2>&1 || {
+		echo "hardening_check: $tool missing, nothing checked" >&2
+		return 1
+	}
+done
+hc_var() { make -s -f Makefile -f - v <<MK
+v: ; @echo \$($1)
+MK
+}
+progs="phantom-mirage phantom-mirage-ctl phantom-mirage-stats phantom-mirage-sniff"
+extra="$(hc_var SMTP_BIN) $(hc_var PROXY_BIN)"
+for p in smtp proxy; do
+	case " $extra " in
+	*" $p "*) progs="$progs $p" ;;
+	*) echo "hardening_check: $p not configured (no libpcre), not checked" >&2 ;;
+	esac
+done
+# shellcheck disable=SC2086
+make -s $progs libphantom-mirage.so >"$OUT/hardening_build.log" 2>&1 || {
+	tail -20 "$OUT/hardening_build.log" >&2
+	return 1
+}
+hc_common() {
+	b=$1 h=$2
+	echo "$h" | grep -q 'Type: *DYN' || { echo "$b: not DYN" >&2; return 1; }
+	echo "$h" | grep -q 'GNU_RELRO' || { echo "$b: no GNU_RELRO" >&2; return 1; }
+	echo "$h" | grep -Eq '\(FLAGS\).*BIND_NOW|\(FLAGS_1\).*NOW' ||
+	    { echo "$b: no BIND_NOW" >&2; return 1; }
+	st=$(echo "$h" | grep 'GNU_STACK' || true)
+	[ -n "$st" ] || { echo "$b: no GNU_STACK header" >&2; return 1; }
+	echo "$st" | grep -Eq 'RWE|  *E  ' &&
+	    { echo "$b: executable stack: $st" >&2; return 1; }
+	return 0
+}
+rc=0
+for b in $progs; do
+	h=$(readelf -h -d -l -W "$b")
+	hc_common "$b" "$h" || { rc=1; continue; }
+	echo "$h" | grep -Eq '\(FLAGS_1\).*PIE' || { echo "$b: no PIE flag" >&2; rc=1; }
+	syms=$(nm -D "$b")
+	echo "$syms" | grep -q '__stack_chk_fail' ||
+	    { echo "$b: no __stack_chk_fail import" >&2; rc=1; }
+	echo "$syms" | grep -Eq ' U __[a-z0-9_]+_chk(@|$)' ||
+	    { echo "$b: no FORTIFY __*_chk import" >&2; rc=1; }
+done
+b=libphantom-mirage.so
+h=$(readelf -h -d -l -W "$b")
+hc_common "$b" "$h" || rc=1
+echo "$h" | grep -Eq '\(FLAGS_1\).*PIE' && { echo "$b: linked as PIE" >&2; rc=1; }
+[ $rc -eq 0 ]

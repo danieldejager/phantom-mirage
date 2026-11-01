@@ -29,16 +29,25 @@ AUTOMAKE_OPTIONS = foreign no-dependencies
 LIBHONEYDFILES= libhoneyd-honeyd_overload.lo libhoneyd-atomicio.lo \
 		libhoneyd-fdpass.lo
 
+## The preload library is a plain shared object: it gets the hardening
+## flags but not the PIE ones (libtool adds -fPIC, and -pie must never
+## reach a shared library link).
+LIBHONEYD_CFLAGS = -Wall $(HARDEN_CFLAGS)
+LIBHONEYD_COMPILE = $(LIBTOOL) --tag=CC --mode=compile $(CC) $(DEFS) \
+	$(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) \
+	$(LIBHONEYD_CFLAGS) $(CFLAGS)
+
 libhoneyd-honeyd_overload.lo: honeyd_overload.c config.h
-	$(LTCOMPILE) -c -o $@ $(srcdir)/honeyd_overload.c
+	$(LIBHONEYD_COMPILE) -c -o $@ $(srcdir)/honeyd_overload.c
 libhoneyd-atomicio.lo: atomicio.c atomicio.h config.h
-	$(LTCOMPILE) -c -o $@ $(srcdir)/atomicio.c
+	$(LIBHONEYD_COMPILE) -c -o $@ $(srcdir)/atomicio.c
 libhoneyd-fdpass.lo: fdpass.c fdpass.h config.h
-	$(LTCOMPILE) -c -o $@ $(srcdir)/fdpass.c
+	$(LIBHONEYD_COMPILE) -c -o $@ $(srcdir)/fdpass.c
 
 libphantom-mirage.so: $(LIBHONEYDFILES)
-	$(LIBTOOL) --mode=link $(CC) $(CFLAGS) -o libtmp$@.la \
-		-rpath $(libdir)/phantom-mirage $(LIBHONEYDFILES) $(LIBS) $(LDFLAGS) \
+	$(LIBTOOL) --mode=link $(CC) $(LIBHONEYD_CFLAGS) $(CFLAGS) -o libtmp$@.la \
+		-rpath $(libdir)/phantom-mirage $(LIBHONEYDFILES) $(LIBS) \
+		$(HARDEN_LDFLAGS) $(LDFLAGS) \
 		-module -avoid-version -nostdlib @LIBDL@
 	rm -f libtmp$@.la tmp$@.so* $@
 	cp .libs/libtmp$@.so $@ || cp .libs/libtmp$@ $@
@@ -99,7 +108,7 @@ phantom_mirage_LDADD = @PYEXTEND@ @LIBOBJS@ @PYTHONLIB@ @EVENTLIB@ @PCAPLIB@ \
 	@DNETLIB@ @ZLIB@ @PLUGINLIB@ -lm
 
 # Allow plugins to use honeyd's functions:
-phantom_mirage_LDFLAGS = -export-dynamic 
+phantom_mirage_LDFLAGS = $(AM_LDFLAGS) -export-dynamic
 
 # Honeyd stats collector
 #
@@ -139,7 +148,9 @@ AM_CPPFLAGS = \
 	-DHONEYD_PLUGINS="$(honeydplugins)" \
 	-DPATH_RRDTOOL="\"$(PATH_RRDTOOL)\"" \
 	-D_GNU_SOURCE
-AM_CFLAGS = -Wall
+# Hardening flags from configure (R4-2, R4-3); the programs are PIE.
+AM_CFLAGS = -Wall $(HARDEN_CFLAGS) $(HARDEN_PIE_CFLAGS)
+AM_LDFLAGS = $(HARDEN_LDFLAGS) $(HARDEN_PIE_LDFLAGS)
 
 INCLUDES = -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
 	@PYTHONINC@ @EVENTINC@ @PCAPINC@ @DNETINC@ @ZINC@
