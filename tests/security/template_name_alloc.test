@@ -2,8 +2,6 @@
 # name and the origin (CWE-476/CWE-252)
 cc_daemon template_name_alloc tests/security/template_name_alloc.c \
     -Wl,--wrap=strdup
-# Leak checks stay on; only the never freed daemon configuration is
-# suppressed, so a leaked template is reported
-LSAN_OPTIONS=suppressions=$T/bcast_timer.supp:print_suppressions=0
-export LSAN_OPTIONS
+# Leak checks stay on with no suppressions, so
+# a leaked template is reported
 run_clean template_name_alloc
