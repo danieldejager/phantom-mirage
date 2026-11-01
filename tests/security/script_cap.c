@@ -24,6 +24,8 @@
  *  disabled    0 disables both caps
  *  udpshare    PM-SCR-221: spoofed UDP sources fill only the UDP share
  *              (half of max_script_procs); TCP scripts still start
+ *  tcpshare    PM-SCR-234: many real TCP sources fill only the TCP
+ *              share; UDP scripts still start
  *  udpretry    PM-SCR-222: a UDP flow refused at the cap starts its
  *              script on a later datagram once a slot is free
  */
@@ -575,6 +577,30 @@ t_udpshare(void)
 }
 
 static void
+t_tcpshare(void)
+{
+	int i, udp;
+
+	option("option honeyd max_script_procs 8\n");
+	option("option honeyd max_script_procs_per_source 0\n");
+	sent_rst = 0;
+	for (i = 0; i < 20; i++)
+		tcp_open(0x0c000001 + i, 5000, 80);
+	printf("20 TCP sources, cap 8: %d live scripts, %d RST\n",
+	    honeyd_nchildren, sent_rst);
+	check(honeyd_nchildren == 4 && sent_rst == 16,
+	    "TCP scripts stop at half the cap");
+	for (i = 0; i < 4; i++)
+		udp_pkt(0x0b000001 + i, 4000, 53);
+	udp = cmd_script_udp_procs != NULL ? cmd_script_udp_procs() : 0;
+	printf("UDP flows: %u of 4 started\n", udp);
+	check(udp == 4 && honeyd_nchildren == 8,
+	    "UDP scripts still start while TCP holds its share");
+	udp_pkt(0x0b000009, 4000, 53);
+	check(honeyd_nchildren == 8, "UDP at the full cap gets no script");
+}
+
+static void
 t_udpretry(void)
 {
 	struct tuple *a, *b;
@@ -621,7 +647,8 @@ static const struct {
 	{ "reaped", t_reaped }, { "nchildren", t_nchildren },
 	{ "sigchld", t_sigchld }, { "seqpacket", t_seqpacket },
 	{ "udpdrop", t_udpdrop }, { "disabled", t_disabled },
-	{ "udpshare", t_udpshare }, { "udpretry", t_udpretry },
+	{ "udpshare", t_udpshare }, { "tcpshare", t_tcpshare },
+	{ "udpretry", t_udpretry },
 };
 
 int
