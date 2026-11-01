@@ -11,6 +11,10 @@ AM_MAINTAINER_MODE
 
 AM_PROG_LIBTOOL
 
+dnl The checks below reuse CFLAGS as scratch space; keep the user value
+dnl (or the -g -O2 default from AC_PROG_CC) and restore it for the build.
+user_CFLAGS="$CFLAGS"
+
 AH_TEMPLATE([HAVE_STRUCT_SOCKADDR_STORAGE], [Define if your system defines struct sockaddr_storage])
 AH_TEMPLATE([HAVE_ACCRIGHTS_IN_MSGHDR], [Define if your system uses access rights style file descriptor passing])
 AH_TEMPLATE([HAVE_CONTROL_IN_MSGHDR], [Define if your system uses ancillary data style file descriptor passing])
@@ -792,6 +796,8 @@ libraries called libhum and libbee, you would use --with-plugins=hum,bee.],
 AC_SUBST(PLUGINLIB)
 AC_SUBST(PLUGINS)
 AC_SUBST(PLUGINSDECLARE)
+
+CFLAGS="$user_CFLAGS"
 
 AC_CONFIG_FILES([Makefile regress/Makefile])
 AC_OUTPUT
