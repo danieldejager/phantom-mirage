@@ -3054,11 +3054,20 @@ udp_send(struct udp_con *con, u_char *payload, u_int len)
 	int dontfragment = 0;
 	struct spoof spoof;
 	struct template *tmpl = con->tmpl;
+	uint8_t ttl = honeyd_ttl;
 
 	/* Statistics */
 	con->conhdr.sent += len;
 
 	ip_personality(tmpl, &id, TCP_CLOSED);
+
+	/*
+	 * A flow may have no template, and a template may have no
+	 * personality: use the default TTL then, as the TCP and ICMP reply
+	 * paths do (CWE-476).
+	 */
+	if (tmpl != NULL && tmpl->person != NULL)
+		ttl = tmpl->person->udptest.ttl;
 
 	pkt = pool_alloc(pool_pkt);
 
@@ -3069,7 +3078,7 @@ udp_send(struct udp_con *con, u_char *payload, u_int len)
 
 	/* Src and Dst are reversed both for ip and tcp */
 	ip_pack_hdr(pkt, 0, iplen, id,
-	    dontfragment ? IP_DF : 0, tmpl->person->udptest.ttl,
+	    dontfragment ? IP_DF : 0, ttl,
 	    IP_PROTO_UDP, con->con_ipdst, con->con_ipsrc);
 
 	memcpy(pkt + IP_HDR_LEN + UDP_HDR_LEN, payload, len);

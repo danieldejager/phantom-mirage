@@ -344,7 +344,12 @@ caps those started for flows from one source address.
 At either cap no script is started: a TCP connection is reset and UDP
 data is dropped without an ICMP error, and one log line per second
 reports how many flows were refused.
-A value of 0 turns that cap off; a negative value keeps the default.
+A value of 0 turns that cap off.
+Negative values are not accepted: the configuration reads only unsigned
+numbers, so a line such as
+.Dq option honeyd max_script_procs -1
+is a syntax error and the daemon does not start.
+To keep the default, leave the option out.
 Size
 .Va max_script_procs
 as the memory to spare divided by the memory of the heaviest script
