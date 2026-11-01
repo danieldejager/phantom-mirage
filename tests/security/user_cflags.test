@@ -1,0 +1,31 @@
+# PM-SCR-022: the user's CFLAGS reach every compile line. The Makefile
+# must not force its own optimisation flags, and the path defines must
+# survive a CFLAGS given on the make command line. Dry run only: make -n
+# -W SOURCE prints the compile command for the first object of each of
+# the six programs without building anything. (-W, not -B: -B would
+# also remake the Makefile and rerun configure with the probe CFLAGS.)
+first_src_obj() { make -s -f Makefile -f - o <<MK
+o: ; @echo \$(firstword \$($1_SOURCES)) \$(firstword \$(am_$1_OBJECTS))
+MK
+}
+rc=0
+for p in phantom_mirage phantom_mirage_ctl phantom_mirage_stats \
+    phantom_mirage_sniff smtp proxy; do
+	set -- $(first_src_obj $p)
+	src=${1:-} o=${2:-}
+	[ -n "$o" ] || { echo "$p: no objects" >&2; rc=1; continue; }
+	line=$(make -n -W "$src" V=1 CFLAGS="-O0 -DPM_CFLAGS_PROBE" "$o" 2>&1 |
+	    grep -- "-c" | grep -- "-o $o" || true)
+	case $line in
+	*-DPM_CFLAGS_PROBE*) ;;
+	*) echo "$p: user CFLAGS missing: $line" >&2; rc=1; continue ;;
+	esac
+	case $line in
+	*-O2*) echo "$p: forced -O2 with user CFLAGS: $line" >&2; rc=1 ;;
+	esac
+	case $line in
+	*-DPATH_HONEYDDATA=*) ;;
+	*) echo "$p: path defines lost with user CFLAGS" >&2; rc=1 ;;
+	esac
+done
+[ $rc -eq 0 ]

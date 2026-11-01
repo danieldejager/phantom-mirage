@@ -13813,6 +13813,8 @@ CC=$lt_save_CC
 
 
 
+user_CFLAGS="$CFLAGS"
+
 
 
 
@@ -17750,6 +17752,8 @@ fi
 
 
 
+
+CFLAGS="$user_CFLAGS"
 
 ac_config_files="$ac_config_files Makefile regress/Makefile"
 
