@@ -5,8 +5,11 @@
  *
  * sandbox_ns.c is compiled in with sethostname() replaced by a stub that
  * fails with EPERM. The rest of sandbox_ns.c's callees are stubs too:
+ * The fake sethostname() records that it was called, so a child that
+ * fails earlier (id maps, mounts, rlimits, AppArmor) fails the test, and
  * sandbox_script_root() records that ns_run() got past sethostname().
- * Needs unprivileged user namespaces; without them the test skips.
+ * Needs unprivileged user namespaces: "--probe" exits 77 without them
+ * (or with NS_SETHOSTNAME_NO_USERNS set) and the .test file skips.
  */
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -29,6 +32,7 @@ fake_sethostname(const char *name, size_t len)
 {
 	(void)name;
 	(void)len;
+	(void)!write(marker[1], "H", 1);
 	errno = EPERM;
 	return (-1);
 }
@@ -54,20 +58,25 @@ sandbox_script_root(char * const argv[])
 }
 
 int
-main(void)
+main(int argc, char **argv)
 {
 	struct { struct ns_req r; char s[32]; } req;
-	char c;
+	char c, seen[8];
 	pid_t pid;
-	int status, devnull;
+	int status, devnull, called = 0, reached = 0;
+	ssize_t n, j;
 
-	/* the same namespaces ns_run() asks for, probed in a child */
-	if ((pid = fork()) == 0)
-		_exit(unshare(CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID |
-		    CLONE_NEWIPC | CLONE_NEWUTS | CLONE_NEWNET) == 0 ? 0 : 1);
-	if (pid == -1 || waitpid(pid, &status, 0) == -1 ||
-	    !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-		printf("ns_sethostname: skipped, no user namespaces\n");
+	if (argc > 1 && strcmp(argv[1], "--probe") == 0) {
+		if (getenv("NS_SETHOSTNAME_NO_USERNS") != NULL)
+			return (77);
+		/* the same namespaces ns_run() asks for, in a child */
+		if ((pid = fork()) == 0)
+			_exit(unshare(CLONE_NEWUSER | CLONE_NEWNS |
+			    CLONE_NEWPID | CLONE_NEWIPC | CLONE_NEWUTS |
+			    CLONE_NEWNET) == 0 ? 0 : 1);
+		if (pid == -1 || waitpid(pid, &status, 0) == -1 ||
+		    !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+			return (77);
 		return (0);
 	}
 
@@ -90,7 +99,18 @@ main(void)
 	close(marker[1]);
 	while (waitpid(pid, &status, 0) == -1 && errno == EINTR)
 		;
-	if (read(marker[0], &c, 1) == 1) {
+	(void)c;
+	while ((n = read(marker[0], seen, sizeof(seen))) > 0)
+		for (j = 0; j < n; j++) {
+			called |= seen[j] == 'H';
+			reached |= seen[j] == 'R';
+		}
+	if (!called) {
+		fprintf(stderr, "FAIL: ns_run failed before sethostname "
+		    "(status %#x)\n", status);
+		return (1);
+	}
+	if (reached) {
 		fprintf(stderr, "FAIL: script set up after sethostname "
 		    "failed\n");
 		return (1);
