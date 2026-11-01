@@ -834,13 +834,16 @@ AC_DEFUN([PM_HARDEN_LD], [
 
 HARDEN_CFLAGS=""
 HARDEN_PIE_CFLAGS=""
+HARDEN_FORTIFY_CFLAGS=""
 HARDEN_LDFLAGS=""
 HARDEN_PIE_LDFLAGS=""
 PM_HARDEN_CC([-fstack-protector-strong], [HARDEN_CFLAGS])
 dnl gcc refuses -Werror=format-security without -Wformat: probe the pair
 PM_HARDEN_CC([-Wformat -Werror=format-security], [HARDEN_CFLAGS])
 dnl FORTIFY needs optimisation, and a value set by the user, the distro
-dnl compiler defaults or the CFLAGS is kept rather than redefined.
+dnl compiler defaults or the CFLAGS is kept rather than redefined. It is
+dnl kept apart because the preload library defines libc functions that
+dnl the fortified headers turn into inline wrappers (clang refuses that).
 AC_MSG_CHECKING([whether to add -D_FORTIFY_SOURCE=2])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #ifndef __OPTIMIZE__
@@ -851,7 +854,7 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #error already set
 #endif
 ]], [[]])],
-  [AC_MSG_RESULT([yes]); HARDEN_CFLAGS="$HARDEN_CFLAGS -D_FORTIFY_SOURCE=2"],
+  [AC_MSG_RESULT([yes]); HARDEN_FORTIFY_CFLAGS="-D_FORTIFY_SOURCE=2"],
   [AC_MSG_RESULT([no, not optimised or already set])])
 PM_HARDEN_CC([-fPIE], [HARDEN_PIE_CFLAGS])
 if test x"$HARDEN_PIE_CFLAGS" != x; then
@@ -862,6 +865,7 @@ PM_HARDEN_LD([-Wl,-z,now], [HARDEN_LDFLAGS])
 PM_HARDEN_LD([-Wl,-z,noexecstack], [HARDEN_LDFLAGS])
 AC_SUBST(HARDEN_CFLAGS)
 AC_SUBST(HARDEN_PIE_CFLAGS)
+AC_SUBST(HARDEN_FORTIFY_CFLAGS)
 AC_SUBST(HARDEN_LDFLAGS)
 AC_SUBST(HARDEN_PIE_LDFLAGS)
 

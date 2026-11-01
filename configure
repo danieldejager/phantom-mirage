@@ -655,6 +655,7 @@ am__EXEEXT_TRUE
 LTLIBOBJS
 HARDEN_PIE_LDFLAGS
 HARDEN_LDFLAGS
+HARDEN_FORTIFY_CFLAGS
 HARDEN_PIE_CFLAGS
 HARDEN_CFLAGS
 PLUGINSDECLARE
@@ -17764,6 +17765,7 @@ CFLAGS="$user_CFLAGS"
 
 HARDEN_CFLAGS=""
 HARDEN_PIE_CFLAGS=""
+HARDEN_FORTIFY_CFLAGS=""
 HARDEN_LDFLAGS=""
 HARDEN_PIE_LDFLAGS=""
 
@@ -17846,7 +17848,7 @@ _ACEOF
 if ac_fn_c_try_compile "$LINENO"
 then :
   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
-printf "%s\n" "yes" >&6; }; HARDEN_CFLAGS="$HARDEN_CFLAGS -D_FORTIFY_SOURCE=2"
+printf "%s\n" "yes" >&6; }; HARDEN_FORTIFY_CFLAGS="-D_FORTIFY_SOURCE=2"
 else case e in #(
   e) { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no, not optimised or already set" >&5
 printf "%s\n" "no, not optimised or already set" >&6; } ;;
@@ -18010,6 +18012,7 @@ rm -f core conftest.err conftest.$ac_objext conftest.beam \
     conftest$ac_exeext conftest.$ac_ext
   CFLAGS="$pm_save_CFLAGS"
   LDFLAGS="$pm_save_LDFLAGS"
+
 
 
 

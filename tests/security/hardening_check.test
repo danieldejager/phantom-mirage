@@ -6,6 +6,8 @@
 #   (FORTIFY) import.
 #   libphantom-mirage.so: a shared object without the PIE flag (it must
 #   never be linked with -pie), GNU_RELRO, BIND_NOW, non executable stack.
+#   It is built without FORTIFY on purpose: it defines libc calls such as
+#   recvfrom that the fortified headers wrap inline.
 # smtp and proxy are only built when configure finds libpcre; when they
 # are not configured they are reported as not checked, not passed.
 # Needs an ELF toolchain with readelf and nm.

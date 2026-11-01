@@ -31,7 +31,8 @@ LIBHONEYDFILES= libhoneyd-honeyd_overload.lo libhoneyd-atomicio.lo \
 
 ## The preload library is a plain shared object: it gets the hardening
 ## flags but not the PIE ones (libtool adds -fPIC, and -pie must never
-## reach a shared library link).
+## reach a shared library link). It replaces libc calls such as recvfrom,
+## which the FORTIFY headers wrap inline, so it is built without FORTIFY.
 LIBHONEYD_CFLAGS = -Wall $(HARDEN_CFLAGS)
 LIBHONEYD_COMPILE = $(LIBTOOL) --tag=CC --mode=compile $(CC) $(DEFS) \
 	$(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) \
@@ -149,7 +150,7 @@ AM_CPPFLAGS = \
 	-DPATH_RRDTOOL="\"$(PATH_RRDTOOL)\"" \
 	-D_GNU_SOURCE
 # Hardening flags from configure (R4-2, R4-3); the programs are PIE.
-AM_CFLAGS = -Wall $(HARDEN_CFLAGS) $(HARDEN_PIE_CFLAGS)
+AM_CFLAGS = -Wall $(HARDEN_CFLAGS) $(HARDEN_FORTIFY_CFLAGS) $(HARDEN_PIE_CFLAGS)
 AM_LDFLAGS = $(HARDEN_LDFLAGS) $(HARDEN_PIE_LDFLAGS)
 
 INCLUDES = -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
