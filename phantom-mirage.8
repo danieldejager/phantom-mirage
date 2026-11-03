@@ -24,7 +24,8 @@
 .Op Fl i Ar interface
 .Op Fl u Ar uid
 .Op Fl g Ar gid
-.Op Fl c Ar host:port:username:password
+.Op Fl c Ar host:port:username
+.Op Fl -stats-password-file Ar file
 .Op Fl -webserver-address Ar address
 .Op Fl -webserver-port Ar port
 .Op Fl -webserver-root Ar path
@@ -311,11 +312,78 @@ configuration option, and a value.
 The value can be either an integer, a float, or a character string.
 The options are picked up when phantom-mirage reads the configuration file and
 can then be queried by the plugins.
+.Pp
+Seven options under the plugin name
+.Va honeyd
+limit concurrent flows, script processes and ARP state:
+.Bd -literal -offset indent
+option honeyd max_template_flows 65535
+option honeyd max_source_flows 1000
+option honeyd max_udp_flows 32000
+option honeyd max_script_procs 512
+option honeyd max_script_procs_per_source 32
+option honeyd max_arp_pending 256
+option honeyd max_arp_entries 4096
+.Ed
+.Pp
+.Va max_template_flows
+caps the references held on one template; a new TCP or UDP flow to a
+template at its cap is refused.
+.Va max_source_flows
+caps the concurrent flows started by one source address; only that
+source is refused while it is over the cap.
+.Va max_udp_flows
+caps the UDP flow state kept for all templates together; at the cap
+the least recently used UDP flow is dropped without an ICMP error to
+make room for the new one.
+.Va max_script_procs
+caps the script processes alive at one time, counted from fork until
+the process is reaped, and
+.Va max_script_procs_per_source
+caps those started for flows from one source address.
+Scripts for UDP flows and scripts for TCP flows may each hold at most
+half of
+.Va max_script_procs ,
+rounded up, so that UDP from spoofed source addresses cannot take the
+slots that TCP scripts need and many TCP sources cannot take the slots
+that UDP scripts need.
+With an odd cap one slot is shared, and a cap of 1 reserves nothing.
+A UDP flow refused at a cap starts its script on a later datagram once
+there is room; datagrams that arrive while it is refused are dropped.
+At either cap no script is started: a TCP connection is reset and UDP
+data is dropped without an ICMP error, and one log line per second
+reports how many flows were refused.
+A value of 0 turns that cap off.
+Negative values are not accepted: the configuration reads only unsigned
+numbers, so a line such as
+.Dq option honeyd max_script_procs -1
+is a syntax error and the daemon does not start.
+To keep the default, leave the option out.
+Size
+.Va max_script_procs
+as the memory to spare divided by the memory of the heaviest script
+(a small shell script needs well under 1 MB, a python3 one a few MB).
+When a flow ends or is evicted, its script and every process the
+script started are killed.
+UDP scripts read and write one datagram per read or write, and see end
+of file when their flow ends.
+.Va max_arp_pending
+caps the ARP requests still waiting for a reply; a new request at the
+cap is refused and its queued packet is dropped.
+.Va max_arp_entries
+caps the ARP entries learned or remembered as failed for other hosts;
+at the cap the oldest one is dropped.
+If the dropped entry is still pending, its queued packet is dropped
+through the failure path exactly once, the same as for a refused
+request, and nothing is sent.
+ARP entries of the configured templates are not counted.
+The values shown are the defaults, and a value below 1 keeps the
+default.
 .It Fl i Ar interface
 Listen on
 .Ar interface .
 It is possible to specify multiple interfaces.
-.It Fl c Ar hostname:port:username:password
+.It Fl c Ar hostname:port:username Ns Op : Ns Ar password
 Using this flag,
 .Nm
 functions as a traffic statistic collector.
@@ -325,6 +393,24 @@ The username and password is used to create a signature on the
 data packet that can be used to verify the integrity of the data.
 The statistics can be used to automatically detect anomalies like
 worm propagation.
+The password is read from the file given with
+.Fl -stats-password-file .
+Giving it as the last field of
+.Fl c
+still works but is deprecated and prints a warning, since the command
+line is visible to other local users.
+.It Fl -stats-password-file Ar file
+Reads the
+.Fl c
+password from the first line of
+.Ar file .
+The file must be a regular file, not a symlink, owned by the user
+running
+.Nm
+and not accessible by group or others (mode 0600); otherwise
+.Nm
+exits with an error.
+The password is never logged.
 .It Fl -webserver-address Ar address
 Specifies the address on which the web server should listen.
 By default, this is

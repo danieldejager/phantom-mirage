@@ -1,0 +1,7 @@
+# PM-SCR-007: DHCP timers allocated again on every request, ACK and renewal
+cc_daemon dhcp_timer tests/security/dhcp_timer.c \
+    -Wl,--wrap=event_new,--wrap=event_free
+# The daemon's global configuration is never freed: leak checks off.
+# The test counts live events itself.
+ASAN_OPTIONS=detect_leaks=0
+run_clean dhcp_timer

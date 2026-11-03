@@ -123,10 +123,15 @@ make_prompt(void)
 	static char tmp[128];
 	extern int honeyd_nconnects;
 	extern int honeyd_nchildren;
+	extern int honeyd_nudp;
+	extern uint32_t honeyd_udp_evicted;
+	extern int arp_external_count(void);
+	extern uint32_t arp_pending_rejected(void), arp_external_evicted(void);
 
-	snprintf(tmp, sizeof(tmp), "%dC %dP %s",
-	    honeyd_nconnects, honeyd_nchildren,
-	    PROMPT);
+	snprintf(tmp, sizeof(tmp), "%dC %dU %uE %dA %uR %uV %dP %s",
+	    honeyd_nconnects, honeyd_nudp, honeyd_udp_evicted,
+	    arp_external_count(), arp_pending_rejected(),
+	    arp_external_evicted(), honeyd_nchildren, PROMPT);
 
 	return (tmp);
 }
@@ -156,8 +161,8 @@ ui_dead(struct uiclient *client)
 {
 	syslog(LOG_NOTICE, "%s: ui on fd %d is gone", __func__, client->fd);
 
-	event_del(client->ev_read);
-	event_del(client->ev_write);
+	event_free(client->ev_read);	/* also deletes them */
+	event_free(client->ev_write);
 
 	close(client->fd);
 	evbuffer_free(client->inbuf);

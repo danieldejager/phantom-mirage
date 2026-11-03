@@ -192,7 +192,8 @@ creation	: CREATE STRING
 		struct template *tmpl;
 		if ((tmpl = template_create($2)) == NULL)
 			yyerror("Template \"%s\" exists already", $2);
-		tmpl->flags |= TEMPLATE_DYNAMIC;
+		else
+			tmpl->flags |= TEMPLATE_DYNAMIC;
 		free($2);
 	}
 ;
@@ -221,7 +222,10 @@ newbcast    : BCAST template SRCPORT NUMBER DSTPORT NUMBER TIME NUMBER action
 			break;
 		}
 		
-		bcast_insert($2, $4, $6, $8, &$9);
+		if (bcast_insert($2, $4, $6, $8, &$9) == -1)
+			yyerror("Broadcast template name \"%s\" is too long, "
+			    "the limit is %zu bytes", $2->name,
+			    sizeof(((struct port *)0)->templateName) - 1);
 	}
 ;
 addition	: ADD template PROTO PORT NUMBER action
@@ -1000,7 +1004,7 @@ ui : LIST TEMPLATE
 	} else if (strcasecmp($2, "trace") == 0) {
 		struct evbuffer *evbuf = evbuffer_new();
 		if (evbuf == NULL)
-			err(1, "%s: malloc");
+			err(1, "%s: evbuffer_new", __func__);
 
 		trace_inspect($3, evbuf);
 

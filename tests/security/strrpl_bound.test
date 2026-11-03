@@ -1,0 +1,3 @@
+# PM-SCR-101: strrpl exact fit overflow (util.c)
+cc_san strrpl_bound tests/security/strrpl_bound.c util.c
+run_clean strrpl_bound

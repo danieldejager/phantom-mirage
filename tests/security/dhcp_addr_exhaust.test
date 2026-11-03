@@ -1,0 +1,6 @@
+# config.c template_get_dhcp_address: exit on temporary address exhaustion
+# (CWE-400/CWE-770/CWE-617)
+cc_daemon dhcp_addr_exhaust tests/security/dhcp_addr_exhaust.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean dhcp_addr_exhaust

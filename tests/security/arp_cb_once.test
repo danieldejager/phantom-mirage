@@ -1,0 +1,5 @@
+# ARP callback ran on every reply and after failure: freed packet reused
+cc_daemon arp_cb_once tests/security/arp_cb_once.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean arp_cb_once twice && run_clean arp_cb_once late

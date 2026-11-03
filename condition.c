@@ -78,7 +78,7 @@ condition_match_osfp(const struct template *tmpl, const struct ip_hdr *ip,
 {
 	pf_osfp_t fp = *(pf_osfp_t *)arg;
 
-	return (honeyd_osfp_match(ip, fp));
+	return (honeyd_osfp_match(ip, iplen, fp));
 }
 
 /*

@@ -1,0 +1,5 @@
+# PM-SCR-159: honeyd_udp_recv does not check evtimer_new
+cc_daemon udp_recv_timer tests/security/udp_recv_timer.c -Wl,--wrap=event_new
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean udp_recv_timer

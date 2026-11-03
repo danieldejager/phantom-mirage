@@ -222,13 +222,39 @@ smtp_response(struct smtp_ta *ta, struct keyvalue data[]) {
 	if (cur->key == NULL)
 		return (NULL);
 
-	strlcpy(line, cur->value, sizeof(line));
+	if (copy_bounded(line, sizeof(line), cur->value,
+		strlen(cur->value)) == -1)
+		return (NULL);
 
+	/* NULL if an expansion does not fit, never a partial template */
 	TAILQ_FOREACH(cur, &ta->dictionary, next) {
-		strrpl(line, sizeof(line), cur->key, cur->value);
+		if (strrpl_bounded(line, sizeof(line), cur->key, cur->value,
+			NULL) == -1)
+			return (NULL);
 	}
 	
 	return (line);
+}
+
+/*
+ * Expands a response template and writes it. If it cannot be expanded,
+ * writes a fixed 421 reply instead and closes once it is written.
+ * Returns -1 in that case.
+ */
+static int
+smtp_write_response(struct smtp_ta *ta, struct keyvalue data[])
+{
+	static const char fail[] =
+	    "421 4.3.0 Service not available, closing transmission channel\r\n";
+	char *response = smtp_response(ta, data);
+
+	if (response == NULL) {
+		bufferevent_write(ta->bev, fail, sizeof(fail) - 1);
+		ta->wantclose = 1;
+		return (-1);
+	}
+	bufferevent_write(ta->bev, response, strlen(response));
+	return (0);
 }
 
 void
@@ -236,21 +262,21 @@ smtp_handle_helo_cb(int result, char type, int count, int ttl,
     void *addresses, void *arg)
 {
 	struct smtp_ta *ta = arg;
-	char *response;
 
+	ta->dns_pending--;
 	if (ta->dns_canceled) {
-		smtp_ta_free(ta);
+		/* Torn down while lookups were in flight: last one frees */
+		if (ta->dns_pending == 0)
+			smtp_ta_free(ta);
 		return;
 	}
-	ta->dns_pending = 0;
 
 	if (result == DNS_ERR_NONE && count == 1) {
 		char *hostname = *(char **)addresses;
 		kv_replace(&ta->dictionary, "$srcname", hostname);
 	}
 
-	response = smtp_response(ta, helo);
-	bufferevent_write(ta->bev, response, strlen(response));
+	smtp_write_response(ta, helo);
 
 	ta->state = EXPECT_MAILFROM;
 }
@@ -262,8 +288,7 @@ smtp_handle_helo(struct smtp_ta *ta, char *line)
 	char *domainname;
 
 	if (line == NULL) {
-		char *response = smtp_response(ta, heloerror);
-		bufferevent_write(ta->bev, response, strlen(response));
+		smtp_write_response(ta, heloerror);
 		return (0);
 	}
 
@@ -272,8 +297,16 @@ smtp_handle_helo(struct smtp_ta *ta, char *line)
 	domainname = strsep(&line, " ");
 	kv_replace(&ta->dictionary, "$srcname", domainname);
 
-	evdns_resolve_reverse(&sin->sin_addr, 0, smtp_handle_helo_cb, ta);
-	ta->dns_pending = 1;
+	ta->dns_pending++;
+	if (evdns_resolve_reverse(&sin->sin_addr, 0,
+		smtp_handle_helo_cb, ta) != 0) {
+		/*
+		 * Failed synchronously: no callback will ever run.
+		 * Run it now as a failed lookup, so a live client
+		 * gets the usual reply and a canceled one is freed.
+		 */
+		smtp_handle_helo_cb(DNS_ERR_UNKNOWN, 0, 0, 0, NULL, ta);
+	}
 
 	return (0);
 }
@@ -281,11 +314,10 @@ smtp_handle_helo(struct smtp_ta *ta, char *line)
 int
 smtp_handle_ehlo(struct smtp_ta *ta, char *line)
 {
-	char *domainname, *response;
+	char *domainname;
 
 	if (line == NULL) {
-		response = smtp_response(ta, ehloerror);
-		bufferevent_write(ta->bev, response, strlen(response));
+		smtp_write_response(ta, ehloerror);
 		return (0);
 	}
 
@@ -294,8 +326,7 @@ smtp_handle_ehlo(struct smtp_ta *ta, char *line)
 	domainname = strsep(&line, " ");
 	kv_replace(&ta->dictionary, "$srcname", domainname);
 
-	response = smtp_response(ta, ehlo);
-	bufferevent_write(ta->bev, response, strlen(response));
+	smtp_write_response(ta, ehlo);
 
 	ta->state = EXPECT_MAILFROM;
 	return (0);
@@ -304,59 +335,57 @@ smtp_handle_ehlo(struct smtp_ta *ta, char *line)
 int
 smtp_handle_mailfrom(struct smtp_ta *ta, char *line)
 {
-	char *response;
+	struct keyvalue *msg;
 	char *from = strsep(&line, " ");
 	if (kv_find(&ta->dictionary, "$sender")) {
-		response = smtp_response(ta, mailfromerror);
+		msg = mailfromerror;
 	} else {
 		kv_add(&ta->dictionary, "$sender", from);
-		response = smtp_response(ta, mailfrom);
+		msg = mailfrom;
 		ta->state = EXPECT_RCPT;
 	}
 
-	bufferevent_write(ta->bev, response, strlen(response));
+	smtp_write_response(ta, msg);
 	return (0);
 }
 
 int
 smtp_handle_rcpt(struct smtp_ta *ta, char *line)
 {
-	char *response;
+	struct keyvalue *msg;
 	char *from = strsep(&line, " ");
 	if (kv_find(&ta->dictionary, "$sender") == NULL) {
-		response = smtp_response(ta, rcpttoerror);
+		msg = rcpttoerror;
 	} else {
 		kv_add(&ta->dictionary, "$recipient", from);
-		response = smtp_response(ta, rcptto);
+		msg = rcptto;
 	}
 
-	bufferevent_write(ta->bev, response, strlen(response));
+	smtp_write_response(ta, msg);
 	return (0);
 }
 
 int
 smtp_handle_data(struct smtp_ta *ta, char *line)
 {
-	char *response;
+	struct keyvalue *msg;
 	if (kv_find(&ta->dictionary, "$sender") == NULL) {
-		response = smtp_response(ta, datanomail);
+		msg = datanomail;
 	} else if (kv_find(&ta->dictionary, "$recipient") == NULL) {
-		response = smtp_response(ta, datanorcpt);
+		msg = datanorcpt;
 	} else {
-		response = smtp_response(ta, data);
+		msg = data;
 		ta->state = EXPECT_DATA;
 	}
 
-	bufferevent_write(ta->bev, response, strlen(response));
+	smtp_write_response(ta, msg);
 	return (0);
 }
 
 int
 smtp_handle_quit(struct smtp_ta *ta, char *line)
 {
-	char *response;
-	response = smtp_response(ta, quit);
-	bufferevent_write(ta->bev, response, strlen(response));
+	smtp_write_response(ta, quit);
 	ta->wantclose = 1;
 	return (0);
 }
@@ -364,26 +393,23 @@ smtp_handle_quit(struct smtp_ta *ta, char *line)
 int
 smtp_handle_help(struct smtp_ta *ta, char *line)
 {
-	char *response;
+	struct keyvalue *msg;
 
 	if ( line != NULL ) {
 		kv_replace(&ta->dictionary, "$helpask", line);
-		response = smtp_response(ta, helperror);
+		msg = helperror;
 	} else {
-		response = smtp_response(ta, help);
+		msg = help;
 	}
 
-	bufferevent_write(ta->bev, response, strlen(response));
+	smtp_write_response(ta, msg);
 	return (0);
 }
 
 int
 smtp_handle_noop(struct smtp_ta *ta, char *line)
 {
-	char *response;
-
-	response = smtp_response(ta, noop);
-	bufferevent_write(ta->bev, response, strlen(response));
+	smtp_write_response(ta, noop);
 
 	return (0);
 }
@@ -391,10 +417,7 @@ smtp_handle_noop(struct smtp_ta *ta, char *line)
 int
 smtp_handle_rset(struct smtp_ta *ta, char *line)
 {
-	char *response;
-
-	response = smtp_response(ta, rset);
-	bufferevent_write(ta->bev, response, strlen(response));
+	smtp_write_response(ta, rset);
 
 	smtp_clear_state(ta);
 
@@ -404,23 +427,23 @@ smtp_handle_rset(struct smtp_ta *ta, char *line)
 int
 smtp_handle_vrfy(struct smtp_ta *ta, char *line)
 {
-	char *response;
+	struct keyvalue *msg;
 
 	if (line == NULL || strlen(line) == 0) {
-		response = smtp_response(ta, vrfyerror);
+		msg = vrfyerror;
 	} else {
 		char *where = strchr(line, '@');
 		if (where && strchr(where + 1, '.') != NULL) {
 			/* This does not strip the braces, etc. */
 			kv_replace(&ta->dictionary, "$realuser", line);
-			response = smtp_response(ta, vrfy);
+			msg = vrfy;
 		} else {
 			kv_replace(&ta->dictionary, "$vrfyuser", line);
-			response = smtp_response(ta, vrfynouser);
+			msg = vrfynouser;
 		}
 	}
 
-	bufferevent_write(ta->bev, response, strlen(response));
+	smtp_write_response(ta, msg);
 
 	return (0);
 }
@@ -428,7 +451,6 @@ smtp_handle_vrfy(struct smtp_ta *ta, char *line)
 int
 smtp_handle_dot(struct smtp_ta *ta)
 {
-	char *response;
 	
 	if (strcmp(ta->mailer_id, "sendmail") == 0) {
 		char *qchar = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwx";
@@ -454,8 +476,7 @@ smtp_handle_dot(struct smtp_ta *ta)
 		kv_replace(&ta->dictionary, "$queuenr", qnr);
 	}
 
-	response = smtp_response(ta, dot);
-	bufferevent_write(ta->bev, response, strlen(response));
+	smtp_write_response(ta, dot);
 
 	if (flog_email != NULL) {
 		fprintf(flog_email, "%s\n", smtp_logline(ta));
@@ -520,8 +541,7 @@ smtp_handle(struct smtp_ta *ta, char *line)
 	} else if (strcasecmp(command, "VRFY") == 0) {
 		return (smtp_handle_vrfy(ta, line));
 	} else {
-		char *response = smtp_response(ta, errors);
-		bufferevent_write(ta->bev, response, strlen(response));
+		smtp_write_response(ta, errors);
 	}
 
 	return (0);
@@ -866,6 +886,10 @@ smtp_readcb(struct bufferevent *bev, void *arg)
 			return;
 		}
 	}
+
+	/* No end of line within MAX_LINE bytes: drop the connection */
+	if (evbuffer_get_length(EVBUFFER_INPUT(bev)) >= MAX_LINE)
+		smtp_ta_free(arg);
 }
 
 void
@@ -891,9 +915,13 @@ smtp_ta_free(struct smtp_ta *ta)
 {
 	struct keyvalue *entry;
 
-	if (ta->dns_pending && !ta->dns_canceled) {
-		/* if we have a pending dns lookup, tell it to cancel */
+	if (ta->dns_pending > 0) {
+		/*
+		 * Lookups in flight hold a pointer to us: stop all I/O and
+		 * let the last callback free the transaction.
+		 */
 		ta->dns_canceled = 1;
+		bufferevent_disable(ta->bev, EV_READ|EV_WRITE);
 		return;
 	}
 
@@ -910,14 +938,21 @@ smtp_ta_free(struct smtp_ta *ta)
 	
 }
 
-void
+/* Expands the greeting; NULL when it does not fit (nothing written) */
+char *
+smtp_greeting_response(struct smtp_ta *ta)
+{
+	return (smtp_response(ta, welcome));
+}
+
+/*
+ * Writes the greeting, or the fixed 421 and a close when it does not
+ * fit. Returns -1 in that case.
+ */
+int
 smtp_greeting(struct smtp_ta *ta)
 {
-	char *greeting;
-
-	greeting = smtp_response(ta, welcome);
-	if (greeting != NULL)
-		bufferevent_write(ta->bev, greeting, strlen(greeting));
+	return (smtp_write_response(ta, welcome));
 }
 
 /* Create a new SMTP transaction */
@@ -945,6 +980,7 @@ smtp_ta_new(int fd, struct sockaddr *sa, socklen_t salen,
 	    smtp_readcb, smtp_writecb, smtp_errorcb, ta);
 	if (ta->bev == NULL)
 		goto error;
+	bufferevent_setwatermark(ta->bev, EV_READ, 0, MAX_LINE);
 
 	/* Create our tiny dictionary */
 	name_from_addr(sa, salen, &ipname, &portname);
@@ -992,8 +1028,17 @@ smtp_ta_new(int fd, struct sockaddr *sa, socklen_t salen,
 		ta->mailer_id = "postfix";
 	}
 
-	if (greeting)
-		smtp_greeting(ta);
+	if (greeting && smtp_greeting(ta) == -1) {
+		/*
+		 * The fixed 421 is queued and wantclose is set: do not read
+		 * from the client. smtp_writecb frees the session once the
+		 * 421 is written, or smtp_errorcb if the write fails. The
+		 * caller must not use it.
+		 */
+		fprintf(stderr, "%s: greeting does not fit, closing\n",
+		    __func__);
+		return (NULL);
+	}
 
 	bufferevent_enable(ta->bev, EV_READ);
 

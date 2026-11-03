@@ -1,0 +1,6 @@
+# PM-SCR-105: proxy_corrupt corrupts data over 4096 bytes too
+cc_san proxy_corrupt_large -I tests/security/stub \
+    tests/security/proxy_corrupt_large.c tests/security/pcre_stub.c \
+    subsystems/proxy.c subsystems/smtp.c util.c atomicio.c sha1.c
+run_clean proxy_corrupt_large
+run_clean proxy_corrupt_large relay

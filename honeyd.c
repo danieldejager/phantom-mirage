@@ -160,6 +160,8 @@ struct pool			*pool_delay;
 rand_t				*honeyd_rand;
 int					honeyd_sig;
 int					honeyd_nconnects;
+int					honeyd_nudp;	/* live UDP flows on udplru */
+uint32_t				honeyd_udp_evicted;	/* UDP flows evicted at the cap */
 int					honeyd_nchildren;
 int					honeyd_ttl = HONEYD_DFL_TTL;
 struct tcp_con		honeyd_tmp;
@@ -233,6 +235,7 @@ static struct option honeyd_long_opts[] = {
 	{"sandbox-daemon", 0, &honeyd_sandbox_daemon, 1},
 	{"sandbox-allow-write", required_argument, NULL, 'S'},
 	{"sandbox-script-net", required_argument, NULL, 'N'},
+	{"stats-password-file", required_argument, NULL, 'K'},
 	{0, 0, 0, 0}
 };
 
@@ -277,7 +280,11 @@ usage(void)
 	    "  -g gid		  Set the gid the daemon should run as.\n"
 		"  -m file				  Read nmap-mac-prefixes from file. \n"
 	    "  -f configfile          Read configuration from file.\n"
-	    "  -c host:port:name:pass Reports starts to collector.\n"
+	    "  -c host:port:name      Reports stats to collector.\n"
+	    "  --stats-password-file=FILE\n"
+	    "                         Read the -c password from FILE (mode 0600,\n"
+	    "                         owned by the running user, not a symlink).\n"
+	    "  -c host:port:name:pass Deprecated: password on the command line.\n"
 	    "  --webserver-address=address Address on which webserver listens.\n"
 	    "  --webserver-port=port  Port on which webserver listens.\n"
 	    "  --webserver-root=path  Root of document tree.\n"
@@ -388,6 +395,8 @@ tuple_iterate(struct conlru *head, int (*f)(struct tuple *, void *), void *arg)
 	return (0);
 }
 
+#define HONEYD_OPTSTRING	"VPTdc:i:p:x:a:u:g:f:t:l:s:0:R:m:h?"
+
 static void
 syslog_init(int argc, char *argv[])
 {
@@ -407,9 +416,13 @@ syslog_init(int argc, char *argv[])
 
 	buf[0] = '\0';
 	for (i = 1; i < argc; i++) {
+		char arg[MAXPATHLEN];
+
 		if (i > 1 && strlcat(buf, " ", sizeof(buf)) >= sizeof(buf))
 			break;
-		if (strlcat(buf, argv[i], sizeof(buf)) >= sizeof(buf))
+		/* Never log a stats password given with -c */
+		stats_redact_arg(argv, i, HONEYD_OPTSTRING, arg, sizeof(arg));
+		if (strlcat(buf, arg, sizeof(buf)) >= sizeof(buf))
 			break;
 	}
 
@@ -856,6 +869,13 @@ honeyd_ether_send_cb(struct arp_req *req, int success, void *arg)
 	struct ip_hdr *ip = arg;
 	u_int len, iplen = ntohs(ip->ip_len);
 
+	/*
+	 * The ARP request failed: req->ha is still the broadcast MAC.
+	 * Drop the queued packet; it is freed once below.
+	 */
+	if (!success)
+		goto out;
+
 	eth_pack_hdr(pkt,
 	    req->ha.addr_eth,				/* destination */
 	    req->src_ha.addr_eth,			/* source */
@@ -1042,6 +1062,11 @@ honeyd_delay_cb(int fd, short which, void *arg)
 			syslog(LOG_ERR, "couldn't GRE encapsulate packet: %m");
 		else
 			count_increment(stats_network.output_bytes, iplen);
+	} else if ((delay->flags & DELAY_ETHERNET) &&
+	    (tmpl == NULL || tmpl->inter == NULL)) {
+		/* External delivery needs the template's interface */
+		syslog(LOG_ERR, "%s: no interface for external delivery",
+		    __func__);
 	} else if (delay->flags & DELAY_ETHERNET) {
 		extern struct network *reverse;
 		struct interface *inter = tmpl->inter;
@@ -1101,8 +1126,11 @@ honeyd_delay_cb(int fd, short which, void *arg)
 		pool_free(pool_pkt, ip);
 	template_free(tmpl);
 
-	if (delay->flags & DELAY_NEEDFREE)
+	if (delay->flags & DELAY_NEEDFREE) {
+		/* Only a delayed packet owns a timer */
+		event_free(delay->timeout);
 		pool_free(pool_delay, delay);
+	}
 }
 
 /*
@@ -1157,6 +1185,21 @@ honeyd_delay_packet(struct template *tmpl, const struct interface* iface, struct
 
 	if (ms) {
 		delay->timeout = evtimer_new(libevent_base, honeyd_delay_callback, delay);
+		if (delay->timeout == NULL) {
+			/*
+			 * CWE-476/CWE-252: drop the packet. Free what the
+			 * callback would have freed: our packet copy (or the
+			 * caller's packet handed to us with DELAY_FREEPKT),
+			 * the template reference and the delay record.
+			 */
+			syslog(LOG_ERR, "%s: evtimer_new failed, packet dropped",
+			    __func__);
+			if (delay->flags & DELAY_FREEPKT)
+				pool_free(pool_pkt, delay->ip);
+			template_free(delay->tmpl);
+			pool_free(pool_delay, delay);
+			return;
+		}
 		timerclear(&tv);
 		tv.tv_sec = ms / 1000;
 		tv.tv_usec = (ms % 1000) * 1000;
@@ -1326,6 +1369,128 @@ honeyd_check_data_file(const char *path, const char *what, const char *flag)
 	exit(EXIT_FAILURE);
 }
 
+/*
+ * Flow limits. "option honeyd max_template_flows N" caps the references
+ * on one template (default TEMPLATE_MAX_REFCNT); "option honeyd
+ * max_source_flows N" caps the concurrent flows initiated by one source
+ * address (default HONEYD_MAX_SOURCE_FLOWS). A value below 1 keeps the
+ * default.
+ */
+uint32_t
+honeyd_flow_option(const char *name, uint32_t def)
+{
+	const struct honeyd_plugin_cfg *cfg;
+
+	cfg = plugins_config_find_item("honeyd", name, HD_CONFIG_INT);
+	if (cfg == NULL || cfg->cfg_int < 1)
+		return (def);
+	return ((uint32_t)cfg->cfg_int);
+}
+
+/*
+ * Like honeyd_flow_option(), but 0 turns the limit off (returned as 0)
+ * and only a missing or negative value keeps the default.
+ */
+uint32_t
+honeyd_limit_option(const char *name, uint32_t def)
+{
+	const struct honeyd_plugin_cfg *cfg;
+
+	cfg = plugins_config_find_item("honeyd", name, HD_CONFIG_INT);
+	if (cfg == NULL || cfg->cfg_int < 0)
+		return (def);
+	return ((uint32_t)cfg->cfg_int);
+}
+
+uint32_t
+template_max_refcnt(void)
+{
+	return (honeyd_flow_option("max_template_flows",
+		TEMPLATE_MAX_REFCNT));
+}
+
+/*
+ * Concurrent flows per source address. An entry exists only while its
+ * source has at least one counted flow and is freed when the count
+ * drops to zero, so the tree never holds more entries than there are
+ * live flows.
+ */
+struct srcflow {
+	SPLAY_ENTRY(srcflow) node;
+	ip_addr_t addr;
+	uint32_t nflows;
+};
+
+static int
+srcflow_compare(struct srcflow *a, struct srcflow *b)
+{
+	if (a->addr < b->addr)
+		return (-1);
+	return (a->addr > b->addr);
+}
+
+SPLAY_HEAD(srcflowtree, srcflow) srcflows = SPLAY_INITIALIZER(&srcflows);
+SPLAY_PROTOTYPE(srcflowtree, srcflow, node, srcflow_compare);
+SPLAY_GENERATE(srcflowtree, srcflow, node, srcflow_compare);
+
+static struct srcflow *
+srcflow_find(ip_addr_t addr)
+{
+	struct srcflow tmp;
+
+	tmp.addr = addr;
+	return (SPLAY_FIND(srcflowtree, &srcflows, &tmp));
+}
+
+/* Number of counted flows from this source */
+uint32_t
+honeyd_source_flows(ip_addr_t addr)
+{
+	struct srcflow *sf = srcflow_find(addr);
+
+	return (sf != NULL ? sf->nflows : 0);
+}
+
+/* True if a new flow from this source must be refused */
+static int
+honeyd_source_full(ip_addr_t addr)
+{
+	return (honeyd_source_flows(addr) >= honeyd_flow_option(
+		    "max_source_flows", HONEYD_MAX_SOURCE_FLOWS));
+}
+
+/* Count a new flow against its source; on failure it is not counted */
+static void
+honeyd_source_take(struct tuple *hdr)
+{
+	struct srcflow *sf = srcflow_find(hdr->ip_src);
+
+	if (sf == NULL) {
+		if ((sf = calloc(1, sizeof(*sf))) == NULL)
+			return;
+		sf->addr = hdr->ip_src;
+		SPLAY_INSERT(srcflowtree, &srcflows, sf);
+	}
+	sf->nflows++;
+	hdr->srccounted = 1;
+}
+
+static void
+honeyd_source_release(struct tuple *hdr)
+{
+	struct srcflow *sf;
+
+	if (!hdr->srccounted)
+		return;
+	hdr->srccounted = 0;
+	if ((sf = srcflow_find(hdr->ip_src)) == NULL)
+		return;
+	if (--sf->nflows == 0) {
+		SPLAY_REMOVE(srcflowtree, &srcflows, sf);
+		free(sf);
+	}
+}
+
 struct tcp_con *
 tcp_new(const struct interface* iface, struct ip_hdr *ip, struct tcp_hdr *tcp, int local)
 {
@@ -1345,11 +1510,26 @@ tcp_new(const struct interface* iface, struct ip_hdr *ip, struct tcp_hdr *tcp, i
 		return (NULL);
 	}
 
-	honeyd_nconnects++;
 	honeyd_settcp(con, NULL, ip, tcp, local);
 	con->conhdr.iface = iface;
+
+	/*
+	 * CWE-476/CWE-252: make both timers before the connection is
+	 * counted or inserted; on failure free what was made and drop.
+	 */
 	con->conhdr.timeout = evtimer_new(libevent_base, honeyd_tcp_timeout, con);
 	con->retrans_timeout = evtimer_new(libevent_base, tcp_retrans_timeout, con);
+	if (con->conhdr.timeout == NULL || con->retrans_timeout == NULL) {
+		syslog(LOG_ERR, "%s: evtimer_new failed", __func__);
+		if (con->conhdr.timeout != NULL)
+			event_free(con->conhdr.timeout);
+		if (con->retrans_timeout != NULL)
+			event_free(con->retrans_timeout);
+		free(con);
+		return (NULL);
+	}
+
+	honeyd_nconnects++;
 
 	connection_insert(&tcpcons, &tcplru, &con->conhdr);
 
@@ -1370,14 +1550,16 @@ tcp_free(struct tcp_con *con)
 		port_free(port->subtmpl, port);
 
 	connection_remove(&tcpcons, &tcplru, &con->conhdr);
+	honeyd_source_release(&con->conhdr);
 
 	hooks_dispatch(IP_PROTO_TCP, HD_INCOMING_STREAM, &con->conhdr,
 	    NULL, 0);
 	honeyd_log_flowend(honeyd_logfp, IP_PROTO_TCP, &con->conhdr);
 
-	evtimer_del(con->retrans_timeout);
+	event_free(con->retrans_timeout);
+	event_free(con->conhdr.timeout);
 
-	if (con->cmd_pfd > 0)
+	if (con->cmd_pfd != -1)
 		cmd_free(&con->cmd);
 	if (con->payload != NULL)
 		free(con->payload);
@@ -1429,11 +1611,58 @@ tcp_retrans_timeout(int fd, short event, void *arg)
 	}
 }
 
+/*
+ * PM-SCR-139: global cap on UDP flow state. "option honeyd max_udp_flows N"
+ * sets it (default HONEYD_MAX_UDP). At the cap the least recently used
+ * flow, the tail of udplru, is freed through udp_free() like the idle
+ * timer does; no ICMP is sent for it. Called before the new flow is
+ * inserted, so the flow being created is never the one evicted.
+ */
+static void
+udp_make_room(void)
+{
+	static time_t lastlog;
+	static uint32_t lastcount;
+	struct udp_con *old;
+	uint32_t max = honeyd_flow_option("max_udp_flows", HONEYD_MAX_UDP);
+	time_t now;
+
+	while ((uint32_t)honeyd_nudp >= max &&
+	    (old = (struct udp_con *)TAILQ_LAST(&udplru, conlru)) != NULL) {
+		honeyd_udp_evicted++;
+		udp_free(old);
+	}
+
+	now = time(NULL);
+	if (honeyd_udp_evicted != lastcount && now != lastlog) {
+		syslog(LOG_DEBUG, "UDP flow cap %u reached: %u flows evicted",
+		    max, honeyd_udp_evicted);
+		lastlog = now;
+		lastcount = honeyd_udp_evicted;
+	}
+}
+
+static void
+udp_insert(struct udp_con *con)
+{
+	connection_insert(&udpcons, &udplru, &con->conhdr);
+	honeyd_nudp++;
+}
+
+/* Move a UDP flow to the head of udplru on every packet in either direction */
+static void
+udp_lru_update(struct udp_con *con)
+{
+	TAILQ_REMOVE(&udplru, &con->conhdr, next);
+	TAILQ_INSERT_HEAD(&udplru, &con->conhdr, next);
+}
+
 struct udp_con *
 udp_new(struct ip_hdr *ip, struct udp_hdr *udp, int local)
 {
 	struct udp_con *con;
 
+	/* Allocate first so a failure at the cap cannot evict a flow */
 	if ((con = calloc(1, sizeof(struct udp_con))) == NULL) {
 			syslog(LOG_WARNING, "calloc: %m");
 			return (NULL);
@@ -1441,9 +1670,17 @@ udp_new(struct ip_hdr *ip, struct udp_hdr *udp, int local)
 
 	honeyd_setudp(con, ip, udp, local);
 
-	connection_insert(&udpcons, &udplru, &con->conhdr);
-
+	/* Create the idle timer before the flow is listed or counted */
 	con->conhdr.timeout = evtimer_new(libevent_base, honeyd_udp_timeout, con);
+	if (con->conhdr.timeout == NULL) {
+		syslog(LOG_ERR, "%s: evtimer_new failed", __func__);
+		free(con);
+		return (NULL);
+	}
+
+	/* The new flow is not on udplru yet, so it is never the one evicted */
+	udp_make_room();
+	udp_insert(con);
 
 	honeyd_log_flownew(honeyd_logfp, IP_PROTO_UDP, &con->conhdr);
 
@@ -1464,6 +1701,8 @@ udp_free(struct udp_con *con)
 		port_free(port->subtmpl, port);
 
 	connection_remove(&udpcons, &udplru, &con->conhdr);
+	honeyd_nudp--;
+	honeyd_source_release(&con->conhdr);
 
 	hooks_dispatch(IP_PROTO_TCP, HD_INCOMING_STREAM, &con->conhdr,
 	    NULL, 0);
@@ -1475,7 +1714,7 @@ udp_free(struct udp_con *con)
 		free(buf);
 	}
 
-	if (con->cmd_pfd > 0)
+	if (con->cmd_pfd != -1)
 		cmd_free(&con->cmd);
 	if (con->tmpl != NULL)
 		template_free(con->tmpl);
@@ -1662,7 +1901,11 @@ tcp_setupconnect(struct tcp_con *con)
 	return (-1);
 }
 
-void
+/*
+ * Returns CMD_FORK_CAP if a TCP flow must be reset because the script
+ * process cap refused it, otherwise 0.
+ */
+int
 generic_connect(struct template *tmpl, struct tuple *hdr,
     struct command *cmd, void *con)
 {
@@ -1699,13 +1942,13 @@ generic_connect(struct template *tmpl, struct tuple *hdr,
 	if (action->status == PORT_SUBSYSTEM) {
 		if (cmd_subsystem_schedule_connect(hdr, cmd, port, con) == -1)
 			goto out;
-		return;
+		return (0);
 	} else if (action->status == PORT_PYTHON) {
 #ifdef HAVE_PYTHON		
 		if (pyextend_connection_start(hdr, cmd, con,
 			action->action_extend) == -1)
 			goto out;
-		return;
+		return (0);
 #endif
 	}
 
@@ -1713,7 +1956,7 @@ generic_connect(struct template *tmpl, struct tuple *hdr,
 	if (proto == IP_PROTO_TCP && action->status == PORT_RESERVED) {
 		if (cmd_subsystem_localconnect(hdr, cmd, port, con) == -1)
 			goto err;
-		return;
+		return (0);
 	}
 
 	if (action->status == PORT_OPEN || action->aitop == NULL) {
@@ -1731,7 +1974,7 @@ generic_connect(struct template *tmpl, struct tuple *hdr,
 		res = proxy_connect(hdr, cmd, action->aitop, line, con);
 		if (res == -1)
 			goto out;
-		return;
+		return (0);
 	}
 
 	/* Create arguments */
@@ -1749,15 +1992,20 @@ generic_connect(struct template *tmpl, struct tuple *hdr,
 
 	argv[i] = NULL;
 
-	if (cmd_fork(hdr, cmd, tmpl, argv[0], argv, con) == -1) {
-		syslog(LOG_WARNING, "malloc %s: %m", honeyd_contoa(hdr));
+	if ((i = cmd_fork(hdr, cmd, tmpl, argv[0], argv, con)) != 0) {
+		/* At the cap: cmd_fork logged it (rate limited). TCP gets a
+		 * RST from the caller; UDP data is dropped without ICMP and
+		 * the flow retries on a later datagram. */
+		if (i == CMD_FORK_CAP)
+			return (CMD_FORK_CAP);
+		syslog(LOG_WARNING, "script %s: %m", honeyd_contoa(hdr));
 		goto err;
 	}
 
 	syslog(LOG_DEBUG, "Connection established: %s %s <-> %s",
 	    proto == IP_PROTO_TCP ? "tcp" : "udp",
 	    honeyd_contoa(hdr), command);
-	return;
+	return (0);
 
  err:
 	if (proto == IP_PROTO_TCP)
@@ -1766,6 +2014,7 @@ generic_connect(struct template *tmpl, struct tuple *hdr,
 	syslog(LOG_DEBUG, "Connection established: %s %s",
 	    proto == IP_PROTO_TCP ? "tcp" : "udp",
 	    honeyd_contoa(hdr));
+	return (0);
 }
 
 int
@@ -1777,6 +2026,7 @@ tcp_send(struct tcp_con *con, uint8_t flags, u_char *payload, u_int len)
 	int window = 16000;
 	int dontfragment = 0;
 	struct tcp_options options = {0, NULL};
+	struct tcp_option mss_option;
 	uint16_t id = rand_uint16(honeyd_rand);
 	struct spoof spoof;
 	struct template *tmpl = con->tmpl;
@@ -1803,10 +2053,17 @@ tcp_send(struct tcp_con *con, uint8_t flags, u_char *payload, u_int len)
 		}
 		else if (flags & TH_SYN)
 		{
+			/*
+			 * CWE-476/CWE-252/CWE-401: the MSS option was an
+			 * unchecked malloc() written at once and never
+			 * freed. tcp_personality_options() only reads it
+			 * before we return, so keep it on the stack.
+			 */
+			memset(&mss_option, 0, sizeof(mss_option));
+			mss_option.opt_type = 'M';
+			mss_option.value = 0;
 			options.count = 1;
-			options.options = malloc(sizeof(struct tcp_option));
-			options.options->opt_type = 'M';
-			options.options->value = 0;
+			options.options = &mss_option;
 		}
 	}
 
@@ -2014,12 +2271,22 @@ icmp_error_send(struct template *tmpl, struct addr *addr,
 
 	quotelen = 40;
 
+	/*
+	 * Received length, read before the personality can rewrite
+	 * ip_len (RIPL). Callers have checked it against the capture.
+	 */
+	riplen = ntohs(rip->ip_len);
+
 	if (!icmp_error_personality(tmpl, addr, rip, &df, &tos, &quotelen, &ttl))
 		return;
 
-	riplen = ntohs(rip->ip_len);
+	/* IPL comes from the fingerprint file: bound it (PM-SCR-006) */
+	if (quotelen < 0)
+		quotelen = 0;
 	if (riplen < quotelen)
 		quotelen = riplen;
+	if (quotelen > HONEYD_MTU - IP_HDR_LEN - ICMP_HDR_LEN - 4)
+		quotelen = HONEYD_MTU - IP_HDR_LEN - ICMP_HDR_LEN - 4;
 
 	iplen = IP_HDR_LEN + ICMP_HDR_LEN + 4 + quotelen;
 
@@ -2121,18 +2388,17 @@ icmp_timestamp_reply(struct template *tmpl, struct ip_hdr *rip,
 	u_int iplen;
 	struct icmp_msg_timestamp icmp_time;
 	uint8_t padding = 6;
-	struct tm *now_tm;
-	time_t now;
+	struct timeval tv;
 	uint32_t milliseconds;
 
 	pkt = pool_alloc(pool_pkt);
+	/* Pool slots are reused: never send stale bytes as padding */
+	memset(pkt, 0, IP_HDR_LEN + ICMP_HDR_LEN + 16 + padding);
 
-	now = time(NULL);
-	now_tm = localtime(&now);
-
-	milliseconds = (now_tm->tm_hour * 60 * 60 + 
-		now_tm->tm_min * 60 + 
-		now_tm->tm_sec) * 1000;
+	/* Milliseconds since midnight UTC, as RFC 792 asks (PM-SCR-141) */
+	gettimeofday(&tv, NULL);
+	milliseconds = (uint32_t)((tv.tv_sec % 86400) * 1000 +
+	    tv.tv_usec / 1000);
 
 	icmp_time.hdr.icmp_type = ICMP_TSTAMPREPLY,
 	icmp_time.hdr.icmp_code = 0;
@@ -2141,8 +2407,8 @@ icmp_timestamp_reply(struct template *tmpl, struct ip_hdr *rip,
 
 	/* For now just do the following */
 	icmp_time.icmp_ts_orig = icmp_rip->icmp_ts_orig;
-	icmp_time.icmp_ts_rx = icmp_rip->icmp_ts_orig + milliseconds;
-	icmp_time.icmp_ts_tx = icmp_rip->icmp_ts_rx;
+	icmp_time.icmp_ts_rx = htonl(milliseconds);
+	icmp_time.icmp_ts_tx = htonl(milliseconds);
 		
 	iplen = IP_HDR_LEN + ICMP_HDR_LEN + 16 + padding; 
 	/* 6 bytes of 0 at the end, why? RedHat and Windows have 6 bytes of
@@ -2467,10 +2733,25 @@ tcp_recv_cb(struct template *tmpl, const struct interface* iface, u_char *pkt, u
 				goto justlog;
 		}
 
+		/* Refuse the flow if the template has too many references */
+		if (template_ref_full(tmpl)) {
+			syslog(LOG_WARNING, "Too many flows for template: tcp %s",
+			    honeyd_contoa(&honeyd_tmp.conhdr));
+			goto kill;
+		}
+
+		/* Refuse the flow if its source has too many flows */
+		if (honeyd_source_full(ip->ip_src)) {
+			syslog(LOG_WARNING, "Too many flows from source: tcp %s",
+			    honeyd_contoa(&honeyd_tmp.conhdr));
+			goto kill;
+		}
+
 		/* Out of memory is dealt with by killing the connection */
 		if ((con = tcp_new(iface, ip, tcp, INITIATED_BY_EXTERNAL)) == NULL) {
 			goto kill;
 		}
+		honeyd_source_take(&con->conhdr);
 		con->rcv_flags = tiflags;
 
 		/* Check if this connection is a tar pit */
@@ -2541,7 +2822,9 @@ tcp_recv_cb(struct template *tmpl, const struct interface* iface, u_char *pkt, u
 			tcp_send(con, TH_ACK, NULL, 0);
 
 			con->state = TCP_STATE_ESTABLISHED;
-			generic_connect(tmpl, &con->conhdr, &con->cmd, con);
+			if (generic_connect(tmpl, &con->conhdr, &con->cmd,
+				con) == CMD_FORK_CAP)
+				goto dropwithreset;
 			break;
 
 		case TCP_STATE_SYN_RECEIVED:
@@ -2574,7 +2857,9 @@ tcp_recv_cb(struct template *tmpl, const struct interface* iface, u_char *pkt, u
 			connection_update(&tcplru, &con->conhdr);
 
 			con->state = TCP_STATE_ESTABLISHED;
-			generic_connect(tmpl, &con->conhdr, &con->cmd, con);
+			if (generic_connect(tmpl, &con->conhdr, &con->cmd,
+				con) == CMD_FORK_CAP)
+				goto dropwithreset;
 			break;
 
 		case TCP_STATE_ESTABLISHED:
@@ -2770,11 +3055,20 @@ udp_send(struct udp_con *con, u_char *payload, u_int len)
 	int dontfragment = 0;
 	struct spoof spoof;
 	struct template *tmpl = con->tmpl;
+	uint8_t ttl = honeyd_ttl;
 
 	/* Statistics */
 	con->conhdr.sent += len;
 
 	ip_personality(tmpl, &id, TCP_CLOSED);
+
+	/*
+	 * A flow may have no template, and a template may have no
+	 * personality: use the default TTL then, as the TCP and ICMP reply
+	 * paths do (CWE-476).
+	 */
+	if (tmpl != NULL && tmpl->person != NULL)
+		ttl = tmpl->person->udptest.ttl;
 
 	pkt = pool_alloc(pool_pkt);
 
@@ -2785,7 +3079,7 @@ udp_send(struct udp_con *con, u_char *payload, u_int len)
 
 	/* Src and Dst are reversed both for ip and tcp */
 	ip_pack_hdr(pkt, 0, iplen, id,
-	    dontfragment ? IP_DF : 0, tmpl->person->udptest.ttl,
+	    dontfragment ? IP_DF : 0, ttl,
 	    IP_PROTO_UDP, con->con_ipdst, con->con_ipsrc);
 
 	memcpy(pkt + IP_HDR_LEN + UDP_HDR_LEN, payload, len);
@@ -2803,6 +3097,7 @@ udp_send(struct udp_con *con, u_char *payload, u_int len)
 	honeyd_ip_send(pkt, iplen, spoof);
 
 	generic_timeout(con->conhdr.timeout, HONEYD_UDP_WAIT);
+	udp_lru_update(con);
 
 	return (len);
 }
@@ -2921,30 +3216,71 @@ handle_udp_packet(struct template *tmpl, void *wrapper)
 		syslog(LOG_DEBUG, "Connection: udp %s",
 			honeyd_contoa(&honeyd_udp.conhdr));
 
-		/* Out of memory is dealt by having the port closed */
-		if ((con = calloc(1, sizeof(struct udp_con))) == NULL) {
-			syslog(LOG_WARNING, "calloc: %m");
-
+		/* Refuse the flow if the template has too many references */
+		if (template_ref_full(tmpl)) {
+			syslog(LOG_WARNING, "Too many flows for template: udp %s",
+			    honeyd_contoa(&honeyd_udp.conhdr));
 			if (unicast)
 				goto closed;
 			else
 				return 0;
+		}
+
+		/* Refuse the flow if its source has too many flows */
+		if (honeyd_source_full(ip->ip_src)) {
+			syslog(LOG_WARNING, "Too many flows from source: udp %s",
+			    honeyd_contoa(&honeyd_udp.conhdr));
+			if (unicast)
+				goto closed;
+			else
+				return 0;
+		}
+
+		/*
+		 * PM-SCR-160: allocate before making room under the UDP flow
+		 * cap, so a failed allocation never evicts a live flow. Out of
+		 * memory drops the packet quietly, without an ICMP error.
+		 */
+		if ((con = calloc(1, sizeof(struct udp_con))) == NULL) {
+			syslog(LOG_ERR, "%s: calloc: %m", __func__);
+			return 0;
 		}
 		honeyd_setudp(con, ip, udp, INITIATED_BY_EXTERNAL);
 
 		if (!unicast && isBroadcast)
 			con->conhdr.ip_dst = templateIp;
 
-		connection_insert(&udpcons, &udplru, &con->conhdr);
+		/*
+		 * PM-SCR-159: create the idle timer before the flow is listed,
+		 * counted or takes a source reference, so a failure leaves
+		 * nothing to undo but the allocation.
+		 */
 		con->conhdr.timeout = evtimer_new(libevent_base, honeyd_udp_timeout, con);
+		if (con->conhdr.timeout == NULL) {
+			syslog(LOG_ERR, "%s: evtimer_new failed", __func__);
+			free(con);
+			return 0;
+		}
+
+		/* The new flow is not on udplru yet, so it is never evicted */
+		udp_make_room();
+		udp_insert(con);
+		honeyd_source_take(&con->conhdr);
 		honeyd_log_flownew(honeyd_logfp, IP_PROTO_UDP, &con->conhdr);
 
 		con->tmpl = template_ref(tmpl);
-		generic_connect(tmpl, &con->conhdr, &con->cmd, con);
+		con->script_refused = generic_connect(tmpl, &con->conhdr,
+		    &con->cmd, con) == CMD_FORK_CAP;
+	} else if (con->script_refused && cmd_script_room(&con->conhdr)) {
+		/* Refused at the script cap before (PM-SCR-222): once there
+		 * is room, a later datagram starts the script */
+		con->script_refused = generic_connect(con->tmpl, &con->conhdr,
+		    &con->cmd, con) == CMD_FORK_CAP;
 	}
 
 	/* Keep this state active */
 	generic_timeout(con->conhdr.timeout, HONEYD_UDP_WAIT);
+	udp_lru_update(con);
 	con->softerrors = 0;
 
 	/* Statistics */
@@ -3205,10 +3541,17 @@ icmp_recv_cb(struct template *tmpl, u_char *pkt, u_short pktlen)
 			icmp_quote = (struct icmp_msg_quote *)(icmp + 1);
 			rip = (struct ip_hdr *)(&icmp_quote->icmp_ip);
 
+			/* The quoted IP and UDP headers must be present */
+			if (dlen < IP_HDR_LEN)
+				break;
+			if ((rip->ip_hl << 2) < IP_HDR_LEN ||
+			    dlen < (rip->ip_hl << 2) + UDP_HDR_LEN)
+				break;
+
 			if (rip->ip_p != IP_PROTO_UDP)
 				break;
 
-			udp = (struct udp_hdr *)((u_char *)rip + (ip->ip_hl<<2));
+			udp = (struct udp_hdr *)((u_char *)rip + (rip->ip_hl<<2));
 			tmpip.ip_src = rip->ip_dst;
 			tmpip.ip_dst = rip->ip_src;
 			tmpudp.uh_sport = udp->uh_dport;
@@ -3238,6 +3581,10 @@ icmp_recv_cb(struct template *tmpl, u_char *pkt, u_short pktlen)
 				if (xp_print == NULL)
 					return;
 
+				/* Three timestamps follow id and seq (PM-SCR-002) */
+				if (dlen < 12)
+					return;
+
 			/* Happens only if xp_print != NULL */
 				if (xp_print->flags.icmp_timestamp_reply)
 				{
@@ -3254,8 +3601,9 @@ icmp_recv_cb(struct template *tmpl, u_char *pkt, u_short pktlen)
 		/* YM: Added ICMP Address Mask reply capability */
 		case ICMP_MASK:
 		{
-			/* Happens only if xp_print != NULL */
-				if (xp_print->flags.icmp_addrmask_reply) {
+			/* No xprobe fingerprint: no reply */
+				if (xp_print != NULL &&
+				    xp_print->flags.icmp_addrmask_reply) {
 				icmp_idseq = (struct icmp_msg_idseq *)(icmp + 1);
 
 				syslog(LOG_DEBUG, "Sending ICMP Address Mask Reply: %s -> %s",
@@ -3271,8 +3619,9 @@ icmp_recv_cb(struct template *tmpl, u_char *pkt, u_short pktlen)
 		/* YM: Added ICMP Information reply capability */
 		case ICMP_INFO:
 		{
-			/* Happens only if xp_print != NULL */
-				if (xp_print->flags.icmp_info_reply) {
+			/* No xprobe fingerprint: no reply */
+				if (xp_print != NULL &&
+				    xp_print->flags.icmp_info_reply) {
 				icmp_idseq = (struct icmp_msg_idseq *)(icmp + 1);
 
 				syslog(LOG_DEBUG, "Sending ICMP Info Reply: %s -> %s",
@@ -3623,8 +3972,12 @@ honeyd_input(const struct interface *inter, struct ip_hdr *ip, u_short iplen)
 	if ((tmpl != NULL) && (tmpl->flags & TEMPLATE_EXTERNAL))
 		flags |= DELAY_ETHERNET;
 
-	/* Delay the packet if necessary, otherwise deliver it directly */
-	honeyd_delay_packet(NULL, inter, ip, iplen, NULL, NULL, delay, flags, no_spoof);
+	/*
+	 * Delay the packet if necessary, otherwise deliver it directly.
+	 * External delivery needs the template for its interface.
+	 */
+	honeyd_delay_packet((flags & DELAY_ETHERNET) ? tmpl : NULL, inter,
+	    ip, iplen, NULL, NULL, delay, flags, no_spoof);
 }
 
 // This is the callback that will be called whenever an external packet is recieved via pcap
@@ -3717,6 +4070,8 @@ honeyd_sigchld(int fd, short what, void *arg)
 		/* Ignore the rrdtool driver for children accounting */
 		if (honeyd_rrd_drv != NULL && honeyd_rrd_drv->pid == pid)
 			continue;
+		/* PM-SCR-152: release its script process slot */
+		cmd_script_reaped(pid);
 		honeyd_nchildren--;
 	}
 }
@@ -3930,6 +4285,7 @@ pm_daemon_main(int argc, char *argv[])
 	u_short stats_port = 0;
 	char *stats_username = NULL;
 	char *stats_password = NULL;
+	const char *stats_password_file = NULL;
 	int want_unittest = 0;
 	int setrand = 0;
 	int i, c, orig_argc, ninterfaces = 0;
@@ -3965,7 +4321,7 @@ pm_daemon_main(int argc, char *argv[])
 	orig_argc = argc;
 	orig_argv = argv;
 	syslog_init(orig_argc, orig_argv);
-	while ((c = getopt_long(argc, argv, "VPTdc:i:p:x:a:u:g:f:t:l:s:0:R:m:h?",
+	while ((c = getopt_long(argc, argv, HONEYD_OPTSTRING,
 				honeyd_long_opts, NULL)) != -1) {
 		char *ep;
 		switch (c) {
@@ -4010,8 +4366,8 @@ pm_daemon_main(int argc, char *argv[])
 				usage();
 			if ((name = strsep(&p, ":")) == NULL)
 				usage();
-			if ((password = strsep(&p, ":")) == NULL)
-				usage();
+			/* The password field is optional */
+			password = strsep(&p, ":");
 			if (p != NULL && *p != '\0')
 				usage();
 
@@ -4027,8 +4383,18 @@ pm_daemon_main(int argc, char *argv[])
 			}
 
 			stats_username = strdup(name);
-			stats_password = strdup(password);
+			if (password != NULL) {
+				fprintf(stderr, "Warning: a password in -c is "
+				    "deprecated, it is visible to other users; "
+				    "use --stats-password-file\n");
+				stats_password = strdup(password);
+				/* Hide it from the process list too */
+				stats_scrub_password(optarg);
+			}
 		}
+			break;
+		case 'K':
+			stats_password_file = optarg;
 			break;
 		case 'u':
 			honeyd_uid = strtoul(optarg, &ep, 10);
@@ -4135,6 +4501,26 @@ pm_daemon_main(int argc, char *argv[])
 			usage();
 			break;
 		}
+	}
+
+	if (stats_password_file != NULL) {
+		if (stats_username == NULL) {
+			fprintf(stderr, "--stats-password-file needs -c "
+			    "host:port:name\n");
+			exit(EXIT_FAILURE);
+		}
+		if (stats_password != NULL) {
+			fprintf(stderr, "use either a password in -c or "
+			    "--stats-password-file, not both\n");
+			exit(EXIT_FAILURE);
+		}
+		if ((stats_password =
+			stats_read_password_file(stats_password_file)) == NULL)
+			exit(EXIT_FAILURE);
+	} else if (stats_username != NULL && stats_password == NULL) {
+		fprintf(stderr, "-c needs a password: use "
+		    "--stats-password-file\n");
+		exit(EXIT_FAILURE);
 	}
 
 	if (honeyd_show_version) {

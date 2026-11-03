@@ -1,0 +1,10 @@
+# PM-SCR-104: proxy destination policy on the resolved address
+cc_san proxy_dest_policy -I tests/security/stub \
+    -Wl,--wrap=make_socket \
+    -Wl,--wrap=make_bound_connect -Wl,--wrap=getpeername \
+    tests/security/proxy_dest_policy.c tests/security/pcre_stub.c \
+    subsystems/proxy.c subsystems/smtp.c util.c atomicio.c sha1.c
+for g in v4 v6 mapped special name own decoy decoymapped override \
+    hardallow limit metadata metadata2 shortmapped recheck; do
+	run_clean proxy_dest_policy $g
+done

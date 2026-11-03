@@ -1,0 +1,6 @@
+# config.c: broadcast template names must fit templateName (refused at
+# config time) and bcast_trigger must survive a missing template
+cc_daemon bcast_name tests/security/bcast_name.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean bcast_name

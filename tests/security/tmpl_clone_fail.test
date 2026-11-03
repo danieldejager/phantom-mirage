@@ -1,0 +1,6 @@
+# config.c template_clone: failed bcast_insert left the new template in
+# the index and leaked it (CWE-401)
+cc_daemon tmpl_clone_fail tests/security/tmpl_clone_fail.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean tmpl_clone_fail

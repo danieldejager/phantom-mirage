@@ -42,9 +42,16 @@
 #ifndef _ERR_H_
 #define _ERR_H_
 
-void	err(int eval, const char *fmt, ...);
-void	warn(const char *fmt, ...);
-void	errx(int eval, const char *fmt, ...);
-void	warnx(const char *fmt, ...);
+/* Let the compiler check the arguments against the format */
+#if defined(__GNUC__) || defined(__clang__)
+#define ERR_PRINTFLIKE(f, a)	__attribute__((__format__(__printf__, f, a)))
+#else
+#define ERR_PRINTFLIKE(f, a)
+#endif
+
+void	err(int eval, const char *fmt, ...) ERR_PRINTFLIKE(2, 3);
+void	warn(const char *fmt, ...) ERR_PRINTFLIKE(1, 2);
+void	errx(int eval, const char *fmt, ...) ERR_PRINTFLIKE(2, 3);
+void	warnx(const char *fmt, ...) ERR_PRINTFLIKE(1, 2);
 
 #endif /* !_ERR_H_ */

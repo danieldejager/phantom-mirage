@@ -1,0 +1,5 @@
+# PM-SCR-140: IPL and RIPL fingerprint values not validated at load
+cc_daemon pers_ipl tests/security/pers_ipl.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean pers_ipl

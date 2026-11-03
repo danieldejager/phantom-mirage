@@ -130,7 +130,12 @@ queue_dhcp_discover(struct template *tmpl)
 	//Initialize the queue if this is the first operation
 	if(dhcp_queue == NULL)
 	{
-		dhcp_queue = (Queue*) malloc(sizeof(Queue));
+		/* Fail the request cleanly, retry on the next call (PM-SCR-154) */
+		if ((dhcp_queue = malloc(sizeof(Queue))) == NULL)
+		{
+			syslog(LOG_ERR, "%s: malloc", __func__);
+			return;
+		}
 		dhcp_queue->m_count = 0;
 		dhcp_queue->m_front = NULL;
 		dhcp_queue->m_rear = NULL;
@@ -140,7 +145,7 @@ queue_dhcp_discover(struct template *tmpl)
 
 	if(!(nextQueueNode = (QueueNode*)malloc(sizeof(QueueNode))))
 	{
-		//TODO: malloc returned an error, let's at least make a warning
+		syslog(LOG_ERR, "%s: malloc", __func__);
 		return;
 	}
 
@@ -177,7 +182,32 @@ struct template *_dhcp_dequeue()
 
 	struct template *template = front->m_template;
 	free(front);
+	if (dhcp_queue->m_count == 0)
+		dhcp_queue->m_rear = NULL;
 	return template;
+}
+
+/* Drop every queue entry for a template that is going away */
+static void
+_dhcp_unqueue(struct template *tmpl)
+{
+	QueueNode **pp, *node;
+
+	if (dhcp_queue == NULL)
+		return;
+
+	dhcp_queue->m_rear = NULL;
+	pp = &dhcp_queue->m_front;
+	while ((node = *pp) != NULL) {
+		if (node->m_template == tmpl) {
+			*pp = node->m_next;
+			free(node);
+			dhcp_queue->m_count--;
+			continue;
+		}
+		dhcp_queue->m_rear = node;
+		pp = &node->m_next;
+	}
 }
 
 void
@@ -230,7 +260,11 @@ _dhcp_getconf(struct template *tmpl)
 
 	req->ntries = 0;
 
-	req->timeoutEv = evtimer_new(libevent_base, _dhcp_timeout_cb, tmpl);
+	/* One timer per request, reused for every attempt */
+	if (req->timeoutEv == NULL &&
+	    (req->timeoutEv = evtimer_new(libevent_base, _dhcp_timeout_cb,
+	    tmpl)) == NULL)
+		return (-1);
 	evtimer_add(req->timeoutEv, &_timeout_tv);
 
 	return (0);
@@ -264,9 +298,52 @@ dhcp_abort(struct template *tmpl)
 	if (req->state == 0)
 		return;
 
-	event_del(req->timeoutEv);
+	/* No timer of the aborted request may fire later (PM-SCR-148) */
+	if (req->timeoutEv != NULL)
+		event_del(req->timeoutEv);
+	if (req->renewEv != NULL)
+		event_del(req->renewEv);
+	if (req->renewTimeoutEv != NULL)
+		event_del(req->renewTimeoutEv);
 
 	req->state = 0;
+}
+
+/*
+ * Release everything a template's DHCP request owns: all three timers
+ * are deleted and freed so none can fire against a freed template, and
+ * the template is taken off the discover queue so it is never dequeued
+ * after it is freed. Called for every freed template, with or without
+ * a request.
+ */
+void
+dhcp_req_free(struct template *tmpl)
+{
+	struct dhcpclient_req *req = tmpl->dhcp_req;
+
+	_dhcp_unqueue(tmpl);
+
+	if (req == NULL)
+		return;
+
+	if (req->timeoutEv != NULL) {
+		event_del(req->timeoutEv);
+		event_free(req->timeoutEv);
+		req->timeoutEv = NULL;
+	}
+	if (req->renewEv != NULL) {
+		event_del(req->renewEv);
+		event_free(req->renewEv);
+		req->renewEv = NULL;
+	}
+	if (req->renewTimeoutEv != NULL) {
+		event_del(req->renewTimeoutEv);
+		event_free(req->renewTimeoutEv);
+		req->renewTimeoutEv = NULL;
+	}
+
+	free(req);
+	tmpl->dhcp_req = NULL;
 }
 
 static void
@@ -277,8 +354,11 @@ _dhcp_renew_cb(int fd, short ev, void *arg)
 	event_del(tmpl->dhcp_req->renewEv);
 
 	// Start a timer to trigger if the renew fails
-	tmpl->dhcp_req->renewTimeoutEv = evtimer_new(libevent_base, _dhcp_renew_timeout_cb, tmpl);
-	evtimer_add(tmpl->dhcp_req->renewTimeoutEv, &_timeout_tv);
+	if (tmpl->dhcp_req->renewTimeoutEv == NULL)
+		tmpl->dhcp_req->renewTimeoutEv = evtimer_new(libevent_base,
+		    _dhcp_renew_timeout_cb, tmpl);
+	if (tmpl->dhcp_req->renewTimeoutEv != NULL)
+		evtimer_add(tmpl->dhcp_req->renewTimeoutEv, &_timeout_tv);
 
 	_unicast(tmpl, _pack_renew);
 }
@@ -481,8 +561,12 @@ _dhcp_reply(struct template *tmpl, u_char *buf, size_t buflen)
 		{
 			req->renewTimer.tv_usec = 0;
 			req->renewTimer.tv_sec = leaseTime / 2;
-			req->renewEv = evtimer_new(libevent_base, _dhcp_renew_cb, tmpl);
-			evtimer_add(req->renewEv, &req->renewTimer);
+			/* Reuse the renewal timer: every ACK reschedules it */
+			if (req->renewEv == NULL)
+				req->renewEv = evtimer_new(libevent_base,
+				    _dhcp_renew_cb, tmpl);
+			if (req->renewEv != NULL)
+				evtimer_add(req->renewEv, &req->renewTimer);
 		}
 
 		// If this is a successful renewal, drop out here
@@ -498,8 +582,12 @@ _dhcp_reply(struct template *tmpl, u_char *buf, size_t buflen)
 		syslog(LOG_NOTICE, "[%s] got DHCP offer: %s",
 		    inter->if_ent.intf_name, addr_ntoa(&addr));
 
-		dhcp_abort(tmpl);
-		//Abort resets the state variable, so we have to set it again afterward
+		/*
+		 * The request is answered: stop its timeout only. dhcp_abort
+		 * would also cancel the renewal just scheduled above.
+		 */
+		if (req->timeoutEv != NULL)
+			event_del(req->timeoutEv);
 		req->state = DHREQ_STATE_GOTACK;
 
 
@@ -903,6 +991,7 @@ void
 dhcp_template_new(struct template *tmpl)
 {
 	struct addr addr;
+	char *name;
 
 	/* Need to find a temporary IP address */
 	if (template_get_dhcp_address(&addr) == -1) {
@@ -910,11 +999,21 @@ dhcp_template_new(struct template *tmpl)
 		return;
 	}
 
+	/*
+	 * CWE-476/CWE-252: copy the new name before the template is taken
+	 * out of the index and its ARP entry; on failure leave it as it is.
+	 */
+	if ((name = strdup(addr_ntoa(&addr))) == NULL) {
+		syslog(LOG_ERR, "%s: strdup: DHCP restart for %s skipped",
+		    __func__, tmpl->name);
+		return;
+	}
+
 	template_remove_arp(tmpl);
 	template_remove(tmpl);
 	free(tmpl->name);
 
-	tmpl->name = strdup(addr_ntoa(&addr));
+	tmpl->name = name;
 	template_post_arp(tmpl, &addr);
 
 	queue_dhcp_discover(tmpl);

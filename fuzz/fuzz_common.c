@@ -21,9 +21,32 @@
 
 /* ---- side-effect stubs (linked with --wrap) ---- */
 
-pid_t __wrap_fork(void) { errno = EPERM; return (-1); }
+/*
+ * A test that sets fuzz_real_exec gets the real fork() and lets the
+ * child exec the program fuzz_exec_path (with the daemon's argv), so a
+ * script action runs a local test program. Off by default.
+ */
+int fuzz_real_exec;
+const char *fuzz_exec_path;
+pid_t __real_fork(void);
+int __real_execv(const char *, char *const []);
+
+pid_t
+__wrap_fork(void)
+{
+	if (fuzz_real_exec)
+		return (__real_fork());
+	errno = EPERM;
+	return (-1);
+}
 int __wrap_execv(const char *p, char *const a[]) { abort(); }
-int __wrap_execvp(const char *p, char *const a[]) { abort(); }
+int
+__wrap_execvp(const char *p, char *const a[])
+{
+	if (fuzz_real_exec && fuzz_exec_path != NULL)
+		return (__real_execv(fuzz_exec_path, a));
+	abort();
+}
 
 int __real_connect(int, const struct sockaddr *, socklen_t);
 int
@@ -37,8 +60,22 @@ __wrap_connect(int fd, const struct sockaddr *sa, socklen_t len)
 
 static char fake_handle[64];
 ip_t *__wrap_ip_open(void) { return ((ip_t *)fake_handle); }
-ssize_t __wrap_ip_send(ip_t *i, const void *buf, size_t len) { return (len); }
-ssize_t __wrap_eth_send(eth_t *e, const void *buf, size_t len) { return (len); }
+void (*fuzz_ip_send_hook)(const void *, size_t);
+ssize_t
+__wrap_ip_send(ip_t *i, const void *buf, size_t len)
+{
+	if (fuzz_ip_send_hook != NULL)
+		fuzz_ip_send_hook(buf, len);
+	return (len);
+}
+void (*fuzz_eth_send_hook)(const void *, size_t);
+ssize_t
+__wrap_eth_send(eth_t *e, const void *buf, size_t len)
+{
+	if (fuzz_eth_send_hook != NULL)
+		fuzz_eth_send_hook(buf, len);
+	return (len);
+}
 
 /* ---- init ---- */
 

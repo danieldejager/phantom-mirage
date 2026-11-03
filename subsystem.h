@@ -68,11 +68,17 @@ struct subsystem {
 #define SUBSYSTEM_RESTART	0x02
 
 	struct timeval tv_restart;		/* time last started */
+	int restart_tries;			/* failed restarts in a row */
+	struct event *restart_ev;		/* pending restart, if any */
 
 	TAILQ_HEAD(portqueue, port) ports;	/* list of configured ports */
 };
 
 #define SUBSYSTEM_RESTART_INTERVAL	5	/* time between restarts */
+#define SUBSYSTEM_RESTART_TRIES		8	/* failed restarts, then stop */
+#define SUBSYSTEM_RESTART_MAX_DELAY	60	/* cap on the retry delay */
+#define SUBSYSTEM_RESTART_SLOW		600	/* retry delay once given up */
+#define SUBSYSTEM_IO_TIMEOUT		1000	/* ms per control step */
 
 int templ_container_compare(struct template_container *,
     struct template_container *);

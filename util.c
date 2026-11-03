@@ -80,6 +80,7 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <assert.h>
 #include <syslog.h>
 
@@ -130,11 +131,33 @@ pcap_dloff(pcap_t *pd)
 	return (offset);
 }
 
-char *
-strrpl(char *str, size_t size, char *match, char *value)
+/*
+ * Copies srclen bytes of src and a terminating NUL into dst. Returns 0,
+ * or -1 without writing anything when the result and its NUL do not
+ * fit in dstlen bytes.
+ */
+int
+copy_bounded(char *dst, size_t dstlen, const char *src, size_t srclen)
+{
+	if (dstlen == 0 || srclen >= dstlen)
+		return (-1);
+	memcpy(dst, src, srclen);
+	dst[srclen] = '\0';
+	return (0);
+}
+
+/*
+ * Replaces the first occurrence of match in str, a buffer of size
+ * bytes, by value. Returns 1 and sets *where (if not NULL) to the
+ * replacement when replaced, 0 when there is no match, and -1 when the
+ * result and its terminating NUL would not fit; str is unchanged then.
+ */
+int
+strrpl_bounded(char *str, size_t size, const char *match, const char *value,
+    char **where)
 {
 	char *p, *e;
-	int len, rlen;
+	size_t len, rlen;
 
 	p = str;
 	e = p + strlen(p);
@@ -148,21 +171,35 @@ strrpl(char *str, size_t size, char *match, char *value)
 		p += 1;
 
 		if (p >= e)
-			return (NULL);
+			return (0);
 		    
 	}
 
 	if (p == NULL)
-		return (NULL);
+		return (0);
 
 	rlen = strlen(value);
 
-	if (strlen(str) - len + rlen > size)
-		return (NULL);
+	/* The result and its terminating NUL must fit in size bytes */
+	if (strlen(str) - len + rlen >= size)
+		return (-1);
 
 	memmove(p + rlen, p + len, strlen(p + len) + 1);
 	memcpy(p, value, rlen);
 
+	if (where != NULL)
+		*where = p;
+	return (1);
+}
+
+/* Like strrpl_bounded, but NULL for both no match and no room */
+char *
+strrpl(char *str, size_t size, char *match, char *value)
+{
+	char *p;
+
+	if (strrpl_bounded(str, size, match, value, &p) != 1)
+		return (NULL);
 	return (p);
 }
 
@@ -573,6 +610,13 @@ fdshare_close(int fd)
 	assert(fds_refs != NULL);
 	assert(fd >= 0 && fd < fds_refsize);
 
+	/* Never below zero, and never a second close of the same share */
+	if (fds_refs[fd] <= 0) {
+		syslog(LOG_WARNING, "%s: fd %d has no shared reference",
+		    __func__, fd);
+		return (-1);
+	}
+
 	if (--fds_refs[fd])
 		return (0);
 
@@ -710,4 +754,206 @@ trace_onoff(int on) {
 		for (i = 0; i < trace_refsize; ++i)
 			trace_free(i);
 	}
+}
+
+/*
+ * Stats collector password handling shared by the daemon and the
+ * sniffer (PM-SCR-028).
+ */
+
+/* Longest password accepted from a password file */
+#define STATS_PASSWORD_MAX	1023
+
+static int
+stats_password_stat_bad(const char *path, const struct stat *st)
+{
+	if (!S_ISREG(st->st_mode)) {
+		fprintf(stderr, "stats password file %s: not a regular file\n",
+		    path);
+		return (-1);
+	}
+	if (st->st_uid != geteuid()) {
+		fprintf(stderr, "stats password file %s: not owned by the "
+		    "running user (uid %lu)\n", path, (unsigned long)geteuid());
+		return (-1);
+	}
+	if (st->st_mode & (S_IRWXG | S_IRWXO)) {
+		fprintf(stderr, "stats password file %s: mode %04o is too "
+		    "open, use 0600\n", path, (unsigned)(st->st_mode & 07777));
+		return (-1);
+	}
+	return (0);
+}
+
+/*
+ * Reads the stats collector password from path. The file must be a
+ * regular file, not a symlink, owned by the running user and not
+ * accessible by group or others. The first line is the password; one
+ * longer than STATS_PASSWORD_MAX bytes is refused, never truncated.
+ * On error prints a message naming the file (never its contents) and
+ * returns NULL.
+ */
+char *
+stats_read_password_file(const char *path)
+{
+	char buf[STATS_PASSWORD_MAX + 2], *secret = NULL;
+	struct stat st;
+	size_t len = 0;
+	ssize_t n;
+	int fd;
+
+	if (lstat(path, &st) == -1) {
+		fprintf(stderr, "stats password file %s: %s\n", path,
+		    strerror(errno));
+		return (NULL);
+	}
+	if (S_ISLNK(st.st_mode)) {
+		fprintf(stderr, "stats password file %s: refusing a symlink\n",
+		    path);
+		return (NULL);
+	}
+	if (stats_password_stat_bad(path, &st) == -1)
+		return (NULL);
+	/* O_NONBLOCK: a FIFO swapped in after the lstat must not hang us */
+	if ((fd = open(path,
+		    O_RDONLY | O_NOFOLLOW | O_NOCTTY | O_NONBLOCK)) == -1) {
+		fprintf(stderr, "stats password file %s: %s\n", path,
+		    strerror(errno));
+		return (NULL);
+	}
+	/* Check the opened file again in case it was swapped */
+	if (fstat(fd, &st) == -1) {
+		fprintf(stderr, "stats password file %s: %s\n", path,
+		    strerror(errno));
+		close(fd);
+		return (NULL);
+	}
+	if (stats_password_stat_bad(path, &st) == -1) {
+		close(fd);
+		return (NULL);
+	}
+	/* Read one byte more than the limit to see an over long line */
+	while (len < sizeof(buf) - 1) {
+		n = read(fd, buf + len, sizeof(buf) - 1 - len);
+		if (n == -1 && errno == EINTR)
+			continue;
+		if (n < 0) {
+			fprintf(stderr, "stats password file %s: %s\n", path,
+			    strerror(errno));
+			close(fd);
+			goto out;
+		}
+		if (n == 0)
+			break;
+		len += n;
+	}
+	close(fd);
+	buf[len] = '\0';
+	len = strcspn(buf, "\r\n");
+	buf[len] = '\0';
+	if (len == 0) {
+		fprintf(stderr, "stats password file %s: empty password\n",
+		    path);
+		goto out;
+	}
+	if (len > STATS_PASSWORD_MAX) {
+		fprintf(stderr, "stats password file %s: password longer "
+		    "than %d bytes\n", path, STATS_PASSWORD_MAX);
+		goto out;
+	}
+	if ((secret = strdup(buf)) == NULL)
+		fprintf(stderr, "stats password file %s: out of memory\n",
+		    path);
+ out:
+	{
+		volatile char *v = buf;
+		size_t i;
+
+		for (i = 0; i < sizeof(buf); i++)
+			v[i] = 0;
+	}
+	return (secret);
+}
+
+/*
+ * For a short option argument such as "-dc", returns the first option
+ * in it that takes a value according to optstring, and sets *rest to
+ * the attached value, or to NULL when the value is the next argument.
+ * Returns 0 if none.
+ */
+static int
+stats_shortopt_value(const char *a, const char *optstring, const char **rest)
+{
+	const char *p, *o;
+
+	*rest = NULL;
+	if (a[0] != '-' || a[1] == '-' || a[1] == '\0')
+		return (0);
+	for (p = a + 1; *p != '\0'; p++) {
+		if ((o = strchr(optstring, *p)) == NULL || o[1] != ':')
+			continue;
+		if (p[1] != '\0')
+			*rest = p + 1;
+		return (*p);
+	}
+	return (0);
+}
+
+/*
+ * Copies argv[i] to out, masking the password field of a -c
+ * host:port:name:password value given as "-c VALUE", "-cVALUE" or in a
+ * cluster such as "-dc VALUE".
+ */
+void
+stats_redact_arg(char *argv[], int i, const char *optstring,
+    char *out, size_t len)
+{
+	const char *cval = NULL, *rest, *p;
+	int opt, n;
+
+	strlcpy(out, argv[i], len);
+
+	opt = i > 1 ? stats_shortopt_value(argv[i - 1], optstring, &rest) : 0;
+	if (opt != 0 && rest == NULL) {
+		/* argv[i] is the value of the previous option */
+		if (opt == 'c')
+			cval = argv[i];
+	} else if (stats_shortopt_value(argv[i], optstring, &rest) == 'c')
+		cval = rest;
+	if (cval == NULL)
+		return;
+
+	/* Keep host:port:name: and mask the rest */
+	for (p = cval, n = 0; *p != '\0'; p++)
+		if (*p == ':' && ++n == 3)
+			break;
+	if (n == 3 && p[1] != '\0') {
+		size_t keep = (p + 1) - argv[i];
+
+		if (keep < len)
+			out[keep] = '\0';
+		strlcat(out, "*****", len);
+	}
+}
+
+/*
+ * Overwrites, in place, the password field of a -c host:port:name:pass
+ * value with '*' so it no longer shows in the process list (Linux
+ * /proc/PID/cmdline reads the argv strings). Call it on the getopt
+ * optarg after the value has been copied out. The length stays the
+ * same so the argv layout is not changed.
+ */
+void
+stats_scrub_password(char *cval)
+{
+	volatile char *v;
+	int n = 0;
+
+	for (; *cval != '\0'; cval++)
+		if (*cval == ':' && ++n == 3)
+			break;
+	if (n != 3)
+		return;
+	for (v = cval + 1; *v != '\0'; v++)
+		*v = '*';
 }

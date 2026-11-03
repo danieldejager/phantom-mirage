@@ -11,6 +11,10 @@ AM_MAINTAINER_MODE
 
 AM_PROG_LIBTOOL
 
+dnl The checks below reuse CFLAGS as scratch space; keep the user value
+dnl (or the -g -O2 default from AC_PROG_CC) and restore it for the build.
+user_CFLAGS="$CFLAGS"
+
 AH_TEMPLATE([HAVE_STRUCT_SOCKADDR_STORAGE], [Define if your system defines struct sockaddr_storage])
 AH_TEMPLATE([HAVE_ACCRIGHTS_IN_MSGHDR], [Define if your system uses access rights style file descriptor passing])
 AH_TEMPLATE([HAVE_CONTROL_IN_MSGHDR], [Define if your system uses ancillary data style file descriptor passing])
@@ -792,6 +796,78 @@ libraries called libhum and libbee, you would use --with-plugins=hum,bee.],
 AC_SUBST(PLUGINLIB)
 AC_SUBST(PLUGINS)
 AC_SUBST(PLUGINSDECLARE)
+
+CFLAGS="$user_CFLAGS"
+
+dnl Build hardening (PM-SCR-022, R4-2 and R4-3). Every flag is probed with
+dnl the user's CFLAGS and dropped when the toolchain refuses it, so a non
+dnl GNU compiler or linker still builds, only without that flag. The flags
+dnl go to HARDEN_* variables that Makefile.am adds to AM_CFLAGS and
+dnl AM_LDFLAGS; CFLAGS and LDFLAGS stay the user's. The PIE flags are kept
+dnl apart because the preload library must be linked as a plain shared
+dnl object, never with -pie.
+dnl PM_HARDEN_CC(FLAG, VAR): append FLAG to VAR when a compile with
+dnl -Werror FLAG succeeds.
+AC_DEFUN([PM_HARDEN_CC], [
+  AC_MSG_CHECKING([whether $CC accepts $1])
+  pm_save_CFLAGS="$CFLAGS"
+  CFLAGS="$CFLAGS -Werror $1"
+  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <stdio.h>]],
+    [[char b[16]; snprintf(b, sizeof(b), "%s", "x"); puts(b);]])],
+    [AC_MSG_RESULT([yes]); $2="$$2 $1"], [AC_MSG_RESULT([no])])
+  CFLAGS="$pm_save_CFLAGS"
+])
+dnl PM_HARDEN_LD(FLAG, VAR, [EXTRA_CFLAGS]): append FLAG to VAR when a
+dnl link with FLAG succeeds.
+AC_DEFUN([PM_HARDEN_LD], [
+  AC_MSG_CHECKING([whether the linker accepts $1])
+  pm_save_CFLAGS="$CFLAGS"
+  pm_save_LDFLAGS="$LDFLAGS"
+  CFLAGS="$CFLAGS -Werror $3"
+  LDFLAGS="$LDFLAGS $1"
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <stdio.h>]],
+    [[char b[16]; snprintf(b, sizeof(b), "%s", "x"); puts(b);]])],
+    [AC_MSG_RESULT([yes]); $2="$$2 $1"], [AC_MSG_RESULT([no])])
+  CFLAGS="$pm_save_CFLAGS"
+  LDFLAGS="$pm_save_LDFLAGS"
+])
+
+HARDEN_CFLAGS=""
+HARDEN_PIE_CFLAGS=""
+HARDEN_FORTIFY_CFLAGS=""
+HARDEN_LDFLAGS=""
+HARDEN_PIE_LDFLAGS=""
+PM_HARDEN_CC([-fstack-protector-strong], [HARDEN_CFLAGS])
+dnl gcc refuses -Werror=format-security without -Wformat: probe the pair
+PM_HARDEN_CC([-Wformat -Werror=format-security], [HARDEN_CFLAGS])
+dnl FORTIFY needs optimisation, and a value set by the user, the distro
+dnl compiler defaults or the CFLAGS is kept rather than redefined. It is
+dnl kept apart because the preload library defines libc functions that
+dnl the fortified headers turn into inline wrappers (clang refuses that).
+AC_MSG_CHECKING([whether to add -D_FORTIFY_SOURCE=2])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+#ifndef __OPTIMIZE__
+#error not optimised
+#endif
+#include <stdio.h>
+#ifdef _FORTIFY_SOURCE
+#error already set
+#endif
+]], [[]])],
+  [AC_MSG_RESULT([yes]); HARDEN_FORTIFY_CFLAGS="-D_FORTIFY_SOURCE=2"],
+  [AC_MSG_RESULT([no, not optimised or already set])])
+PM_HARDEN_CC([-fPIE], [HARDEN_PIE_CFLAGS])
+if test x"$HARDEN_PIE_CFLAGS" != x; then
+  PM_HARDEN_LD([-pie], [HARDEN_PIE_LDFLAGS], [-fPIE])
+fi
+PM_HARDEN_LD([-Wl,-z,relro], [HARDEN_LDFLAGS])
+PM_HARDEN_LD([-Wl,-z,now], [HARDEN_LDFLAGS])
+PM_HARDEN_LD([-Wl,-z,noexecstack], [HARDEN_LDFLAGS])
+AC_SUBST(HARDEN_CFLAGS)
+AC_SUBST(HARDEN_PIE_CFLAGS)
+AC_SUBST(HARDEN_FORTIFY_CFLAGS)
+AC_SUBST(HARDEN_LDFLAGS)
+AC_SUBST(HARDEN_PIE_LDFLAGS)
 
 AC_CONFIG_FILES([Makefile regress/Makefile])
 AC_OUTPUT

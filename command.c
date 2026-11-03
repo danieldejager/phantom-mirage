@@ -51,6 +51,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <dnet.h>
 #include <syslog.h>
@@ -100,21 +101,220 @@ cmd_trigger_write(struct command *cmd, int size)
 		TRACE(event_get_fd(cmd->pwrite), event_add(cmd->pwrite, NULL));
 }
 
+/*
+ * PM-SCR-152: script processes. Every script child forked by cmd_fork()
+ * has an entry in a pid map from fork until honeyd_sigchld() reaps it,
+ * so the live count is exact. "option honeyd max_script_procs N" caps
+ * the live script processes (default HONEYD_MAX_SCRIPT_PROCS) and
+ * "option honeyd max_script_procs_per_source N" caps those started for
+ * one source address (default HONEYD_MAX_SCRIPT_PROCS_SOURCE); 0 means
+ * no limit. UDP scripts may hold at most half of max_script_procs
+ * (rounded up), so a sender that spoofs many UDP source addresses
+ * cannot take every slot: TCP needs a completed handshake and keeps the
+ * rest (PM-SCR-221, CWE-770). TCP scripts likewise hold at most half
+ * (rounded up), so many real TCP sources cannot starve UDP (PM-SCR-234).
+ * With an odd cap one slot is shared; with a cap of 1 nothing is
+ * reserved. The entry remembers the command that owns the child, and
+ * cmd_free() only signals a pid that is still in the map for that same
+ * command, so a reaped (and possibly reused) pid is never signalled.
+ */
+struct scriptproc {
+	SPLAY_ENTRY(scriptproc) node;
+	pid_t pid;
+	ip_addr_t src;
+	int udp;		/* started for a UDP flow */
+	struct command *cmd;	/* NULL once cmd_free() let go of it */
+};
+
+struct scriptsrc {
+	SPLAY_ENTRY(scriptsrc) node;
+	ip_addr_t addr;
+	uint32_t nprocs;
+};
+
+static int
+scriptproc_compare(struct scriptproc *a, struct scriptproc *b)
+{
+	return (a->pid < b->pid ? -1 : a->pid > b->pid);
+}
+
+static int
+scriptsrc_compare(struct scriptsrc *a, struct scriptsrc *b)
+{
+	return (a->addr < b->addr ? -1 : a->addr > b->addr);
+}
+
+static SPLAY_HEAD(scriptproctree, scriptproc) scriptprocs =
+    SPLAY_INITIALIZER(&scriptprocs);
+static SPLAY_HEAD(scriptsrctree, scriptsrc) scriptsrcs =
+    SPLAY_INITIALIZER(&scriptsrcs);
+SPLAY_PROTOTYPE(scriptproctree, scriptproc, node, scriptproc_compare);
+SPLAY_GENERATE(scriptproctree, scriptproc, node, scriptproc_compare);
+SPLAY_PROTOTYPE(scriptsrctree, scriptsrc, node, scriptsrc_compare);
+SPLAY_GENERATE(scriptsrctree, scriptsrc, node, scriptsrc_compare);
+
+static uint32_t script_nprocs;
+static uint32_t script_nudp;	/* of those, started for UDP flows */
+uint32_t cmd_script_refused;	/* flows refused at the cap, ever */
+
+static struct scriptsrc *
+scriptsrc_find(ip_addr_t addr)
+{
+	struct scriptsrc tmp;
+
+	tmp.addr = addr;
+	return (SPLAY_FIND(scriptsrctree, &scriptsrcs, &tmp));
+}
+
+static struct scriptproc *
+scriptproc_find(pid_t pid)
+{
+	struct scriptproc tmp;
+
+	tmp.pid = pid;
+	return (SPLAY_FIND(scriptproctree, &scriptprocs, &tmp));
+}
+
+/* Live script processes, all sources */
+uint32_t
+cmd_script_procs(void)
+{
+	return (script_nprocs);
+}
+
+/* Live script processes started for flows from this source */
+uint32_t
+cmd_script_source_procs(ip_addr_t addr)
+{
+	struct scriptsrc *ss = scriptsrc_find(addr);
+
+	return (ss != NULL ? ss->nprocs : 0);
+}
+
+/* Live script processes started for UDP flows */
+uint32_t
+cmd_script_udp_procs(void)
+{
+	return (script_nudp);
+}
+
+/* True if a new script process for this source must be refused */
+static int
+cmd_script_full(ip_addr_t src, int udp)
+{
+	uint32_t max;
+
+	max = honeyd_limit_option("max_script_procs",
+	    HONEYD_MAX_SCRIPT_PROCS);
+	if (max != 0 && script_nprocs >= max)
+		return (1);
+	/*
+	 * Each protocol may hold at most half of the global cap, rounded
+	 * up: spoofed UDP cannot take the TCP half (PM-SCR-221) and real
+	 * TCP sources cannot take the UDP half (PM-SCR-234).
+	 */
+	if (max != 0 && udp && script_nudp >= max - max / 2)
+		return (1);
+	if (max != 0 && !udp && script_nprocs - script_nudp >= max - max / 2)
+		return (1);
+	max = honeyd_limit_option("max_script_procs_per_source",
+	    HONEYD_MAX_SCRIPT_PROCS_SOURCE);
+	if (max != 0 && cmd_script_source_procs(src) >= max)
+		return (1);
+	return (0);
+}
+
+/* True if a script for this flow would not be refused at the cap */
+int
+cmd_script_room(struct tuple *hdr)
+{
+	return (!cmd_script_full(hdr->ip_src, hdr->type == SOCK_DGRAM));
+}
+
+/* At most one log line per second, with the count since the last one */
+static void
+cmd_script_refuse(struct tuple *hdr)
+{
+	static time_t last;
+	static uint32_t since;
+	time_t now = time(NULL);
+
+	cmd_script_refused++;
+	since++;
+	if (now == last)
+		return;
+	last = now;
+	syslog(LOG_NOTICE, "script process cap reached (%u live): refused "
+	    "%u flow(s), latest %s", script_nprocs, since,
+	    honeyd_contoa(hdr));
+	since = 0;
+}
+
+/* Called from honeyd_sigchld() for every reaped pid */
+void
+cmd_script_reaped(pid_t pid)
+{
+	struct scriptproc *sp;
+	struct scriptsrc *ss;
+
+	if ((sp = scriptproc_find(pid)) == NULL)
+		return;
+	SPLAY_REMOVE(scriptproctree, &scriptprocs, sp);
+	script_nprocs--;
+	if (sp->udp)
+		script_nudp--;
+	if ((ss = scriptsrc_find(sp->src)) != NULL && --ss->nprocs == 0) {
+		SPLAY_REMOVE(scriptsrctree, &scriptsrcs, ss);
+		free(ss);
+	}
+	free(sp);
+}
+
+/*
+ * The flow is gone: kill the script and everything it started. The
+ * child made itself a process group leader, and the group cannot be
+ * reused while the leader is unreaped, which the map guarantees here.
+ * The entry stays (and counts) until the child is reaped.
+ */
+static void
+cmd_script_kill(struct command *cmd)
+{
+	struct scriptproc *sp;
+
+	if (cmd->pid <= 0 || (sp = scriptproc_find(cmd->pid)) == NULL ||
+	    sp->cmd != cmd)
+		return;
+	sp->cmd = NULL;
+	if (killpg(sp->pid, SIGKILL) == -1)
+		kill(sp->pid, SIGKILL);
+}
+
 void
 cmd_free(struct command *cmd)
 {
-	if (cmd->pread != NULL)
-		TRACE(event_get_fd(cmd->pread), event_del(cmd->pread));
+	/* event_free also deletes the event */
+	if (cmd->pread != NULL) {
+		TRACE(event_get_fd(cmd->pread), event_free(cmd->pread));
+		cmd->pread = NULL;
+	}
 
-	if (cmd->pwrite != NULL)
-		TRACE(event_get_fd(cmd->pwrite), event_del(cmd->pwrite));
+	if (cmd->pwrite != NULL) {
+		TRACE(event_get_fd(cmd->pwrite), event_free(cmd->pwrite));
+		cmd->pwrite = NULL;
+	}
+
+	if (cmd->peread != NULL) {
+		TRACE(event_get_fd(cmd->peread), event_free(cmd->peread));
+		cmd->peread = NULL;
+	}
+
+	cmd_script_kill(cmd);
 
 	TRACE_RESET(cmd->pfd, close(cmd->pfd));
 	cmd->pfd = -1;
 	cmd->pid = -1;
 
 	if (cmd->perrfd != -1) {
-		TRACE(event_get_fd(cmd->peread), event_del(cmd->peread));
 		TRACE_RESET(cmd->perrfd, close(cmd->perrfd));
 		cmd->perrfd = -1;
 	}
@@ -128,6 +328,11 @@ cmd_free(struct command *cmd)
 void
 cmd_ready_fd(struct command *cmd, struct callback *cb, void *con)
 {
+	/* Free the connect event from cmd_proxy_connect before replacing it */
+	if (cmd->pwrite != NULL) {
+		TRACE(event_get_fd(cmd->pwrite), event_free(cmd->pwrite));
+		cmd->pwrite = NULL;
+	}
 	TRACE(cmd->pfd,
 		cmd->pread = event_new(libevent_base, cmd->pfd, EV_READ, cb->cb_read, con));
 	TRACE(cmd->pfd,
@@ -298,9 +503,11 @@ cmd_droppriv(uid_t uid, gid_t gid)
 
 	/* Lower privileges: supplementary groups, then gid, then uid */
 #ifdef HAVE_SETGROUPS
-	if (setgroups(1, &gid) == -1)
+	if (setgroups(1, &gid) == -1) {
 		SETERROR((errline, sizeof(errline),
 			     "%s: setgroups(%d) failed\n", __func__, gid));
+		goto error;
+	}
 #endif
 #ifdef __linux__
 	/* Real, effective and saved IDs in one call */
@@ -330,11 +537,11 @@ cmd_droppriv(uid_t uid, gid_t gid)
 #ifdef __OpenBSD__
 	if (seteuid(uid) == -1)
 		SETERROR((errline, sizeof(errline),
-			     "%s: seteuid(%d) failed\n", __func__, gid));
+			     "%s: seteuid(%d) failed\n", __func__, uid));
 #endif
 	if (setuid(uid) == -1)
 		SETERROR((errline, sizeof(errline),
-			     "%s: setuid(%d) failed\n", __func__, gid));
+			     "%s: setuid(%d) failed\n", __func__, uid));
 
 	if (getgid() != gid || getegid() != gid) {
 		SETERROR((errline, sizeof(errline),
@@ -367,6 +574,7 @@ cmd_droppriv(uid_t uid, gid_t gid)
 
 	return;
  error:
+ syslog(LOG_ERR, "%s", error);
  syslog(LOG_ERR,"%s: terminated",__func__);
  exit(EXIT_FAILURE);
 }
@@ -411,14 +619,37 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 	extern int honeyd_nchildren;
 	int pair[2], perr[2];
 	struct callback *cb;
+	struct scriptproc *sp;
+	struct scriptsrc *ss;
 	sigset_t sigmask;
+	/* SOCK_SEQPACKET keeps datagram boundaries for UDP scripts and,
+	 * unlike SOCK_DGRAM, gives the script EOF when the flow ends */
+	int type = hdr->type == SOCK_DGRAM ? SOCK_SEQPACKET : hdr->type;
 
-	if (socketpair(AF_UNIX, hdr->type, 0, pair) == -1)
+	if (cmd_script_full(hdr->ip_src, hdr->type == SOCK_DGRAM)) {
+		cmd_script_refuse(hdr);
+		cmd->pfd = -1;
+		return (CMD_FORK_CAP);
+	}
+	if ((sp = calloc(1, sizeof(*sp))) == NULL)
 		return (-1);
+	if ((ss = scriptsrc_find(hdr->ip_src)) == NULL) {
+		if ((ss = calloc(1, sizeof(*ss))) == NULL) {
+			free(sp);
+			return (-1);
+		}
+		ss->addr = hdr->ip_src;
+		SPLAY_INSERT(scriptsrctree, &scriptsrcs, ss);
+	}
+	/* counted from here on; undone by script_undo on failure */
+	ss->nprocs++;
+
+	if (socketpair(AF_UNIX, type, 0, pair) == -1)
+		goto script_undo;
 	if (socketpair(AF_UNIX, SOCK_STREAM, 0, perr) == -1) {
 		TRACE_RESET(pair[0], close(pair[0]));
 		TRACE_RESET(pair[1], close(pair[1]));
-		return (-1);
+		goto script_undo;
 	}
 
 	/* Block SIGCHLD */
@@ -436,6 +667,10 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 	}
 
 	if (cmd->pid == 0) {
+		/* Own process group, so cmd_free() also kills what the
+		 * script starts */
+		setpgid(0, 0);
+
 		/* Child privileges */
 		sandbox_script_prepare(argv);
 		cmd_setpriv(tmpl);
@@ -477,6 +712,18 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 		/* NOT REACHED */
 	}
 
+	/* Also from the parent, so the group exists before any kill;
+	 * EACCES once the child has exec'd is fine, it did it itself */
+	setpgid(cmd->pid, cmd->pid);
+	sp->pid = cmd->pid;
+	sp->src = hdr->ip_src;
+	sp->udp = hdr->type == SOCK_DGRAM;
+	sp->cmd = cmd;
+	SPLAY_INSERT(scriptproctree, &scriptprocs, sp);
+	script_nprocs++;
+	if (sp->udp)
+		script_nudp++;
+
 	TRACE_RESET(pair[1], close(pair[1]));
 	TRACE(pair[0], cmd->pfd = pair[0]);
 	if (fcntl(cmd->pfd, F_SETFD, 1) == -1)
@@ -503,10 +750,16 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 
 	honeyd_nchildren++;
 
-	/* Install old signal handler */
+	/*
+	 * The child runs and is accounted for, so never unwind from here:
+	 * that would close descriptors its events still use. Retry the
+	 * unblock once so SIGCHLD (and so reaping) is not left blocked.
+	 */
 	if (sigprocmask(SIG_UNBLOCK, &sigmask, NULL) == -1) {
 		warn("sigprocmask");
-		goto fork_err;
+		if (sigprocmask(SIG_UNBLOCK, &sigmask, NULL) == -1)
+			syslog(LOG_ERR, "%s: SIGCHLD stays blocked: %m",
+			    __func__);
 	}
 	return (0);
 
@@ -523,6 +776,14 @@ cmd_fork(struct tuple *hdr, struct command *cmd, struct template *tmpl,
 	TRACE_RESET(pair[1], close(pair[1]));
 	cmd->pfd = -1;
 
+ script_undo:
+	if (--ss->nprocs == 0) {
+		SPLAY_REMOVE(scriptsrctree, &scriptsrcs, ss);
+		free(ss);
+	}
+	free(sp);
+	cmd->pid = -1;
+	cmd->pfd = -1;
 	return (-1);
 }
 
@@ -661,6 +922,10 @@ cmd_subsystem(struct template *tmpl, struct subsystem *sub,
 	TRACE(pair[0], cmd->pfd = pair[0]);
 	if (fcntl(cmd->pfd, F_SETFD, 1) == -1)
 		warn("fcntl(F_SETFD)");
+	/* Control channel reads and writes are bounded, never blocking */
+	if (fcntl(cmd->pfd, F_SETFL, O_NONBLOCK) == -1)
+		syslog(LOG_ERR, "%s: fcntl(O_NONBLOCK): %s", __func__,
+		    strerror(errno));
 
 	cmd->perrfd = -1;
 	cmd_ready_fd(cmd, &subsystem_cb, sub);
@@ -706,24 +971,86 @@ cmd_subsystem_connect_cb(int fd, short what, void *arg)
 	 */
 	port_encapsulation_free(tmp);
 
-	if (what != EV_WRITE) {
-		/* We encountered some error with this */
+	/*
+	 * CWE-252/CWE-404: a connection the subsystem never got fails now.
+	 * A UDP flow is freed rather than left to its idle timeout; for
+	 * TCP, tcp_connectfail only releases the buffers, sends no reset
+	 * and leaves the connection to its TCP timeout.
+	 */
+	if (what != EV_WRITE ||
+	    cmd_subsystem_connect(hdr, cmd, port, con) == -1) {
 		if (hdr->type == SOCK_STREAM)
 			tcp_connectfail(con);
-		return;
+		else
+			udp_free(con);
+	}
+}
+
+/* Send errors after which nothing was written and the channel is fine */
+static int
+cmd_subsystem_send_transient(int error)
+{
+	switch (error) {
+	case ETIMEDOUT:		/* EAGAIN until the deadline */
+	case EAGAIN:
+#if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
+	case EWOULDBLOCK:
+#endif
+	case ENOBUFS:
+	case ENOMEM:
+	case ETOOMANYREFS:
+	case EINTR:
+		return (1);
+	default:
+		return (0);
+	}
+}
+
+/*
+ * Closes a port channel that can no longer be trusted to be in frame and
+ * fails the connections waiting on it (UDP flows are freed; TCP ones go
+ * through tcp_connectfail and wait for their TCP timeout).  The subsystem may bind the port
+ * again; until then connects to it are refused.
+ */
+static void
+cmd_subsystem_reset_port(struct port *port)
+{
+	struct port_encapsulate *tmp;
+	struct tuple *hdr;
+	void *con;
+
+	while ((tmp = TAILQ_FIRST(&port->pending)) != NULL) {
+		hdr = tmp->hdr;
+		con = tmp->con;
+		port_encapsulation_free(tmp);
+		if (hdr == NULL)
+			continue;
+		if (hdr->type == SOCK_STREAM)
+			tcp_connectfail(con);
+		else
+			udp_free(con);
 	}
 
-	cmd_subsystem_connect(hdr, cmd, port, con);
+	if (port->sub_fd != -1) {
+		syslog(LOG_WARNING, "%s: closing out of frame channel to "
+		    "subsystem \"%s\"", __func__, port->sub->cmdstring);
+		TRACE(port->sub_fd, fdshare_close(port->sub_fd));
+		port->sub_fd = -1;
+	}
 }
 
 int
 cmd_subsystem_schedule_connect(struct tuple *hdr, struct command *cmd,
     struct port *port, void *con)
 {
-	struct port_encapsulate *tmp = calloc(1, sizeof(*tmp));
+	struct port_encapsulate *tmp;
 	struct subsystem *sub = port->sub;
 
-	if (tmp == NULL)
+	/* The channel was closed after an error */
+	if (port->sub_fd == -1)
+		return (-1);
+
+	if ((tmp = calloc(1, sizeof(*tmp))) == NULL)
 		return (-1);
 
 	tmp->hdr = hdr;
@@ -789,10 +1116,22 @@ cmd_subsystem_connect(struct tuple *hdr, struct command *cmd,
 	addr_ntos(&dst, (struct sockaddr *)&bundle.dst);
 	bundle.dst.sin_port = htons(hdr->dport);
 
-	if (send_fd(port->sub_fd, pair[1], &bundle, sizeof(bundle)) == -1) {
+	if (send_fd_timed(port->sub_fd, pair[1], &bundle, sizeof(bundle),
+	    SUBSYSTEM_IO_TIMEOUT) == -1) {
+		int serrno = errno;
+
 		TRACE_RESET(pair[0], close(pair[0]));
 		TRACE_RESET(pair[1], close(pair[1]));
 		cmd->pfd = -1;
+		/*
+		 * CWE-664/CWE-755: a partial send (reported as EPIPE) leaves
+		 * the channel out of frame, and a hard error leaves it
+		 * unusable, so it is closed.  A transient error sent
+		 * nothing; only this connection fails and the channel is
+		 * kept, so a connect flood cannot deny the port for good.
+		 */
+		if (!cmd_subsystem_send_transient(serrno))
+			cmd_subsystem_reset_port(port);
 		return (-1);
 	}
 
@@ -836,33 +1175,42 @@ cmd_subsystem_localconnect(struct tuple *hdr, struct command *cmd,
 	if (port->sub_fd == -1) {
 		char res;
 
-		while ((fd = receive_fd(sub->cmd.pfd, NULL, NULL)) == -1) {
-			if (errno != EAGAIN) {
-				warnx("%s: receive_fd", __func__);
+		fd = receive_fd_timed(sub->cmd.pfd, NULL, NULL,
+		    SUBSYSTEM_IO_TIMEOUT);
+		if (fd == -1)
+			syslog(LOG_ERR, "%s: receive_fd: %s", __func__,
+			    strerror(errno));
+		else {
+			TRACE(fd, port->sub_fd = fdshare_dup(fd));
+			if (port->sub_fd == -1) {
+				/* CWE-252/CWE-775: not shared, close it */
+				syslog(LOG_ERR, "%s: fdshare_dup failed",
+				    __func__);
+				TRACE_RESET(fd, close(fd));
+				fd = -1;
 			}
 		}
 
 		/* Confirm success of failure */
 		res = fd == -1 ? -1 : 0;
 		TRACE(sub->cmd.pfd,
-		    atomicio(vwrite, sub->cmd.pfd, &res, 1));
+		    atomicio_timed(vwrite, sub->cmd.pfd, &res, 1,
+		    SUBSYSTEM_IO_TIMEOUT));
 		if (fd == -1)
 			return (-1);
-
-		TRACE(fd, port->sub_fd = fdshare_dup(fd));
 	}
 
 	/* Get another fd on this special thingy */
-	while ((fd = receive_fd(port->sub_fd, NULL, NULL)) == -1) {
-		if (errno != EAGAIN) {
-			TRACE(port->sub_fd, fdshare_close(port->sub_fd));
-			warnx("%s: receive_fd", __func__);
-			return (-1);
-		}
+	fd = receive_fd_timed(port->sub_fd, NULL, NULL, SUBSYSTEM_IO_TIMEOUT);
+	if (fd == -1) {
+		TRACE(port->sub_fd, fdshare_close(port->sub_fd));
+		port->sub_fd = -1;
+		syslog(LOG_ERR, "%s: receive_fd: %s", __func__,
+		    strerror(errno));
+		return (-1);
 	}
 
-        if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1)
-                warn("%s: fcntl(O_NONBLOCK)", __func__);
+	/* receive_fd_timed already made fd non blocking */
 
         if (fcntl(fd, F_SETFD, 1) == -1)
                 warn("%s: fcntl(F_SETFD)", __func__);
@@ -875,7 +1223,8 @@ cmd_subsystem_localconnect(struct tuple *hdr, struct command *cmd,
 	si.sin_port = htons(hdr->dport);
 
 	/* Write the bound socket address to the other side */
-	if (atomicio(vwrite, port->sub_fd, &si, sizeof(si)) != sizeof(si)) {
+	if (atomicio_timed(vwrite, port->sub_fd, &si, sizeof(si),
+	    SUBSYSTEM_IO_TIMEOUT) != sizeof(si)) {
 		TRACE(port->sub_fd, fdshare_close(port->sub_fd));
 		port->sub_fd = -1;
 		TRACE_RESET(cmd->pfd, close(cmd->pfd));

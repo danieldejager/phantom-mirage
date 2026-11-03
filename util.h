@@ -83,6 +83,12 @@ char *kv_find(struct keyvalueq *head, char *key);
 int kv_remove(struct keyvalueq *head, char *key);
 void kv_replace(struct keyvalueq *head, char *key, char *value);
 
+/*
+ * Longest input line the line based subsystems buffer before they drop
+ * the connection
+ */
+#define MAX_LINE	4096
+
 /* Other misc stuff */
 int make_bound_connect(int, char *, uint16_t, char *);
 int make_socket(int (*f)(int, const struct sockaddr *, socklen_t), int type,
@@ -94,7 +100,14 @@ void name_from_addr(struct sockaddr *sa, socklen_t salen,
 struct addr;
 int addr_contained(struct addr *, struct addr *);
 char *strrpl(char *, size_t, char *, char *);
+int strrpl_bounded(char *, size_t, const char *, const char *, char **);
+int copy_bounded(char *, size_t, const char *, size_t);
 char *fgetln(FILE *, size_t *);
 char *strnsep(char **line, char *delim);
+
+/* Stats collector password (PM-SCR-028) */
+char *stats_read_password_file(const char *);
+void stats_redact_arg(char *[], int, const char *, char *, size_t);
+void stats_scrub_password(char *);
 
 #endif /* _UTIL_H_ */

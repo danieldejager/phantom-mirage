@@ -1,0 +1,5 @@
+# PM-SCR-103 review: evdns_resolve_* fails synchronously
+cc_san dns_lifetime -I tests/security/stub tests/security/dns_lifetime.c \
+    tests/security/pcre_stub.c subsystems/smtp.c subsystems/proxy.c \
+    util.c atomicio.c sha1.c
+run_clean dns_lifetime syncfail

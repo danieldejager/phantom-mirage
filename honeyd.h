@@ -47,6 +47,10 @@ char *pm_getenv(const char *);
 #define HONEYD_MAX_INTERFACES	12
 
 #define HONEYD_MAX_CONNECTS	32000
+#define HONEYD_MAX_UDP		32000	/* default global UDP flow cap */
+#define HONEYD_MAX_SOURCE_FLOWS	1000	/* default per source flow cap */
+#define HONEYD_MAX_SCRIPT_PROCS	512	/* default live script processes */
+#define HONEYD_MAX_SCRIPT_PROCS_SOURCE 32	/* the same, per source address */
 
 #define HONEYD_CLOSE_WAIT	60
 #define HONEYD_SYN_WAIT		60
@@ -145,6 +149,8 @@ struct port {
 	u_short srcport; /* Used for broadcast scripts */
 	int timeout; /* Used for periodic broadcast scripts */
 	char templateName[20]; /* Used for periodic broadcast scripts */
+	struct udp_con *bcast_con; /* Broadcast timer argument, owned */
+	struct event *bcast_ev; /* Broadcast timer, owned */
 
 	struct action action;
 
@@ -180,6 +186,7 @@ struct tuple {
 	struct event *timeout;
 
 	int local;	/* locally initiated */
+	int srccounted;	/* counted against the per source flow limit */
 
 	/* Potentially pending connection to subsystem */
 	struct port_encapsulate *pending;
@@ -309,6 +316,7 @@ struct udp_con {
 	int nincoming;
 
 	int softerrors;		/* ICMP unreachables for this state */
+	int script_refused;	/* script refused at the cap; retried */
 
 	struct port *port;
 };
@@ -374,6 +382,12 @@ void cmd_free(struct command *);
 int cmd_fork(struct tuple *, struct command *, struct template *,
     char *, char **, void *);
 int cmd_python(struct tuple *, struct command *, void *);
+#define CMD_FORK_CAP	-2	/* cmd_fork: refused at the script cap */
+void cmd_script_reaped(pid_t);
+uint32_t cmd_script_procs(void);
+uint32_t cmd_script_udp_procs(void);
+int cmd_script_room(struct tuple *);
+uint32_t cmd_script_source_procs(ip_addr_t);
 int cmd_subsystem(struct template *, struct subsystem *, char *, char **);
 
 struct addrinfo;
@@ -398,6 +412,7 @@ void generic_timeout(struct event *, int);
 
 /* Network protocol related prototypes */
 int conhdr_compare(struct tuple *, struct tuple *);
+uint32_t honeyd_source_flows(ip_addr_t);
 
 void tcp_free(struct tcp_con *);
 int tcp_send(struct tcp_con *, uint8_t, u_char *, u_int);
@@ -405,13 +420,15 @@ void tcp_senddata(struct tcp_con *, uint8_t);
 void tcp_sendfin(struct tcp_con *);
 
 void udp_free(struct udp_con *);
+uint32_t honeyd_flow_option(const char *, uint32_t);
+uint32_t honeyd_limit_option(const char *, uint32_t);
 int udp_send(struct udp_con *con, u_char *payload, u_int len);
 
 void config_init(void);
 void config_read(char *);
 
 
-void bcast_insert(struct template *, int, int, int, struct action *);
+int bcast_insert(struct template *, int, int, int, struct action *);
 void bcast_trigger(int fd, short what, void *unused);
 
 struct port *port_insert(struct template *, int, int, struct action *);

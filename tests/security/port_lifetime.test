@@ -1,0 +1,12 @@
+# PM-SCR-112, PM-SCR-193: a subsystem port has one connection and one
+# shared descriptor at a time; a failed connect keeps the binding
+cc_daemon port_lifetime tests/security/port_lifetime.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+bad=0
+for c in ${PORT_LIFETIME_CASES:-connect_shared connect_listening \
+    connect_fail_bound listen_twice}; do
+	run_clean port_lifetime "$c" || { echo "case $c failed" >&2; bad=1; }
+	cp "$OUT/port_lifetime.log" "$OUT/port_lifetime.$c.log"
+done
+[ $bad -eq 0 ]

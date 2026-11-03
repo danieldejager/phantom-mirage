@@ -188,8 +188,15 @@ parse_associations(FILE *fp)
 
 	while (!feof(fp)) {
 		assoc = get_assoc(fp);
-		if (assoc != NULL)
-			SPLAY_INSERT(assoc_tree, &associations, assoc);
+		/*
+		 * The first entry for a key wins. A later duplicate is not
+		 * inserted, so free it here (CWE-401).
+		 */
+		if (assoc != NULL &&
+		    SPLAY_INSERT(assoc_tree, &associations, assoc) != NULL) {
+			free(assoc->nmap_name);
+			free(assoc);
+		}
 	}
 
 	return (0);

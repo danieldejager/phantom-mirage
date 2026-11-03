@@ -47,7 +47,7 @@ struct osfp {
 };
 
 int honeyd_osfp_init(const char *);
-int honeyd_osfp_match(const struct ip_hdr *, pf_osfp_t);
+int honeyd_osfp_match(const struct ip_hdr *, u_short, pf_osfp_t);
 char *honeyd_osfp_name(struct ip_hdr *);
 
 #endif

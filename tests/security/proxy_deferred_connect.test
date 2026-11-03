@@ -1,0 +1,7 @@
+# R2 follow-up to PM-SCR-103/107: cancel the upstream connect when
+# proxy_ta_free defers for an in-flight lookup
+cc_san proxy_connect -I tests/security/stub -Wl,--wrap=make_socket \
+    -Wl,--wrap=getpeername \
+    tests/security/proxy_connect.c tests/security/pcre_stub.c \
+    subsystems/proxy.c subsystems/smtp.c util.c atomicio.c sha1.c
+run_clean proxy_connect deferred

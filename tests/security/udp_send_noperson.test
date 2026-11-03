@@ -1,0 +1,6 @@
+# PM-SCR-220: a UDP reply from a template with no personality, or from a
+# flow with no template, uses the default TTL instead of crashing
+cc_daemon udp_send_noperson tests/security/udp_send_noperson.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean udp_send_noperson

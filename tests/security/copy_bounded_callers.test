@@ -1,0 +1,5 @@
+# PM-SCR-101 follow-up: callers of smtp_response and proxy_response
+cc_san copy_bounded_callers -I tests/security/stub -Wl,--wrap=smtp_ta_new,--wrap=kv_add \
+    tests/security/copy_bounded_callers.c tests/security/pcre_stub.c \
+    subsystems/smtp.c subsystems/proxy.c util.c atomicio.c sha1.c
+run_clean copy_bounded_callers

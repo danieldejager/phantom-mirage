@@ -1,0 +1,12 @@
+# PM-SCR-115 (setgroups failure must abort cmd_droppriv) and
+# PM-SCR-118 (fix_permissions modes, file types and symbolic links)
+# pyextend.c is only built with ./configure --with-python
+if ! grep -q '^#define HAVE_PYTHON 1' config.h; then
+	echo "droppriv_perms: skipped, needs ./configure --with-python" >&2
+	return 0
+fi
+make -s pyextend.o pydataprocessing.o pydatahoneyd.o
+cc_daemon droppriv_perms tests/security/droppriv_perms.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean droppriv_perms

@@ -1,0 +1,7 @@
+# config.c template_create / template_clone: unchecked strdup of the
+# name and the origin (CWE-476/CWE-252)
+cc_daemon template_name_alloc tests/security/template_name_alloc.c \
+    -Wl,--wrap=strdup
+# Leak checks stay on with no suppressions, so
+# a leaked template is reported
+run_clean template_name_alloc

@@ -665,6 +665,8 @@ record_add_hash(struct hashq *hashes, void *data, size_t len)
 
 	if (tmp == NULL)
 		TAILQ_INSERT_TAIL(hashes, hash, next);
+	else
+		free(hash);	/* already in the list */
 }
 
 void
@@ -727,7 +729,7 @@ stats_free(struct stats *stats)
 	SPLAY_REMOVE(statstree, &sc.all_stats, stats);
 	stats_deactivate(stats);
 
-	evtimer_del(stats->ev_timeout);
+	event_free(stats->ev_timeout);
 
 	record_clean(&stats->record);
 	record_remove_hashes(&stats->hashes);

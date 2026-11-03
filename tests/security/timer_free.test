@@ -1,0 +1,7 @@
+# PM-SCR-007: timers unscheduled with evtimer_del but never freed
+cc_daemon timer_free tests/security/timer_free.c \
+    -Wl,--wrap=event_new,--wrap=event_free
+# The daemon's global configuration is never freed: leak checks off.
+# The test counts live events itself.
+ASAN_OPTIONS=detect_leaks=0
+run_clean timer_free

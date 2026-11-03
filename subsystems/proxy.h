@@ -36,12 +36,18 @@
 #define X_FORWARDED "X-Forwarded-For:"
 #define CORRUPT_SPACE	20
 
+/* Limits on the header lines of one request, discarded lines included */
+#define PROXY_MAX_HEADER_LINES	100
+#define PROXY_MAX_HEADER_BYTES	(64 * 1024)
+
 struct proxy_ta {
 	int fd;
 	struct bufferevent *bev;
 
-	int remote_fd;
+	int remote_fd;			/* -1 when not open */
 	struct bufferevent *remote_bev;
+	struct event connect_ev;	/* upstream connect completion */
+	int connect_pending;
 
 	char *proxy_id;
 
@@ -57,7 +63,10 @@ struct proxy_ta {
 
 	int (*empty_cb)(struct proxy_ta *);
 
-	int dns_pending;
+	size_t hdr_lines;	/* header lines received so far */
+	size_t hdr_bytes;	/* their bytes, line ends included */
+
+	int dns_pending;	/* evdns lookups in flight */
 	int dns_canceled;
 };
 
@@ -67,5 +76,7 @@ void proxy_ta_free(struct proxy_ta *ta);
 void proxy_bind_socket(struct event *ev, u_short port);
 void proxy_init(void);
 char *proxy_pcre_group(char *line, int groupnr, int ovector[]);
+int proxy_allow_range(const char *);
+int proxy_decoy_range(const char *);
 
 #endif /* _PROXY_H_ */

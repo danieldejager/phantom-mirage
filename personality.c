@@ -168,11 +168,27 @@ personality_declone(struct personality *pers)
 	free(pers);
 }
 
+/*
+ * Releases a personality that is no longer in use. The TCP option arrays
+ * of each test are owned by the personality and are freed with it
+ * (CWE-401). Only personality_config_new calls this, while the fingerprint
+ * file is loaded at start up, before any template holds a clone that
+ * shares these arrays. The XProbe fingerprint belongs to its own tree and
+ * is not freed here.
+ */
 void
 personality_free(struct personality *pers)
 {
+	size_t i;
+
 	SPLAY_REMOVE(perstree, &personalities, pers);
 
+	for (i = 0; i < sizeof(pers->t_tests) / sizeof(pers->t_tests[0]); i++)
+		free(pers->t_tests[i].options.options);
+	for (i = 0; i < sizeof(pers->seq_tests) / sizeof(pers->seq_tests[0]);
+	    i++)
+		free(pers->seq_tests[i].options.options);
+	free(pers->ecn_test.options.options);
 	free(pers->name);
 	free(pers);
 }
@@ -950,6 +966,7 @@ icmp_error_personality(struct template *tmpl,
 {
 	struct persudp *test;
 	int iphdr_changed = 0;
+	u_int rlen = ntohs(ip->ip_len);	/* received, before RIPL */
 
 	if (tmpl == NULL || tmpl->person == NULL)
 		return (1);
@@ -995,11 +1012,13 @@ icmp_error_personality(struct template *tmpl,
 	{
 		struct udp_hdr *udp = (struct udp_hdr *)((u_char *)ip + (ip->ip_hl << 2));
 		u_char *p = (u_char *)(udp + 1);
-		if(test->uck != RVAL_OKAY)
-		{
+		/* Only when the UDP header was received (PM-SCR-146) */
+		if (test->uck != RVAL_OKAY &&
+		    rlen >= (u_int)(ip->ip_hl << 2) + UDP_HDR_LEN)
 			udp->uh_sum = htons(test->uckVal);
-		}
-		if (test->dat == RVAL_BAD)
+		/* Only when there is a payload byte to change (PM-SCR-138) */
+		if (test->dat == RVAL_BAD &&
+		    rlen > (u_int)(ip->ip_hl << 2) + UDP_HDR_LEN)
 			*p = 0;
 	}
 	
@@ -1759,10 +1778,18 @@ parse_u1(struct personality *pers, int off, char *line)
 				else return -1;
 				break;
 			case 'I':
+			{
+				unsigned long ipl;
+
 				strsep(&p2, "=");
-				test->quotelen = strtoul(p2, &end, 16);
-				test->quotelen -= IP_HDR_LEN + ICMP_HDR_LEN + 4;
+				ipl = strtoul(p2, &end, 16);
+				/* A whole reply: IP and ICMP headers, unused word (PM-SCR-140) */
+				if (end == p2 || ipl < IP_HDR_LEN + ICMP_HDR_LEN + 4 ||
+				    ipl > IP_LEN_MAX)
+					return (-1);
+				test->quotelen = ipl - (IP_HDR_LEN + ICMP_HDR_LEN + 4);
 				break;
+			}
 			case 'R':
 			{
 				c = *(p2+2);
@@ -1790,8 +1817,15 @@ parse_u1(struct personality *pers, int off, char *line)
 							// the number given
 							if(*p2 == 'G')
 								test->riplen = 0;
-							else
-								test->riplen = strtoul(p2, &end, 16) - 328;
+							else {
+								unsigned long ripl;
+
+								ripl = strtoul(p2, &end, 16);
+								/* An IP total length (PM-SCR-140) */
+								if (end == p2 || ripl > IP_LEN_MAX)
+									return (-1);
+								test->riplen = (int)ripl - 328;
+							}
 							break;
 						}
 						else return -1;
@@ -1925,6 +1959,9 @@ parse_option(struct tcp_options *options, char *line)
 	//Allocate memory for the Options array
 	uint numOptions = CountCharsInString(line, "LNSMWT");
 	uint dataSize = sizeof(struct tcp_option) * numOptions;
+	/* A field repeated within one test line: the last value wins and
+	 * the earlier array is freed (PM-SCR-231, CWE-401) */
+	free(options->options);
 	options->options = (struct tcp_option *)malloc(dataSize);
 	options->count = numOptions;
 

@@ -1,0 +1,5 @@
+# PM-SCR-139 (ARP): pending and entry caps, mode count
+cc_daemon arp_cap tests/security/arp_cap.c
+# Leak checks stay on with no suppressions, so
+# a queued packet that is not freed is reported
+run_clean arp_cap count

@@ -1,0 +1,7 @@
+# New Low finding from the review of PR 197: template_free leaked the DHCP timers
+cc_daemon dhcp_free tests/security/dhcp_free.c \
+    -Wl,--wrap=event_new,--wrap=event_free
+# The daemon's global configuration is never freed: leak checks off.
+# The test counts live events itself.
+ASAN_OPTIONS=detect_leaks=0
+run_clean dhcp_free

@@ -1,0 +1,5 @@
+# PM-SCR-027: include depth index underflow after parse_line commands
+cc_daemon lex_include tests/security/lex_include.c
+# The daemon's global configuration is never freed: leak checks off
+ASAN_OPTIONS=detect_leaks=0
+run_clean lex_include

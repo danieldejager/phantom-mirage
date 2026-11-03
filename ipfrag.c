@@ -140,7 +140,7 @@ ip_fragment_free(struct fragment *tmp)
 {
 	struct fragent *ent;
 
-	evtimer_del(tmp->timeout);
+	event_free(tmp->timeout);
 
 	SPLAY_REMOVE(fragtree, &fragments, tmp);
 	TAILQ_REMOVE(&fraglru, tmp, next);
@@ -188,14 +188,15 @@ ip_fragment_new(ip_addr_t src, ip_addr_t dst, u_short id, u_char proto,
 	struct timeval tv = { IPFRAG_TIMEOUT, 0};
 	int reclaim = 0;
 
+	/* Reclaim at least one queue: nfragments/10 is 0 below ten */
 	if (nfragmem > IPFRAG_MAX_MEM || nfragments > IPFRAG_MAX_FRAGS)
-		ip_fragment_reclaim(nfragments/10);
+		ip_fragment_reclaim(nfragments/10 + 1);
 
 	while (tmp == NULL && reclaim < 2) {
 		tmp = calloc(1, sizeof(struct fragment));
 		if (tmp == NULL) {
 			reclaim++;
-			ip_fragment_reclaim(nfragments/10);
+			ip_fragment_reclaim(nfragments/10 + 1);
 		}
 	}
 
@@ -209,8 +210,23 @@ ip_fragment_new(ip_addr_t src, ip_addr_t dst, u_short id, u_char proto,
 	tmp->fragp = pl;
 
 	TAILQ_INIT(&tmp->fraglist);
+
+	/*
+	 * CWE-476/CWE-252: check the expiry timer before the record is
+	 * inserted or counted; on failure free it and drop the fragment.
+	 */
 	tmp->timeout = evtimer_new(libevent_base, ip_fragment_timeout, tmp);
-	evtimer_add(tmp->timeout, &tv);
+	if (tmp->timeout == NULL) {
+		syslog(LOG_ERR, "%s: evtimer_new: fragment dropped", __func__);
+		free(tmp);
+		return (NULL);
+	}
+	if (evtimer_add(tmp->timeout, &tv) == -1) {
+		syslog(LOG_ERR, "%s: evtimer_add: fragment dropped", __func__);
+		event_free(tmp->timeout);
+		free(tmp);
+		return (NULL);
+	}
 
 	SPLAY_INSERT(fragtree, &fragments, tmp);
 	TAILQ_INSERT_HEAD(&fraglru, tmp, next);
@@ -263,20 +279,33 @@ ip_fragment_insert(struct fragment *fragq, struct fragent *ent, short mf)
 			memcpy(ent->data, odata, overlap);
 		}
 		prev->len -= overlap;
+
+		/* Same offset: prev is now empty, drop it */
+		if (prev->len == 0) {
+			struct fragent *empty = prev;
+
+			prev = TAILQ_PREV(empty, fragq, next);
+			TAILQ_REMOVE(&fragq->fraglist, empty, next);
+			ip_fragent_free(empty);
+		}
 	}
 
-	if (after && off + len > after->off) {
+	/* Drop or trim every following fragment the new one overlaps */
+	while (after && off + len > after->off) {
 		overlap = off + len - after->off;
 
 		if (overlap >= after->len) {
+			struct fragent *next = TAILQ_NEXT(after, next);
+
 			if (fragq->fragp == FRAG_OLD) {
 				u_char *ndata = ent->data + after->off - off;
 				memcpy(ndata, after->data, after->len);
 			}
-			
+
 			/* Drop the old fragment */
 			TAILQ_REMOVE(&fragq->fraglist, after, next);
 			ip_fragent_free(after);
+			after = next;
 		} else {
 			/* Trim the overlap */
 			if (fragq->fragp == FRAG_NEW) {
@@ -353,6 +382,7 @@ ip_fragment(struct template *tmpl, struct ip_hdr *ip, u_short len,
 	u_short off;
 	u_short hlen;
 	enum fragpolicy fragp = FRAG_OLD;
+	int n;
 	
 	addr_pack(&src, ADDR_TYPE_IP, IP_ADDR_BITS, &ip->ip_src, IP_ADDR_LEN);
 
@@ -361,6 +391,10 @@ ip_fragment(struct template *tmpl, struct ip_hdr *ip, u_short len,
 
 	if (fragp == FRAG_DROP)
 		goto drop;
+
+	/* Enforce the global caps on every fragment, not only new queues */
+	if (nfragmem > IPFRAG_MAX_MEM || nfragments > IPFRAG_MAX_FRAGS)
+		ip_fragment_reclaim(nfragments/10 + 1);
 
 	fragq = ip_fragment_find(ip->ip_src, ip->ip_dst, ip->ip_id, ip->ip_p);
 
@@ -380,6 +414,9 @@ ip_fragment(struct template *tmpl, struct ip_hdr *ip, u_short len,
 	if (off) {
 		len -= hlen;
 		dat += hlen;
+		/* off is a u_short: reject before off + hlen wraps */
+		if (off + hlen + len > IP_LEN_MAX)
+			goto freeall;
 		off += hlen;
 	}
 
@@ -393,18 +430,24 @@ ip_fragment(struct template *tmpl, struct ip_hdr *ip, u_short len,
 			goto drop;
 	}
 
+	n = 0;
+	TAILQ_FOREACH(ent, &fragq->fraglist, next)
+		n++;
+	if (n >= IPFRAG_MAX_PERQUEUE)
+		goto freeall;
+
 	if ((ent = calloc(1, sizeof(struct fragent))) == NULL)
 		goto freeall;
 
 	ent->off = off;
 	ent->len = len;
-	ent->size = len;
+	ent->size = len + sizeof(struct fragent);
 	if ((ent->data = malloc(len)) == NULL) {
 		free(ent);
 		goto freeall;
 	}
 	memcpy(ent->data, dat, len);
-	nfragmem += len;
+	nfragmem += ent->size;
 
 	syslog(LOG_DEBUG,  "Received fragment from %s, id %d: %d@%d",
 	    addr_ntoa(&src), ntohs(ip->ip_id), len, off);

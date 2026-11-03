@@ -282,7 +282,12 @@ template_create(const char *name)
 			exit(EXIT_FAILURE);
 		}
 
-	tmpl->name = strdup(name);
+	/* CWE-476/CWE-252: nothing is inserted without a name */
+	if ((tmpl->name = strdup(name)) == NULL) {
+		syslog(LOG_ERR, "%s: strdup", __func__);
+		free(tmpl);
+		return (NULL);
+	}
 
 	/* UDP ports are closed by default */
 	tmpl->udp.status = PORT_CLOSED;
@@ -349,6 +354,18 @@ template_remove(struct template *tmpl)
 		SPLAY_REMOVE(templtree, &templates, tmpl);
 }
 
+/* Stop a broadcast port's timer and free it and its argument */
+static void
+bcast_stop(struct port *bport)
+{
+	if (bport->bcast_ev != NULL) {
+		event_free(bport->bcast_ev);
+		bport->bcast_ev = NULL;
+	}
+	free(bport->bcast_con);
+	bport->bcast_con = NULL;
+}
+
 /* Insert a template into the system */
 
 int
@@ -371,16 +388,43 @@ template_insert(struct template *tmpl)
 			every.tv_sec = bport->timeout;
 			every.tv_usec = 0;
 
-			strncpy(bport->templateName, tmpl->name, sizeof(bport->templateName));
+			/* Truncates a long name, always NUL terminated */
+			strlcpy(bport->templateName, tmpl->name,
+			    sizeof(bport->templateName));
+
+			/*
+			 * CWE-476/CWE-252: check every step; on failure free
+			 * what was made, log and skip this broadcast port.
+			 * CWE-401: the timer and its argument are kept on the
+			 * port so template_deallocate() and a later insert of
+			 * the same template free them.
+			 */
+			bcast_stop(bport);
 
 			struct udp_con *con = calloc(1, sizeof(struct udp_con));
+			if (con == NULL) {
+				syslog(LOG_ERR, "%s: calloc: broadcast port %d "
+				    "skipped", __func__, bport->number);
+				continue;
+			}
 			con->port = bport;
 
-
 			struct event *ev1 = event_new(libevent_base, -1, EV_TIMEOUT | EV_PERSIST, &bcast_trigger, (void*)con);
-			event_add(ev1, &every);
-
-			// TODO get rid of event when template destructed and garbage collect the ports
+			if (ev1 == NULL) {
+				syslog(LOG_ERR, "%s: event_new: broadcast port "
+				    "%d skipped", __func__, bport->number);
+				free(con);
+				continue;
+			}
+			if (event_add(ev1, &every) == -1) {
+				syslog(LOG_ERR, "%s: event_add: broadcast port "
+				    "%d skipped", __func__, bport->number);
+				event_free(ev1);
+				free(con);
+				continue;
+			}
+			bport->bcast_con = con;
+			bport->bcast_ev = ev1;
 		}
 	}
 
@@ -412,6 +456,18 @@ template_deallocate(struct template *tmpl)
 	while ((port = SPLAY_ROOT(&tmpl->ports)) != NULL)
 		port_free(tmpl, port);
 
+	/*
+	 * Stop broadcast timers and free the broadcast ports. CWE-401:
+	 * the ports were never freed. Each is owned by this template
+	 * alone (template_clone() makes new ones) and its action is a
+	 * shallow copy, so only the struct itself is freed.
+	 */
+	while ((port = SPLAY_ROOT(&tmpl->bcasts)) != NULL) {
+		bcast_stop(port);
+		SPLAY_REMOVE(porttree, &tmpl->bcasts, port);
+		free(port);
+	}
+
 	if (tmpl->person != NULL)
 		personality_declone(tmpl->person);
 
@@ -426,11 +482,9 @@ template_deallocate(struct template *tmpl)
 		free(tmpl->ethernet_addr);
 	}
 
-	if (tmpl->dhcp_req != NULL) {
+	if (tmpl->dhcp_req != NULL)
 		dhcp_release(tmpl);
-		dhcp_abort(tmpl);
-		free(tmpl->dhcp_req);
-	}
+	dhcp_req_free(tmpl);
 
 	free(tmpl->origin);
 	free(tmpl->name);
@@ -546,6 +600,13 @@ void bcast_trigger(int fd, short what, void *ptr) {
 	struct port *bport = con->port;
 	struct template *tmpl = template_find((const char *)&bport->templateName);
 
+	if (tmpl == NULL || tmpl->inter == NULL) {
+		syslog(LOG_WARNING, "%s: no template \"%.*s\" for broadcast "
+		    "port %d", __func__, (int)sizeof(bport->templateName),
+		    bport->templateName, bport->number);
+		return;
+	}
+
 	struct in_addr honeypotAddress;
 	inet_aton(tmpl->name, &honeypotAddress);
 
@@ -559,6 +620,11 @@ void bcast_trigger(int fd, short what, void *ptr) {
 	udp.uh_dport = htons(bport->srcport);
 
 	struct udp_con *udpcon = udp_new(&ip, &udp, 0);
+	if (udpcon == NULL) {
+		syslog(LOG_ERR, "%s: cannot create flow for broadcast "
+		    "port %d", __func__, bport->number);
+		return;
+	}
 	udpcon->tmpl = template_ref(tmpl);;
 
 	char *argv[32];
@@ -586,16 +652,33 @@ void bcast_trigger(int fd, short what, void *ptr) {
 }
 
 // This lets you have a honeyd script run every n seconds and send out a broadcast UDP packet
-void bcast_insert(struct template *tmpl, int srcport, int dstport, int seconds, struct action *action)
+int bcast_insert(struct template *tmpl, int srcport, int dstport, int seconds, struct action *action)
 {
 	struct port *p;
+
+	/*
+	 * bcast_trigger finds the template again by the name kept in the
+	 * fixed size templateName: a name that does not fit would be
+	 * truncated and could find another template, or none.
+	 */
+	if (strlen(tmpl->name) >= sizeof(p->templateName)) {
+		syslog(LOG_ERR, "broadcast template name \"%s\" is %zu bytes, "
+		    "the limit is %zu", tmpl->name, strlen(tmpl->name),
+		    sizeof(p->templateName) - 1);
+		return (-1);
+	}
 	p = calloc(1, sizeof(struct port));
+	if (p == NULL) {
+		syslog(LOG_ERR, "%s: calloc", __func__);
+		exit(EXIT_FAILURE);
+	}
 	p->action = *action;
 	p->number = dstport;
 	p->srcport = srcport;
 	p->timeout = seconds;
 
 	SPLAY_INSERT(porttree, &tmpl->bcasts, p);
+	return (0);
 }
 
 struct port *
@@ -741,24 +824,46 @@ template_clone(const char *newname, const struct template *tmpl,
 	struct port *port;
 	struct in_addr in_addr;
 
+	/* CWE-476: check the source before it is dereferenced */
+	if (tmpl == NULL)
+		return (NULL);
+
 	if ((newtmpl = template_create(newname)) == NULL)
 		return (NULL);
 	/* Remember the configured template name for logging */
 	newtmpl->origin = strdup(tmpl->origin != NULL ?
 	    tmpl->origin : tmpl->name);
+	/* CWE-476/CWE-252: drop the new template if the copy failed */
+	if (newtmpl->origin == NULL) {
+		syslog(LOG_ERR, "%s: strdup", __func__);
+		template_free(newtmpl);
+		return (NULL);
+	}
 
 	SPLAY_FOREACH(port, porttree, (struct porttree *)&tmpl->ports) {
 		if (port_insert(newtmpl, port->proto, port->number,
-			&port->action) == NULL)
+			&port->action) == NULL) {
+			/*
+			 * CWE-401: take the half built clone out of the
+			 * index and free it with its ports
+			 */
+			template_free(newtmpl);
 			return (NULL);
+		}
 	}
 
 	SPLAY_FOREACH(port, porttree, (struct porttree *)&tmpl->bcasts) {
-		bcast_insert(newtmpl, port->srcport, port->number, port->timeout,&port->action);
+		if (bcast_insert(newtmpl, port->srcport, port->number,
+			port->timeout, &port->action) == -1) {
+			/*
+			 * CWE-401: as above; template_deallocate() also
+			 * frees the broadcast ports added so far, which
+			 * have no timer yet
+			 */
+			template_free(newtmpl);
+			return (NULL);
+		}
 	}
-
-	if(tmpl == NULL)
-		return NULL;
 
 	if (tmpl->person)
 		newtmpl->person = personality_clone(tmpl->person);
@@ -826,9 +931,18 @@ template_clone(const char *newname, const struct template *tmpl,
 	/* Clone dynamics */
 	TAILQ_FOREACH(condition, &tmpl->dynamic, next) {
 		if (template_insert_dynamic(newtmpl,
-			condition->tmpl, condition) == -1)
-			warn("%s: couldn't insert dynamic cond %s into %s",
-			    condition->tmpl->name, tmpl->name);
+			condition->tmpl, condition) == -1) {
+			/*
+			 * CWE-685: the message had three conversions and two
+			 * arguments. A clone missing a rule would answer
+			 * differently from its source, so fail the clone.
+			 */
+			syslog(LOG_ERR, "%s: couldn't insert dynamic cond %s "
+			    "into %s", __func__, condition->tmpl->name,
+			    newtmpl->name);
+			template_free(newtmpl);
+			return (NULL);
+		}
 	}
 
 	/* Clone subsystems */
@@ -990,6 +1104,10 @@ template_subsystem_free(struct subsystem *sub)
 
 	cmd_free(&sub->cmd);
 
+	/* CWE-416: a pending restart must not fire on the freed subsystem */
+	if (sub->restart_ev != NULL)
+		event_free(sub->restart_ev);
+
 	free(sub->cmdstring);
 	free(sub);
 }
@@ -1048,14 +1166,21 @@ template_get_dhcp_address(struct addr *addr)
 {
 	static char address[16];
 
+	/*
+	 * CWE-400/CWE-770/CWE-617: a rogue DHCP server or many DHCP
+	 * cloned templates can use up the temporary addresses. Fail this
+	 * lease with LOG_ERR instead of exiting the whole process; the
+	 * counter stays at the limit so every later call fails too.
+	 */
+	if (privip_counter > 255 * 255) {
+		syslog(LOG_ERR, "%s: out of temporary IP addresses, "
+		    "lease skipped", __func__);
+		return (-1);
+	}
+
 	snprintf(address, sizeof(address),
 	    "169.254.%d.%d", privip_counter / 256 + 1, privip_counter % 256);
-
-	if (++privip_counter > 255 * 255)
-	{
-		syslog(LOG_ERR, "%s: out of temporary IP addresses", __func__);
-		exit(EXIT_FAILURE);
-	}
+	privip_counter++;
 
 	return (addr_aton(address, addr));
 }
@@ -1098,8 +1223,10 @@ template_subsystem_start(struct template *tmpl, struct subsystem *sub)
 	argv[2] = line;
 	if (cmd_subsystem(tmpl, sub, "/bin/sh", argv) == -1)
 	{
-		syslog(LOG_ERR, "%s: can not start subsystem \"%s\" for %s",__func__ ,sub->cmdstring, name);
-		exit(EXIT_FAILURE);
+		/* The template runs on without this subsystem */
+		syslog(LOG_ERR, "%s: can not start subsystem \"%s\" for %s",
+		    __func__, sub->cmdstring, name);
+		return;
 	}
 
 }
@@ -1119,7 +1246,7 @@ template_print(struct evbuffer *buffer, struct template *tmpl)
 	evbuffer_add_printf(buffer, "  TCP seq: %x\n", tmpl->seq);
 	evbuffer_add_printf(buffer, "  TCP drop: in: %d syn: %d\n",
 	    tmpl->drop_inrate, tmpl->drop_synrate);
-	evbuffer_add_printf(buffer, "  refcnt: %d\n", tmpl->refcnt);
+	evbuffer_add_printf(buffer, "  refcnt: %u\n", tmpl->refcnt);
 	evbuffer_add_printf(buffer, "  ports:\n");
 
 	SPLAY_FOREACH(port, porttree, &tmpl->ports) {

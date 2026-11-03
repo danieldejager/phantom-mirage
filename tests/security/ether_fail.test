@@ -1,0 +1,6 @@
+# honeyd_ether_send_cb sent the queued packet to the broadcast MAC after
+# a failed ARP request
+cc_daemon ether_fail tests/security/ether_fail.c
+# Leak checks stay on with no suppressions, so
+# a queued packet that is not freed is reported
+run_clean ether_fail

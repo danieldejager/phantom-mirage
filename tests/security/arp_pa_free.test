@@ -1,0 +1,3 @@
+# Register 153: arp_free removes only its own protocol address node
+cc_daemon arp_pa_free tests/security/arp_pa_free.c
+run_clean arp_pa_free

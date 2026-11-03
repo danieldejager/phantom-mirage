@@ -113,7 +113,7 @@ struct template {
 	struct spoof spoof;
 
 	/* Reference counter */
-	uint16_t refcnt;
+	uint32_t refcnt;
 };
 
 #define TEMPLATE_EXTERNAL	0x0001	/* Real machine on external network */
@@ -168,6 +168,15 @@ void		template_print(struct evbuffer*, struct template *);
 int		template_iterate(int (*f)(struct template *, void *),
 		    void *arg);
 void		template_action_iterate(void (*)(struct action *));
+
+/*
+ * Flows referencing one template are refused past this many references.
+ * Default; "option honeyd max_template_flows N" in the configuration
+ * file overrides it.
+ */
+#define TEMPLATE_MAX_REFCNT	65535
+uint32_t	template_max_refcnt(void);
+#define template_ref_full(x)	((x) != NULL && (x)->refcnt >= template_max_refcnt())
 
 #define template_free(x)	do {					\
 	if ((x) == NULL)						\

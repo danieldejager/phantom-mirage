@@ -1,0 +1,6 @@
+# PM-SCR-107 review: second request in one connection gets an error
+cc_san proxy_connect -I tests/security/stub -Wl,--wrap=make_socket \
+    -Wl,--wrap=getpeername \
+    tests/security/proxy_connect.c tests/security/pcre_stub.c \
+    subsystems/proxy.c subsystems/smtp.c util.c atomicio.c sha1.c
+run_clean proxy_connect second

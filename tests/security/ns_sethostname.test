@@ -1,0 +1,10 @@
+# PM-SCR-242: unchecked sethostname in ns_run (sandbox_ns.c)
+# PM-SCR-252: without user namespaces the skip is printed here, as
+# droppriv_perms does; PM-SCR-253: the harness requires that the fake
+# sethostname was called, so an earlier failure in ns_run fails the test
+cc_san ns_sethostname tests/security/ns_sethostname.c
+if ! "$OUT/ns_sethostname" --probe; then
+	echo "ns_sethostname: skipped, needs unprivileged user namespaces" >&2
+	return 0
+fi
+run_clean ns_sethostname

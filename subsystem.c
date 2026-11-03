@@ -80,6 +80,7 @@ SPLAY_GENERATE(subtmpltree, template_container, node, templ_container_compare);
 
 void subsystem_read(int, short, void *);
 void subsystem_write(int, short, void *);
+void subsystem_restart(int, short, void *);
 
 struct callback subsystem_cb = {
 	subsystem_read, subsystem_write, NULL, NULL
@@ -154,16 +155,63 @@ subsystem_insert_template(struct subsystem *sub, struct template *tmpl)
 		SPLAY_INSERT(subtmpltree, &sub->root, cont);
 }
 
+/* Schedules subsystem_restart on the subsystem's own timer */
+static void
+subsystem_restart_later(struct subsystem *sub, struct timeval *tv)
+{
+	if (sub->restart_ev == NULL &&
+	    (sub->restart_ev = evtimer_new(libevent_base, subsystem_restart,
+	    sub)) == NULL) {
+		syslog(LOG_ERR, "%s: evtimer_new", __func__);
+		return;
+	}
+	if (evtimer_add(sub->restart_ev, tv) == -1)
+		syslog(LOG_ERR, "%s: evtimer_add", __func__);
+}
+
 void
 subsystem_restart(int fd, short what, void *arg)
 {
 	struct subsystem *sub = arg;
 	struct template_container *cont = TAILQ_FIRST(&sub->templates);
 	struct template *tmpl = cont->tmpl;
+	struct timeval tv;
+
 	template_subsystem_free_ports(sub);
 	cmd_free(&sub->cmd);
 	syslog(LOG_INFO, "Restarting subsystem \"%s\"", sub->cmdstring);
 	template_subsystem_start(tmpl, sub);
+	if (sub->cmd.pid != -1) {
+		sub->restart_tries = 0;
+		return;
+	}
+
+	/*
+	 * CWE-754: a failed restart was never tried again. Retry with a
+	 * doubling delay, capped; after a bounded number of failures in a
+	 * row keep retrying, but only every SUBSYSTEM_RESTART_SLOW seconds,
+	 * so a subsystem that can start again is not down for good.
+	 */
+	timerclear(&tv);
+	if (sub->restart_tries < SUBSYSTEM_RESTART_TRIES)
+		sub->restart_tries++;
+	if (sub->restart_tries >= SUBSYSTEM_RESTART_TRIES) {
+		tv.tv_sec = SUBSYSTEM_RESTART_SLOW;
+		syslog(LOG_ERR, "Subsystem \"%s\" not restarted after %d "
+		    "tries, retry in %ld s", sub->cmdstring,
+		    sub->restart_tries, (long)tv.tv_sec);
+		subsystem_restart_later(sub, &tv);
+		return;
+	}
+	tv.tv_sec = SUBSYSTEM_RESTART_INTERVAL;
+	for (int i = 1; i < sub->restart_tries &&
+	    tv.tv_sec < SUBSYSTEM_RESTART_MAX_DELAY; i++)
+		tv.tv_sec *= 2;
+	if (tv.tv_sec > SUBSYSTEM_RESTART_MAX_DELAY)
+		tv.tv_sec = SUBSYSTEM_RESTART_MAX_DELAY;
+	syslog(LOG_WARNING, "Subsystem \"%s\" restart failed, retry in "
+	    "%ld s", sub->cmdstring, (long)tv.tv_sec);
+	subsystem_restart_later(sub, &tv);
 }
 
 void
@@ -187,7 +235,7 @@ subsystem_cleanup(struct subsystem *sub)
 			
 			timerclear(&tv);
 			tv.tv_sec = 2 * SUBSYSTEM_RESTART_INTERVAL;
-			event_base_once(libevent_base, -1, EV_TIMEOUT, subsystem_restart, sub, &tv);
+			subsystem_restart_later(sub, &tv);
 		}
 		return;
 	}
@@ -310,6 +358,16 @@ subsystem_listen(struct port *sub_port, char *ip, int nfd)
 	syslog(LOG_DEBUG, "Listen: %s:%d -> fd %d", 
 	    ip, sub_port->number, nfd);
 
+	/*
+	 * One descriptor per port: replacing it would leak the reference
+	 * held for the earlier listen or connection.
+	 */
+	if (sub_port->sub_fd != -1 || sub_port->sub_conport != NULL) {
+		syslog(LOG_WARNING, "%s: port %d already in use",
+		    __func__, sub_port->number);
+		return (-1);
+	}
+
 	/* We use this fd to notify the other side */
 	TRACE(nfd, sub_port->sub_fd = fdshare_dup(nfd));
 	if (sub_port->sub_fd == -1)
@@ -357,14 +415,11 @@ subsystem_cmd_listen(int fd,
 	}
 
 	res = 0;
-	TRACE(fd, atomicio(vwrite, fd, &res, 1));
+	TRACE(fd, atomicio_timed(vwrite, fd, &res, 1, SUBSYSTEM_IO_TIMEOUT));
 	res = -1;
 
-	/* Repeat until we get a result */
-	while ((nfd = receive_fd(fd, NULL, NULL)) == -1) {
-		if (errno != EAGAIN)
-			break;
-	}
+	/* Wait a bounded time for the descriptor */
+	nfd = receive_fd_timed(fd, NULL, NULL, SUBSYSTEM_IO_TIMEOUT);
 
 	if (nfd == -1) {
 		syslog(LOG_WARNING, "%s: no file descriptor",__func__);
@@ -378,8 +433,10 @@ subsystem_cmd_listen(int fd,
 		return (-1);
 	}
 
+	/* Reply 0 on success, not the descriptor number */
+	res = 0;
 	if (strcmp(asrc, "0.0.0.0") != 0) {
-		TRACE(nfd, subsystem_listen(sub_port, asrc, nfd));
+		TRACE(nfd, res = subsystem_listen(sub_port, asrc, nfd));
 	} else {
 		/* 
 		 * Subsystem sharing means that we need to
@@ -389,10 +446,10 @@ subsystem_cmd_listen(int fd,
 		SPLAY_FOREACH(cont, subtmpltree, &sub->root) {
 			tmpl = cont->tmpl;
 			sub_port = port_find(tmpl, proto, port);
-			if (sub_port == NULL)
-			{
-				syslog(LOG_ERR, "%s: no proto %d port %d", __func__, proto, port);
-				exit(EXIT_FAILURE);
+			if (sub_port == NULL) {
+				syslog(LOG_ERR, "%s: no proto %d port %d on %s",
+				    __func__, proto, port, tmpl->name);
+				continue;
 			}
 			if (sub_port->sub == NULL) {
 				syslog(LOG_DEBUG,
@@ -416,6 +473,19 @@ subsystem_cmd_listen(int fd,
 	return (res);
 }
 
+/*
+ * Undo a SUB_CONNECT that failed before the connection took the port:
+ * a port allocated for this connect (local_port 0) is freed, a port
+ * the subsystem bound itself is left bound.
+ */
+static void
+subsystem_connect_unwind(struct template *tmpl, struct port *sub_port,
+    u_short local_port)
+{
+	if (local_port == 0)
+		port_free(tmpl, sub_port);
+}
+
 void
 subsystem_read(int fd, short what, void *arg)
 {
@@ -427,7 +497,8 @@ subsystem_read(int fd, short what, void *arg)
 	int proto, n;
 	char res = -1;
 
-	TRACE(fd, n = atomicio(read, fd, &cmd, sizeof(cmd)));
+	TRACE(fd, n = atomicio_timed(read, fd, &cmd, sizeof(cmd),
+	    SUBSYSTEM_IO_TIMEOUT));
 	if (n != sizeof(cmd)) {
 		subsystem_cleanup(sub);
 		return;
@@ -487,11 +558,13 @@ subsystem_read(int fd, short what, void *arg)
 		}
 
 		/* Confirm success or failure of this phase */
-		TRACE(fd, atomicio(vwrite, fd, &res, 1));
+		TRACE(fd, atomicio_timed(vwrite, fd, &res, 1,
+		    SUBSYSTEM_IO_TIMEOUT));
 			
 		/* On success, we also communicate the port back */
 		if (res != -1) {
-			TRACE(fd, atomicio(vwrite, fd, &port, sizeof(port)));
+			TRACE(fd, atomicio_timed(vwrite, fd, &port, sizeof(port),
+			    SUBSYSTEM_IO_TIMEOUT));
 		}
 		goto reschedule;
 	}
@@ -553,10 +626,10 @@ subsystem_read(int fd, short what, void *arg)
 		/* Find appropriate template */
 		if (strcmp(asrc, "0.0.0.0") != 0) {
 			tmpl = subsystem_template_find(sub, asrc);
-			if (tmpl == NULL)
-			{
-				syslog(LOG_ERR, "%s: source address %s not found", __func__, asrc);
-				exit(EXIT_FAILURE);
+			if (tmpl == NULL) {
+				syslog(LOG_ERR, "%s: source address %s not found",
+				    __func__, asrc);
+				goto out;
 			}
 		} else {
 			cont = SPLAY_ROOT(&sub->root);
@@ -591,7 +664,23 @@ subsystem_read(int fd, short what, void *arg)
 			goto out;
 		
 		/* Verify that we have the correct binding */
-		assert(sub_port->sub == sub);
+		if (sub_port->sub != sub) {
+			syslog(LOG_ERR, "%s: port %d not bound by subsystem %s",
+			    __func__, sub_port->number, sub->cmdstring);
+			goto out;
+		}
+
+		/*
+		 * A port carries one connection back pointer and one shared
+		 * descriptor. A second connection, or a connection from a
+		 * listening port, would overwrite them and leave the first
+		 * user holding a port that is freed under it.
+		 */
+		if (sub_port->sub_conport != NULL || sub_port->sub_fd != -1) {
+			syslog(LOG_WARNING, "%s: port %d already in use",
+			    __func__, sub_port->number);
+			goto out;
+		}
 
 		syslog(LOG_DEBUG, "Connect: allocated port %d",
 		    sub_port->number);
@@ -609,30 +698,50 @@ subsystem_read(int fd, short what, void *arg)
 			tcp.th_sport = htons(port);
 			tcp.th_dport = htons(sub_port->number);
 
-			if ((con = tcp_new(NULL, &ip, &tcp, INITIATED_BY_SUBSYSTEM)) == NULL)
+			if ((con = tcp_new(NULL, &ip, &tcp, INITIATED_BY_SUBSYSTEM)) == NULL) {
+				subsystem_connect_unwind(tmpl, sub_port,
+				    local_port);
 				goto out;
+			}
 			con->tmpl = template_ref(tmpl);
-
-			/* Cross notify */
-			con->port = sub_port;
-			sub_port->sub_conport = &con->port;
 
 			/* Confirm success of this phase */
 			res = 0;
-			TRACE(fd, atomicio(vwrite, fd, &res, 1));
+			TRACE(fd, atomicio_timed(vwrite, fd, &res, 1,
+			    SUBSYSTEM_IO_TIMEOUT));
 			
 			/* Now get the control fd */
-			while ((nfd = receive_fd(fd, NULL, NULL)) == -1) {
-				if (errno != EAGAIN) {
-					tcp_free(con);
-					goto out;
-				}
+			nfd = receive_fd_timed(fd, NULL, NULL,
+			    SUBSYSTEM_IO_TIMEOUT);
+			if (nfd == -1) {
+				/* The connection never owned the port */
+				tcp_free(con);
+				subsystem_connect_unwind(tmpl, sub_port,
+				    local_port);
+				res = -1;
+				goto out;
 			}
 			TRACE(nfd, sub_port->sub_fd = fdshare_dup(nfd));
+			if (sub_port->sub_fd == -1) {
+				/* CWE-252/CWE-775: nfd is not shared, close it */
+				syslog(LOG_ERR, "%s: fdshare_dup failed",
+				    __func__);
+				TRACE_RESET(nfd, close(nfd));
+				tcp_free(con);
+				subsystem_connect_unwind(tmpl, sub_port,
+				    local_port);
+				res = -1;
+				goto out;
+			}
+
+			/* Cross notify, only once the connect is complete */
+			con->port = sub_port;
+			sub_port->sub_conport = &con->port;
 
 			/* Confirm success again */
 			res = 0;
-			TRACE(nfd, atomicio(vwrite, nfd, &res, 1));
+			TRACE(nfd, atomicio_timed(vwrite, nfd, &res, 1,
+			    SUBSYSTEM_IO_TIMEOUT));
 			
 			/* Send out the SYN packet */
 			con->state = TCP_STATE_SYN_SENT;
@@ -651,34 +760,66 @@ subsystem_read(int fd, short what, void *arg)
 			udp.uh_sport = htons(port);
 			udp.uh_dport = htons(sub_port->number);
 
-			if ((con = udp_new(&ip, &udp, INITIATED_BY_SUBSYSTEM)) == NULL)
+			if ((con = udp_new(&ip, &udp, INITIATED_BY_SUBSYSTEM)) == NULL) {
+				subsystem_connect_unwind(tmpl, sub_port,
+				    local_port);
 				goto out;
+			}
 			con->tmpl = template_ref(tmpl);
 			
-			/* Cross notify */
+			/* Confirm success of this phase */
+			res = 0;
+			TRACE(fd, atomicio_timed(vwrite, fd, &res, 1,
+			    SUBSYSTEM_IO_TIMEOUT));
+
+			/* Now get the control fd */
+			nfd = receive_fd_timed(fd, NULL, NULL,
+			    SUBSYSTEM_IO_TIMEOUT);
+			if (nfd == -1) {
+				/* The connection never owned the port */
+				udp_free(con);
+				subsystem_connect_unwind(tmpl, sub_port,
+				    local_port);
+				res = -1;
+				goto out;
+			}
+			TRACE(nfd, sub_port->sub_fd = fdshare_dup(nfd));
+			if (sub_port->sub_fd == -1) {
+				/* CWE-252/CWE-775: nfd is not shared, close it */
+				syslog(LOG_ERR, "%s: fdshare_dup failed",
+				    __func__);
+				TRACE_RESET(nfd, close(nfd));
+				udp_free(con);
+				subsystem_connect_unwind(tmpl, sub_port,
+				    local_port);
+				res = -1;
+				goto out;
+			}
+
+			/* Cross notify, only once the connect is complete */
 			con->port = sub_port;
 			sub_port->sub_conport = &con->port;
 
-			/* Confirm success of this phase */
-			res = 0;
-			TRACE(fd, atomicio(vwrite, fd, &res, 1));
-
-			/* Now get the control fd */
-			while ((nfd = receive_fd(fd, NULL, NULL)) == -1) {
-				if (errno != EAGAIN) {
-					udp_free(con);
-					goto out;
-				}
-			}
-			TRACE(nfd, sub_port->sub_fd = fdshare_dup(nfd));
-
 			/* Confirm success again */
 			res = 0;
-			TRACE(nfd, atomicio(vwrite, nfd, &res, 1));
+			TRACE(nfd, atomicio_timed(vwrite, nfd, &res, 1,
+			    SUBSYSTEM_IO_TIMEOUT));
                        
 			/* Connect our system to the subsystem */
-			cmd_subsystem_localconnect(&con->conhdr, &con->cmd,
-			    sub_port, con);
+			if (cmd_subsystem_localconnect(&con->conhdr, &con->cmd,
+			    sub_port, con) == -1) {
+				/*
+				 * CWE-252: drop the connection. The local
+				 * connect released the shared descriptor.
+				 */
+				syslog(LOG_ERR, "%s: local connect failed, "
+				    "connection dropped", __func__);
+				con->port = NULL;
+				sub_port->sub_conport = NULL;
+				udp_free(con);
+				subsystem_connect_unwind(tmpl, sub_port,
+				    local_port);
+			}
 			goto reschedule;
 		}
 	}
@@ -687,7 +828,7 @@ subsystem_read(int fd, short what, void *arg)
 	}
 
  out:
-	TRACE(fd, atomicio(vwrite, fd, &res, 1));
+	TRACE(fd, atomicio_timed(vwrite, fd, &res, 1, SUBSYSTEM_IO_TIMEOUT));
  reschedule:
 	/* Reschedule read */
 	TRACE(event_get_fd(sub->cmd.pread), event_add(sub->cmd.pread, NULL));

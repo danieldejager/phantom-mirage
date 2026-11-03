@@ -184,9 +184,14 @@ include		{ BEGIN(incl); }
                   BEGIN(INITIAL);
 		}
 <<EOF>>		{
-		  if (--includes_index < 0)
+		  /*
+		   * parse_line() buffers end here too: only pop a level
+		   * that an include pushed, never go below zero.
+		   */
+		  if (includes_index <= 0)
 			  yyterminate();
 		  else {
+			  includes_index--;
 			  free(filenames[includes_index + 1]);
 			  filename = filenames[includes_index];
 			  lineno = linenos[includes_index];

@@ -79,6 +79,7 @@
 #include "tagging.h"
 #include "stats.h"
 #include "debug.h"
+#include "util.h"
 
 int			honeyd_debug;
 
@@ -96,8 +97,11 @@ static gid_t		hsniff_gid = 32767;
 static struct option hsniff_long_opts[] = {
 	{"version",     0, &hsniff_show_version, 1},
 	{"help",        0, &hsniff_show_usage, 1},
+	{"stats-password-file", required_argument, NULL, 'K'},
 	{0, 0, 0, 0}
 };
+
+#define HSNIFF_OPTSTRING	"VPUdc:i:u:g:f:0:h?"
 
 struct tree tcpcons;
 
@@ -113,6 +117,11 @@ usage(void)
 		"  -d                     Do not daemonize, be verbose.\n"
 		"  -V, --version          Print program version and exit.\n"
 		"  -h, --help             Print this message and exit.\n"
+		"  -c host:port:name      Reports stats to collector.\n"
+		"  --stats-password-file=FILE\n"
+		"                         Read the -c password from FILE (mode 0600,\n"
+		"                         owned by the running user, not a symlink).\n"
+		"  -c host:port:name:pass Deprecated: password on the command line.\n"
 	    );
 	
 	exit(1);
@@ -174,9 +183,13 @@ syslog_init(int argc, char *argv[])
 
 	buf[0] = '\0';
 	for (i = 1; i < argc; i++) {
+		char arg[MAXPATHLEN];
+
 		if (i > 1 && strlcat(buf, " ", sizeof(buf)) >= sizeof(buf))
 			break;
-		if (strlcat(buf, argv[i], sizeof(buf)) >= sizeof(buf))
+		/* Never log a stats password given with -c */
+		stats_redact_arg(argv, i, HSNIFF_OPTSTRING, arg, sizeof(arg));
+		if (strlcat(buf, arg, sizeof(buf)) >= sizeof(buf))
 			break;
 	}
 
@@ -244,7 +257,7 @@ tcp_track_free(struct tcp_track *con)
 	hooks_dispatch(IP_PROTO_TCP, HD_INCOMING_STREAM, &con->conhdr,
 	    NULL, 0);
 
-	evtimer_del(con->timeout);
+	event_free(con->timeout);	/* also deletes it */
 
 	free(con);
 }
@@ -530,13 +543,14 @@ main(int argc, char *argv[])
 	u_short stats_port = 0;
 	char *stats_username = NULL;
 	char *stats_password = NULL;
+	const char *stats_password_file = NULL;
 	char filter[2048], line[128];
 	int i, c, orig_argc, ninterfaces = 0;
 	FILE *fp;
 
 	orig_argc = argc;
 	orig_argv = argv;
-	while ((c = getopt_long(argc, argv, "VPUdc:i:u:g:f:0:h?",
+	while ((c = getopt_long(argc, argv, HSNIFF_OPTSTRING,
 				hsniff_long_opts, NULL)) != -1) {
 		char *ep;
 		switch (c) {
@@ -558,8 +572,8 @@ main(int argc, char *argv[])
 				usage();
 			if ((name = strsep(&p, ":")) == NULL)
 				usage();
-			if ((password = strsep(&p, ":")) == NULL)
-				usage();
+			/* The password field is optional */
+			password = strsep(&p, ":");
 			if (p != NULL && *p != '\0')
 				usage();
 
@@ -575,8 +589,18 @@ main(int argc, char *argv[])
 			}
 
 			stats_username = strdup(name);
-			stats_password = strdup(password);
+			if (password != NULL) {
+				fprintf(stderr, "Warning: a password in -c is "
+				    "deprecated, it is visible to other users; "
+				    "use --stats-password-file\n");
+				stats_password = strdup(password);
+				/* Hide it from the process list too */
+				stats_scrub_password(optarg);
+			}
 		}
+			break;
+		case 'K':
+			stats_password_file = optarg;
 			break;
 		case 'u':
 			hsniff_uid = strtoul(optarg, &ep, 10);
@@ -619,6 +643,26 @@ main(int argc, char *argv[])
 			usage();
 			break;
 		}
+	}
+
+	if (stats_password_file != NULL) {
+		if (stats_username == NULL) {
+			fprintf(stderr, "--stats-password-file needs -c "
+			    "host:port:name\n");
+			exit(EXIT_FAILURE);
+		}
+		if (stats_password != NULL) {
+			fprintf(stderr, "use either a password in -c or "
+			    "--stats-password-file, not both\n");
+			exit(EXIT_FAILURE);
+		}
+		if ((stats_password =
+			stats_read_password_file(stats_password_file)) == NULL)
+			exit(EXIT_FAILURE);
+	} else if (stats_username != NULL && stats_password == NULL) {
+		fprintf(stderr, "-c needs a password: use "
+		    "--stats-password-file\n");
+		exit(EXIT_FAILURE);
 	}
 
 	if (hsniff_show_version) {
