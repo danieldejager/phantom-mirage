@@ -111,7 +111,10 @@ cmd_trigger_write(struct command *cmd, int size)
  * no limit. UDP scripts may hold at most half of max_script_procs
  * (rounded up), so a sender that spoofs many UDP source addresses
  * cannot take every slot: TCP needs a completed handshake and keeps the
- * rest (PM-SCR-221, CWE-770). The entry remembers the command that owns the child, and
+ * rest (PM-SCR-221, CWE-770). TCP scripts likewise hold at most half
+ * (rounded up), so many real TCP sources cannot starve UDP (PM-SCR-234).
+ * With an odd cap one slot is shared; with a cap of 1 nothing is
+ * reserved. The entry remembers the command that owns the child, and
  * cmd_free() only signals a pid that is still in the map for that same
  * command, so a reaped (and possibly reused) pid is never signalled.
  */
@@ -205,8 +208,14 @@ cmd_script_full(ip_addr_t src, int udp)
 	    HONEYD_MAX_SCRIPT_PROCS);
 	if (max != 0 && script_nprocs >= max)
 		return (1);
-	/* UDP share: half of the global cap, rounded up */
+	/*
+	 * Each protocol may hold at most half of the global cap, rounded
+	 * up: spoofed UDP cannot take the TCP half (PM-SCR-221) and real
+	 * TCP sources cannot take the UDP half (PM-SCR-234).
+	 */
 	if (max != 0 && udp && script_nudp >= max - max / 2)
+		return (1);
+	if (max != 0 && !udp && script_nprocs - script_nudp >= max - max / 2)
 		return (1);
 	max = honeyd_limit_option("max_script_procs_per_source",
 	    HONEYD_MAX_SCRIPT_PROCS_SOURCE);
