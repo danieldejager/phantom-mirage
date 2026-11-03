@@ -29,16 +29,26 @@ AUTOMAKE_OPTIONS = foreign no-dependencies
 LIBHONEYDFILES= libhoneyd-honeyd_overload.lo libhoneyd-atomicio.lo \
 		libhoneyd-fdpass.lo
 
+## The preload library is a plain shared object: it gets the hardening
+## flags but not the PIE ones (libtool adds -fPIC, and -pie must never
+## reach a shared library link). It replaces libc calls such as recvfrom,
+## which the FORTIFY headers wrap inline, so it is built without FORTIFY.
+LIBHONEYD_CFLAGS = -Wall $(HARDEN_CFLAGS)
+LIBHONEYD_COMPILE = $(LIBTOOL) --tag=CC --mode=compile $(CC) $(DEFS) \
+	$(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) \
+	$(LIBHONEYD_CFLAGS) $(CFLAGS)
+
 libhoneyd-honeyd_overload.lo: honeyd_overload.c config.h
-	$(LTCOMPILE) -c -o $@ $(srcdir)/honeyd_overload.c
+	$(LIBHONEYD_COMPILE) -c -o $@ $(srcdir)/honeyd_overload.c
 libhoneyd-atomicio.lo: atomicio.c atomicio.h config.h
-	$(LTCOMPILE) -c -o $@ $(srcdir)/atomicio.c
+	$(LIBHONEYD_COMPILE) -c -o $@ $(srcdir)/atomicio.c
 libhoneyd-fdpass.lo: fdpass.c fdpass.h config.h
-	$(LTCOMPILE) -c -o $@ $(srcdir)/fdpass.c
+	$(LIBHONEYD_COMPILE) -c -o $@ $(srcdir)/fdpass.c
 
 libphantom-mirage.so: $(LIBHONEYDFILES)
-	$(LIBTOOL) --mode=link $(CC) $(CFLAGS) -o libtmp$@.la \
-		-rpath $(libdir)/phantom-mirage $(LIBHONEYDFILES) $(LIBS) $(LDFLAGS) \
+	$(LIBTOOL) --mode=link $(CC) $(LIBHONEYD_CFLAGS) $(CFLAGS) -o libtmp$@.la \
+		-rpath $(libdir)/phantom-mirage $(LIBHONEYDFILES) $(LIBS) \
+		$(HARDEN_LDFLAGS) $(LDFLAGS) \
 		-module -avoid-version -nostdlib @LIBDL@
 	rm -f libtmp$@.la tmp$@.so* $@
 	cp .libs/libtmp$@.so $@ || cp .libs/libtmp$@ $@
@@ -99,7 +109,7 @@ phantom_mirage_LDADD = @PYEXTEND@ @LIBOBJS@ @PYTHONLIB@ @EVENTLIB@ @PCAPLIB@ \
 	@DNETLIB@ @ZLIB@ @PLUGINLIB@ -lm
 
 # Allow plugins to use honeyd's functions:
-phantom_mirage_LDFLAGS = -export-dynamic 
+phantom_mirage_LDFLAGS = $(AM_LDFLAGS) -export-dynamic
 
 # Honeyd stats collector
 #
@@ -108,9 +118,8 @@ phantom_mirage_stats_SOURCES = honeydstats.c honeydstats.h \
 	stats.c stats.h util.c histogram.c histogram.h analyze.c analyze.h \
 	untagging.c untagging.h filter.c filter.h keycount.c keycount.h
 phantom_mirage_stats_LDADD = @LIBOBJS@ @DNETLIB@ @EVENTLIB@ @ZLIB@
-phantom_mirage_stats_CPPFLAGS = -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
+phantom_mirage_stats_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
 	@EVENTINC@ @DNETINC@ @ZINC@
-phantom_mirage_stats_CFLAGS = -O0 -Wall
 
 #
 # Honeyd stats sniffer
@@ -120,19 +129,19 @@ phantom_mirage_sniff_SOURCES = hsniff.c hsniff.h tagging.c tagging.h \
 	stats.c stats.h util.c util.h hooks.c hooks.h interface.c interface.h \
 	pfctl_osfp.c pf_osfp.c pfvar.h osfp.c osfp.h network.c network.h
 phantom_mirage_sniff_LDADD = @LIBOBJS@ @PCAPLIB@ @DNETLIB@ @EVENTLIB@ @ZLIB@
-phantom_mirage_sniff_CPPFLAGS = -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
+phantom_mirage_sniff_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
 	@EVENTINC@ @PCAPINC@ @DNETINC@ @ZINC@
-phantom_mirage_sniff_CFLAGS = -O2 -Wall -DPATH_HONEYDDATA="\"$(honeyddatadir)\""
 
 #
 # Honeyd control application
 #
 phantom_mirage_ctl_SOURCES = honeydctl.c
 phantom_mirage_ctl_LDADD = @LIBOBJS@ @EDITLIB@ @LIBCURSES@
-phantom_mirage_ctl_CPPFLAGS = @EDITINC@
-phantom_mirage_ctl_CFLAGS = -O2 -Wall
+phantom_mirage_ctl_CPPFLAGS = $(AM_CPPFLAGS) @EDITINC@
 
-CFLAGS	= -O2 -Wall -g \
+# Defines and warnings only: optimisation and debug flags come from the
+# user's CFLAGS (configure defaults to -g -O2), so make CFLAGS=... works.
+AM_CPPFLAGS = \
 	-DPATH_HONEYDINCLUDE="\"$(honeydincludedir)\"" \
 	-DPATH_HONEYDDATA="\"$(honeyddatadir)\"" \
 	-DPATH_HONEYDLIB="\"$(honeydlibdir)\"" \
@@ -140,6 +149,9 @@ CFLAGS	= -O2 -Wall -g \
 	-DHONEYD_PLUGINS="$(honeydplugins)" \
 	-DPATH_RRDTOOL="\"$(PATH_RRDTOOL)\"" \
 	-D_GNU_SOURCE
+# Hardening flags from configure (R4-2, R4-3); the programs are PIE.
+AM_CFLAGS = -Wall $(HARDEN_CFLAGS) $(HARDEN_FORTIFY_CFLAGS) $(HARDEN_PIE_CFLAGS)
+AM_LDFLAGS = $(HARDEN_LDFLAGS) $(HARDEN_PIE_LDFLAGS)
 
 INCLUDES = -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
 	@PYTHONINC@ @EVENTINC@ @PCAPINC@ @DNETINC@ @ZINC@
@@ -153,9 +165,8 @@ smtp_SOURCES = subsystems/smtp.c subsystems/smtp.h subsystems/smtp_main.c \
 	util.c util.h honeyd_overload.h
 
 smtp_LDADD = @LIBOBJS@ @EVENTLIB@ @DNETLIB@ @PCAPLIB@ @PCRELIB@
-smtp_CPPFLAGS = -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
+smtp_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
 	@EVENTINC@ @DNETINC@ @PCREINC@
-smtp_CFLAGS = -O2 -Wall
 
 proxy_SOURCES = subsystems/proxy.c subsystems/proxy.h subsystems/proxy_main.c \
 	subsystems/proxy_messages.h subsystems/smtp.c subsystems/smtp.h \
@@ -163,9 +174,8 @@ proxy_SOURCES = subsystems/proxy.c subsystems/proxy.h subsystems/proxy_main.c \
 	util.c util.h honeyd_overload.h
 
 proxy_LDADD = @LIBOBJS@ @EVENTLIB@ @DNETLIB@ @PCAPLIB@ @PCRELIB@
-proxy_CPPFLAGS = -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
+proxy_CPPFLAGS = $(AM_CPPFLAGS) -I$(top_srcdir)/@DNETCOMPAT@ -I$(top_srcdir)/compat \
 	@EVENTINC@ @DNETINC@ @PCREINC@
-proxy_CFLAGS = -O2 -Wall
 
 ########################################################################
 ##
