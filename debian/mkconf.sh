@@ -37,7 +37,7 @@ sed -e 's/^set default default icmp action filtered$/set default default icmp ac
     -e 's/^set default default tcp action filtered$/set default default tcp action reset\
 # decoy ports (#129): banners or silent tripwires, see debian\/mkconf.sh;\
 # to switch a port, comment one of its two lines and uncomment the other\
-'"${lines%?}"'/' \
+'"${lines%??}"'/' \
     -e 's/^bind 192\.168\.3\.137 windows/# &/' "$in" > "$out.tmp"
 grep -q '^set default default icmp action open$' "$out.tmp"
 grep -q '^set default default tcp action reset$' "$out.tmp"
