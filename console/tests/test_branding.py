@@ -15,6 +15,7 @@ ROOT = os.path.normpath(os.path.join(HERE, ".."))
 REPO = os.path.normpath(os.path.join(ROOT, ".."))
 STATIC = os.path.join(ROOT, "static")
 SETUP = os.path.join(REPO, "debian", "scripts", "phantom-mirage-setup")
+LOGODIR = os.path.join(REPO, "debian", "brand")
 CONF = os.path.join(ROOT, "branding.conf")
 sys.path.insert(0, ROOT)
 import branding  # noqa: E402
@@ -32,7 +33,7 @@ def login_page():
 
 
 def run_setup(env_extra, tty=False):
-    env = dict(os.environ, PM_TESTING="1", PM_BRANDING=CONF, PM_LIBDIR=tempfile.mkdtemp(), LC_ALL="C.UTF-8", TERM="xterm")
+    env = dict(os.environ, PM_TESTING="1", PM_BRANDING=CONF, PM_LIBDIR=tempfile.mkdtemp(), PM_LOGODIR=LOGODIR, LC_ALL="C.UTF-8", TERM="xterm")
     env.pop("NO_COLOR", None)
     env.update(env_extra)
     args = ["sh", SETUP, "--console", "--dry-run"]
@@ -277,17 +278,17 @@ class TestSetupBanner(unittest.TestCase):
         out = run_setup({"COLORTERM": ""}, tty=True)
         for r in self.RETIRED:
             self.assertNotIn(r, out)
-        self.assertIn("\x1b[1m", out)             # front P: bold, default fg
-        self.assertNotIn("38;5;255", out)
-        self.assertIn("\x1b[38;5;245m", out)
+        self.assertIn("\x1b[38;5;245m", out)     # lettering grey
+        self.assertIn("48;5;", out)               # 256-colour half-block logo
+        self.assertIn("\u2580", out)
         self.assertNotIn("38;2;", out)
 
     def test_banner_uses_grey_truecolor_when_advertised(self):
         out = run_setup({"COLORTERM": "truecolor"}, tty=True)
         for r in self.RETIRED:
             self.assertNotIn(r, out)
-        self.assertIn("\x1b[1m", out)             # front P: bold, default fg
-        self.assertNotIn("238;240;243", out)
+        self.assertIn("48;2;11;12;15", out)       # logo on brand #0B0C0F
+        self.assertIn("\u2580", out)
         self.assertNotIn("38;5;", out)
         self.assertIn("\x1b[38;2;138;144;154m", out)     # #8A909A
 
@@ -302,6 +303,32 @@ class TestSetupBanner(unittest.TestCase):
         self.assertIn("(c) 2026 Phantom Technologies", out)
         self.assertIn("\x1b[38;5;245m", out)
         self.assertTrue(all(ord(ch) < 128 for ch in out), out)
+
+    def test_no_logo_art_without_tty_or_utf8(self):
+        for env, tty in (({}, False), ({"NO_COLOR": "1"}, True), ({"TERM": "dumb"}, True),
+                         ({"LC_ALL": "C"}, True)):
+            self.assertNotIn("\u2580", run_setup(env, tty=tty), env)
+
+    def test_missing_logo_falls_back_to_wordmark(self):
+        out = run_setup({"PM_LOGODIR": tempfile.mkdtemp(), "COLORTERM": "truecolor"}, tty=True)
+        self.assertIn("Mirage I", out)
+        self.assertNotIn("\u2580", out)
+
+    def test_logo_assets_shape(self):
+        import re
+        for name, pat in (("logo-24bit.ans", r"\x1b\[38;2;\d+;\d+;\d+;48;2;\d+;\d+;\d+m"),
+                          ("logo-256.ans", r"\x1b\[38;5;\d+;48;5;\d+m")):
+            with open(os.path.join(LOGODIR, name), encoding="utf-8") as f:
+                lines = f.read().splitlines()
+            self.assertTrue(8 <= len(lines) <= 20, name)
+            widths = set()
+            for ln in lines:
+                self.assertTrue(ln.endswith("\x1b[0m"), name)
+                bare = re.sub(pat, "", ln[:-4])
+                self.assertEqual(set(bare), {"\u2580"}, name)
+                widths.add(len(bare))
+            self.assertEqual(len(widths), 1, name)
+            self.assertTrue(40 <= widths.pop() <= 60, name)
 
     def test_script_has_no_retired_palette(self):
         with open(SETUP, encoding="utf-8") as f:
