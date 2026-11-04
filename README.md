@@ -77,23 +77,37 @@ Make sure that you have them installed.
 
 
 
-On Debian or Ubuntu, `./install-from-source.sh` in the source checkout does all of
-the steps below: it installs the build dependencies with apt-get, then
-runs autogen, configure, make and make install (with sudo when not root).
+On Debian or Ubuntu, `./install-from-source.sh` in the source checkout does
+everything: it installs the packaging build dependencies with apt-get
+(sudo when not root), builds the `phantom-mirage` and
+`phantom-mirage-common` .debs from the checkout with
+`dpkg-buildpackage -us -uc -b` and installs them with `apt-get`. That
+gives the full packaged install: `phantom-mirage-setup`, the web console,
+the systemd units and `/etc/phantom-mirage`. Nothing is enabled or started.
 
 ```sh
+$ git clone https://github.com/danieldejager/phantom-mirage.git
+$ cd phantom-mirage
 $ ./install-from-source.sh                # asks before installing packages
 $ ./install-from-source.sh --yes          # non-interactive
-$ ./install-from-source.sh --with-python  # also installs python3-dev, configures --with-python
-$ ./install-from-source.sh --prefix /opt/phantom-mirage
+$ sudo phantom-mirage-setup               # then set it up; asks for the admin password at a hidden prompt
 $ ./install-from-source.sh --help
 ```
 
-It is safe to run again and never touches existing console config. A
-source install has no web console or `phantom-mirage-setup`; those ship in
-the Debian packages (`release/get-mirage.sh`), after which you run
-`sudo phantom-mirage-setup` yourself (it asks for the admin password at a
-hidden prompt).
+The build runs in a temporary copy, so the checkout stays clean. The
+.debs are left in `phantom-mirage-debs` next to the checkout (change it
+with `--deb-dir DIR`). It is safe to run again and keeps existing console
+and `/etc/phantom-mirage` config.
+
+`--source-install` keeps the plain autogen, configure, make and make
+install path instead (binaries and data only, no web console or
+`phantom-mirage-setup`); `--prefix DIR` (default `/usr/local`) and
+`--with-python` only apply there:
+
+```sh
+$ ./install-from-source.sh --source-install --prefix /opt/phantom-mirage
+$ ./install-from-source.sh --source-install --with-python
+```
 
 To install dependencies in Ubuntu by hand:
 
