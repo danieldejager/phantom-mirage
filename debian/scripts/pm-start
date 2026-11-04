@@ -23,11 +23,17 @@ mode=$1
 # Pinned sha256 of the default personality file (#150); PM_ETC for tests
 [ -z "$PM_PRINT_ARGV" ] || [ -n "${PM_ETC:-}" ] || PM_SKIP_FPDB=1
 [ -n "${PM_SKIP_FPDB:-}" ] || pm_check_fpdb "${PM_ETC:-$ETC}"
+# verify loads the same data files as run: the shipped config uses
+# personalities that only exist in columbo-v1.db, so verifying against
+# the compiled-in defaults failed ExecStartPre and the unit never
+# started.
 case $mode in
 	check)
 		exit 0 ;;
 	verify)
-		set -- "$DAEMON" --verify-config -f "$ETC/phantom-mirage.conf" ;;
+		set -- "$DAEMON" --verify-config -f "$ETC/phantom-mirage.conf" \
+			-p "$ETC/columbo-v1.db" -a "$ETC/nmap.assoc" -0 "$ETC/pf.os" \
+			-x "$ETC/xprobe2.conf" -m "$ETC/nmap-mac-prefixes" ;;
 	run)
 		uid=${PM_UID:-$(id -u phantom-mirage)} || pm_fail "user phantom-mirage does not exist"
 		gid=${PM_GID:-$(id -g phantom-mirage)} || pm_fail "user phantom-mirage does not exist"

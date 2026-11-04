@@ -350,7 +350,17 @@ printf '%s\n' "$NEW" > "$DEFAULT.new" && mv "$DEFAULT.new" "$DEFAULT"
 say "wrote $DEFAULT"
 "$LIBDIR/check-default" "$DEFAULT"
 pm_enable phantom-mirage
-systemctl restart phantom-mirage
+if ! systemctl restart phantom-mirage; then
+	# a bare "Job ... failed" says nothing; show why and what to send us
+	echo >&2
+	say "error: phantom-mirage did not start. Last 20 journal lines:" >&2
+	journalctl -u phantom-mirage --no-pager -n 20 >&2 || true
+	echo >&2
+	say "please send the lines above when you report this problem." >&2
+	say "after fixing the cause, run: sudo systemctl restart phantom-mirage" >&2
+	say "or check the config with: sudo /usr/lib/phantom-mirage/pm-start verify" >&2
+	exit 1
+fi
 if [ -n "$FARPD" ]; then
 	if [ -e "$FDEFAULT" ] && ! grep -q "^$FMARK" "$FDEFAULT" && [ ! -e "$FDEFAULT.phantom-mirage-orig" ]; then
 		cp -p "$FDEFAULT" "$FDEFAULT.phantom-mirage-orig"

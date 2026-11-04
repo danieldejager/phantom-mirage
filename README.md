@@ -83,19 +83,26 @@ builds the `phantom-mirage` and `phantom-mirage-common` .debs from the
 checkout with `dpkg-buildpackage -us -uc -b` in a private temporary copy
 and installs them with `apt-get` straight from there. That gives the full
 packaged install: `phantom-mirage-setup`, the web console, the systemd
-units and `/etc/phantom-mirage`. Nothing is enabled or started.
+units and `/etc/phantom-mirage`. Then it runs `sudo phantom-mirage-setup`
+on the same terminal, which configures and starts the sensor and asks
+for the sensor name, console settings and the admin password (at its own
+hidden prompt; the install script never sees the password).
 
 It asks before each step that runs as root (with sudo when not root):
 first `apt-get update` plus `apt-get install` of the missing build
 dependencies (only when some are missing), then `apt-get install` of the
-built .debs. `--yes` answers yes to both.
+built .debs, then running `phantom-mirage-setup`. `--yes` answers yes to
+all of them; setup still asks its own questions. `--no-setup` skips setup
+(run `sudo phantom-mirage-setup` yourself later). Without a terminal,
+setup is skipped and the command to run next is printed.
 
 ```sh
 $ git clone https://github.com/danieldejager/phantom-mirage.git
 $ cd phantom-mirage
-$ ./install-from-source.sh                # asks before each root step
-$ ./install-from-source.sh --yes          # non-interactive
-$ sudo phantom-mirage-setup               # then set it up; asks for the admin password at a hidden prompt
+$ ./install-from-source.sh --yes          # build, install and set up in one go
+$ ./install-from-source.sh                # same, asks before each root step
+$ ./install-from-source.sh --yes --no-setup   # build and install only
+$ sudo phantom-mirage-setup               # run setup later (after --no-setup)
 $ ./install-from-source.sh --help
 ```
 

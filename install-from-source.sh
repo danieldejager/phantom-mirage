@@ -12,13 +12,15 @@
 # directory if that directory is safe (exit 3 if the copy is skipped).
 # That gives the same layout as the
 # release packages: phantom-mirage-setup, the web console, systemd units
-# and /etc/phantom-mirage. Nothing is enabled or started and no admin
-# password is set; run sudo phantom-mirage-setup afterwards.
+# and /etc/phantom-mirage. It then runs sudo phantom-mirage-setup on this
+# terminal (asked first; --yes answers yes), which asks for the sensor
+# name and the admin password itself. --no-setup skips that step.
 #
 # --source-install keeps the plain ./autogen.sh, ./configure, make,
 # make install path (binaries and data only, no setup helper or console).
 #
-# Everything run as root is confirmed first (--yes answers yes).
+# Everything run as root is confirmed first (--yes answers yes). This
+# script never asks for, reads or stores the admin password.
 #
 # Safe to run again. It never touches existing /etc/phantom-mirage config
 # or the web console's config, admin account, certificate or alerts
@@ -39,24 +41,30 @@ Build Phantom Mirage from this checkout and install it.
 By default the Debian packages are built from the checkout
 (dpkg-buildpackage -us -uc -b, in a private temporary copy) and installed
 with apt-get from there. This installs phantom-mirage-setup, the web
-console, the systemd units and /etc/phantom-mirage, but enables and
-starts nothing. A copy of the .debs is then kept in the deb directory.
+console, the systemd units and /etc/phantom-mirage. A copy of the .debs
+is then kept in the deb directory, and sudo phantom-mirage-setup runs on
+this terminal to configure and start the sensor.
 
 It asks before each step that runs as root (with sudo when not root):
   1. apt-get update and apt-get install of missing build dependencies
      (only asked, and only run, when some are missing)
   2. apt-get install of the built .debs (or, with --source-install,
      make install)
+  3. sudo phantom-mirage-setup (deb mode only, skipped with --no-setup).
+     It asks for the sensor name and console settings, and for the
+     admin password at its own hidden prompt. It needs a terminal: with
+     --yes and no terminal it is skipped and the command is printed.
 
 Options:
-  --yes, -y         answer yes to both questions (needed without a terminal)
+  --yes, -y         answer yes to every question (needed without a terminal)
   --deb-dir DIR     where to keep a copy of the built .debs
                     (default: phantom-mirage-debs next to the checkout).
                     Must not be a symlink, must be owned by you and not
                     writable by group or others; it is created (0755) if
                     missing. If it fails these checks the install still
                     happens, the copy is skipped and the exit code is 3.
-  --no-setup        do not print the phantom-mirage-setup next step
+  --no-setup        do not run phantom-mirage-setup afterwards (run it
+                    yourself later with: sudo phantom-mirage-setup)
   --source-install  instead of .debs, run autogen, configure, make and
                     make install (no phantom-mirage-setup or web console)
   --with-python     with --source-install only: also install python3-dev
@@ -66,9 +74,12 @@ Options:
   --help, -h        show this help
 
 Examples:
-  ./install-from-source.sh                 # build and install the .debs, asks first
-  ./install-from-source.sh --yes           # same, non-interactive
-  sudo phantom-mirage-setup                # then: admin password at a hidden prompt
+  ./install-from-source.sh                 # build, install, then set up; asks first
+  ./install-from-source.sh --yes           # same without the questions; setup still
+                                           # asks for the sensor name and admin password
+  ./install-from-source.sh --yes --no-setup  # build and install only
+  sudo phantom-mirage-setup                # run setup later (after --no-setup)
+  ./install-from-source.sh --deb-dir ~/debs  # keep the .debs in ~/debs
   ./install-from-source.sh --source-install --prefix /opt/phantom-mirage
 
 Supported: Debian and Ubuntu (apt-get). The script uses sudo when it is
@@ -251,11 +262,7 @@ if [ "$mode" = deb ]; then
 	$SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall \
 		"$work/$bin" "$work/$common"
 
-	say "installed phantom-mirage $ver from the built packages (nothing enabled or started)"
-	if [ "$setup" = yes ]; then
-		say "next step: sudo phantom-mirage-setup"
-		say "it asks for the admin password at a hidden prompt; existing console config is kept"
-	fi
+	say "installed phantom-mirage $ver from the built packages"
 
 	# Keep a copy of the .debs. Only into a directory that is ours: not a
 	# symlink, owned by this user and not writable by group or others
@@ -266,11 +273,44 @@ if [ "$mode" = deb ]; then
 	if keep_debs "$deb_dir"; then
 		say "packages are in $deb_dir:"
 		(cd "$deb_dir" && ls -1 ./*"_${ver}_"*.deb) | sed 's|^\./|  |'
-		exit 0
+		rc=0
+	else
+		say "the install succeeded, but the .debs were NOT copied to $deb_dir (see above)"
+		say "rerun with --deb-dir pointing at a directory you own, or omit it"
+		rc=3
 	fi
-	say "the install succeeded, but the .debs were NOT copied to $deb_dir (see above)"
-	say "rerun with --deb-dir pointing at a directory you own, or omit it"
-	exit 3
+
+	# Run phantom-mirage-setup on this terminal. It prompts for the sensor
+	# name and, at a hidden prompt, the admin password; nothing is passed
+	# to it or read from it here. Without a terminal it cannot ask for the
+	# password, so it is skipped and the exact command is printed.
+	setup_cmd="${SUDO:+sudo }phantom-mirage-setup"
+	if [ "$setup" = no ]; then
+		say "skipped phantom-mirage-setup (--no-setup); next step: $setup_cmd"
+		exit $rc
+	fi
+	if [ ! -t 0 ]; then
+		say "not running phantom-mirage-setup: no terminal for its sensor name and admin password prompts"
+		say "next step, on a terminal: $setup_cmd"
+		exit $rc
+	fi
+	if [ "$yes" != yes ]; then
+		printf 'install-from-source.sh: run %s now to configure and start the sensor? [Y/n] ' "$setup_cmd"
+		read -r ans || ans=n
+		case $ans in ''|y|Y|yes|YES) ;; *)
+			say "not running phantom-mirage-setup; next step: $setup_cmd"
+			exit $rc ;;
+		esac
+	fi
+	say "running $setup_cmd (existing console config is kept)"
+	src_rc=0
+	$SUDO /usr/sbin/phantom-mirage-setup || src_rc=$?
+	if [ $src_rc != 0 ]; then
+		say "phantom-mirage-setup failed (exit $src_rc); the packages are installed"
+		say "fix the problem shown above, then run: $setup_cmd"
+		exit $src_rc
+	fi
+	exit $rc
 fi
 
 say "running ./autogen.sh"
