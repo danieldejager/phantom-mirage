@@ -83,19 +83,42 @@ builds the `phantom-mirage` and `phantom-mirage-common` .debs from the
 checkout with `dpkg-buildpackage -us -uc -b` in a private temporary copy
 and installs them with `apt-get` straight from there. That gives the full
 packaged install: `phantom-mirage-setup`, the web console, the systemd
-units and `/etc/phantom-mirage`. Nothing is enabled or started.
+units and `/etc/phantom-mirage`. Then it offers to run
+`sudo phantom-mirage-setup` on the same terminal, which configures and
+starts the sensor and asks for the sensor name, console settings and the
+admin password (at its own hidden prompt; the install script never sees
+the password).
 
 It asks before each step that runs as root (with sudo when not root):
 first `apt-get update` plus `apt-get install` of the missing build
 dependencies (only when some are missing), then `apt-get install` of the
-built .debs. `--yes` answers yes to both.
+built .debs. `--yes` answers yes to those two. Running setup is a
+separate question that `--yes` never answers:
+
+```text
+Run phantom-mirage-setup now? It configures the sensor, picks a network interface and a free /29 on your LAN, and starts the sensor, farpd (claims 8 LAN addresses over ARP), the firewall and the console. [Y/n]
+```
+
+Enter answers yes. End of input, or no terminal, answers no: setup is
+skipped, the command to run next is printed and the exit code is 0.
+`--setup` answers yes without asking (it still needs a terminal);
+`--no-setup` skips setup (run `sudo phantom-mirage-setup` yourself later).
+
+`phantom-mirage-setup` then prints the interface, subnet, gateway and
+/29 it will use, says that farpd will claim those 8 addresses on the LAN,
+and asks `[Y/n]` before it enables or starts anything, on every run
+(re-runs too). Without a terminal it writes the config but starts
+nothing, unless you pass `--yes` to setup (for unattended installs, e.g.
+`sudo phantom-mirage-setup --yes -i eth1 -n 10.0.0.248/29`).
 
 ```sh
 $ git clone https://github.com/danieldejager/phantom-mirage.git
 $ cd phantom-mirage
-$ ./install-from-source.sh                # asks before each root step
-$ ./install-from-source.sh --yes          # non-interactive
-$ sudo phantom-mirage-setup               # then set it up; asks for the admin password at a hidden prompt
+$ ./install-from-source.sh --yes          # build and install, then one question: press Enter to set up
+$ ./install-from-source.sh                # same, also asks before each root step
+$ ./install-from-source.sh --yes --setup  # no questions from the script; setup still confirms the network
+$ ./install-from-source.sh --yes --no-setup   # build and install only
+$ sudo phantom-mirage-setup               # run setup later (after --no-setup)
 $ ./install-from-source.sh --help
 ```
 

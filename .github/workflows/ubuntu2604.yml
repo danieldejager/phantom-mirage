@@ -203,7 +203,7 @@ jobs:
           dpkg-query -W phantom-mirage phantom-mirage-common
           systemctl is-enabled phantom-mirage || true
 
-      - name: sudo sh <the .run> -i veth-h -n 10.77.0.248/29
+      - name: sudo sh <the .run> --yes -i veth-h -n 10.77.0.248/29
         run: |
           set -o pipefail
           run=$(ls run/*.run)
@@ -211,7 +211,7 @@ jobs:
           # console answers (#118): name, user, port, time source, tz,
           # retention, password twice; test-only stdin, never an option
           printf '%s\n' e2e-sensor admin 8443 browser UTC 30 'E2e-console-pass-1' 'E2e-console-pass-1' > ans.txt
-          sudo PM_TEST_STDIN=1 sh "$run" -i veth-h -n 10.77.0.248/29 < ans.txt 2>&1 | tee new1.txt
+          sudo PM_TEST_STDIN=1 sh "$run" --yes -i veth-h -n 10.77.0.248/29 < ans.txt 2>&1 | tee new1.txt
           grep -q 'SHA-256 fingerprint' new1.txt
           grep -E "install.sh: old version removed cleanly: .*phantom-mirage=$(echo '${{ matrix.from }}' | sed 's/\./\\./g')" new1.txt
           { echo '### e2e install over ${{ matrix.from }}'; echo '```'; grep -E 'removed cleanly|previous install|farpd|enable' new1.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
@@ -247,7 +247,7 @@ jobs:
       - name: Re-run the .run over the new install
         run: |
           set -o pipefail
-          sudo sh run/*.run -i veth-h -n 10.77.0.248/29 < /dev/null 2>&1 | tee new2.txt
+          sudo sh run/*.run --yes -i veth-h -n 10.77.0.248/29 < /dev/null 2>&1 | tee new2.txt
           # expected version comes from debian/changelog (no hard-coded -N)
           v=$(sed -n '1s/^[^ ]* (\([^)]*\)).*/\1/p' debian/changelog | sed 's/\./\\./g')
           test -n "$v"

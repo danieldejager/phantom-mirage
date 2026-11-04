@@ -11,7 +11,7 @@ sh -n "$src/install-from-source.sh"
 
 rc=0; sh "$src/install-from-source.sh" --help > "$t/o" 2>&1 || rc=$?
 [ $rc = 0 ] || fail "--help rc=$rc"
-for o in --with-python --source-install --deb-dir --prefix --yes --no-setup 'sudo phantom-mirage-setup' 'dpkg-buildpackage'; do
+for o in --with-python --source-install --deb-dir --prefix --yes --setup --no-setup 'sudo phantom-mirage-setup' 'dpkg-buildpackage'; do
 	grep -q -- "$o" "$t/o" || fail "--help lacks $o"
 done
 
@@ -46,7 +46,7 @@ grep -q 'unsupported distro: Fedora Linux 42' "$t/o" || fail "no unsupported dis
 mkdir "$t/bin"
 printf 'ID=ubuntu\nPRETTY_NAME="Ubuntu 26.04 LTS"\n' > "$t/ubuntu"
 stub() { printf '#!/bin/sh\n%s\n' "$2" > "$t/bin/$1"; chmod +x "$t/bin/$1"; }
-stub sudo 'echo "sudo $*" >> "$PM_TEST_LOG"'
+stub sudo 'echo "sudo $*" >> "$PM_TEST_LOG"; [ -t 0 ] && echo tty=yes >> "$PM_TEST_LOG"; exit 0'
 stub apt-get 'echo "apt-get $*" >> "$PM_TEST_LOG"'
 stub apt-cache 'exit 0'
 stub dpkg-query 'exit 1'
@@ -81,7 +81,68 @@ installed_from_temp
 [ -f "$t/out1/phantom-mirage_9.9-1_amd64.deb" ] && [ -f "$t/out1/phantom-mirage-common_9.9-1_all.deb" ] ||
 	fail "debs not copied to the output dir"
 [ -z "$(find "$t/out1" -maxdepth 0 -perm /022)" ] || fail "output dir created group or other writable"
-grep -q 'next step: sudo phantom-mirage-setup' "$t/o" || fail "no next step"
+grep -q 'not running phantom-mirage-setup: no terminal' "$t/o" || fail "no no-terminal setup message"
+grep -q 'next step, on a terminal: sudo phantom-mirage-setup' "$t/o" || fail "no next step"
+grep -q 'phantom-mirage-setup' "$t/log" && fail "setup ran without a terminal"
+
+# --setup without a terminal still skips, with the next command, exit 0
+run --yes --setup --deb-dir "$t/out1"
+[ $rc = 0 ] || fail "--setup without a terminal rc=$rc"
+grep -q 'next step, on a terminal: sudo phantom-mirage-setup' "$t/o" || fail "--setup without a terminal: no next step"
+grep -q 'phantom-mirage-setup' "$t/log" && fail "setup ran without a terminal (--setup)"
+
+# --no-setup: install only, says so, never runs setup
+run --yes --no-setup --deb-dir "$t/out1"
+[ $rc = 0 ] || fail "--no-setup rc=$rc"
+grep -q 'skipped phantom-mirage-setup (--no-setup); next step: sudo phantom-mirage-setup' "$t/o" || fail "no --no-setup message"
+grep -q 'phantom-mirage-setup' "$t/log" && fail "setup ran with --no-setup"
+
+# on a terminal (a pty from script(1)): --yes never answers the setup
+# question, --setup does, Enter means yes, end of input means no
+if [ "$(id -u)" != 0 ] && command -v script >/dev/null 2>&1; then
+	ptyrun() {
+		: > "$t/log"
+		rc=0
+		PATH="$t/bin:$PATH" PM_TEST_LOG="$t/log" PM_OS_RELEASE="$t/ubuntu" TMPDIR="$t" \
+			script -qec "sh '$src/install-from-source.sh' $*" /dev/null > "$t/o" 2>&1 < /dev/null || rc=$?
+	}
+	feedrun() {
+		input=$1; shift
+		: > "$t/log"
+		rc=0
+		printf "$input" | PATH="$t/bin:$PATH" PM_TEST_LOG="$t/log" PM_OS_RELEASE="$t/ubuntu" TMPDIR="$t" \
+			script -qec "sh '$src/install-from-source.sh' $*" /dev/null > "$t/o" 2>&1 || rc=$?
+	}
+	# --yes alone, end of input at the setup question: asked, counts as no
+	ptyrun --yes --deb-dir "$t/out1"
+	[ $rc = 0 ] || fail "--yes on a terminal with EOF: rc=$rc"
+	grep -q 'Run phantom-mirage-setup now? It configures the sensor, picks a network interface and a free /29 on your LAN' "$t/o" ||
+		fail "--yes did not ask the setup question"
+	grep -q 'farpd (claims 8 LAN addresses over ARP)' "$t/o" || fail "setup question does not mention farpd"
+	grep -q 'not running phantom-mirage-setup; next step: sudo phantom-mirage-setup' "$t/o" || fail "EOF not treated as no"
+	grep -q 'phantom-mirage-setup' "$t/log" && fail "--yes without --setup ran setup"
+	# --yes --setup: no question, setup runs through sudo with the terminal
+	ptyrun --yes --setup --deb-dir "$t/out1"
+	[ $rc = 0 ] || fail "--yes --setup rc=$rc"
+	grep -q 'Run phantom-mirage-setup now?' "$t/o" && fail "--setup still asked"
+	grep -q '^sudo /usr/sbin/phantom-mirage-setup$' "$t/log" || fail "--setup did not run setup through sudo"
+	grep -q 'tty=yes' "$t/log" || fail "setup did not get the terminal"
+	# a single Enter at the setup question runs it
+	feedrun '\n' --yes --deb-dir "'$t/out1'"
+	grep -q '^sudo /usr/sbin/phantom-mirage-setup$' "$t/log" || fail "Enter did not run setup (rc=$rc)"
+	# a failing setup is reported with its exit code
+	stub sudo 'echo "sudo $*" >> "$PM_TEST_LOG"; case $1 in */phantom-mirage-setup) exit 7 ;; esac; exit 0'
+	ptyrun --yes --setup --deb-dir "$t/out1"
+	[ $rc = 7 ] || fail "failing setup: rc=$rc, want 7"
+	grep -q 'phantom-mirage-setup failed (exit 7)' "$t/o" || fail "no setup failure message"
+	stub sudo 'echo "sudo $*" >> "$PM_TEST_LOG"; [ -t 0 ] && echo tty=yes >> "$PM_TEST_LOG"; exit 0'
+	# without --yes: two root questions, then "n" at the setup question
+	feedrun 'y\ny\nn\n' --deb-dir "'$t/out1'"
+	grep -q 'not running phantom-mirage-setup; next step: sudo phantom-mirage-setup' "$t/o" || fail "declining setup not honoured (rc=$rc)"
+	grep -q 'phantom-mirage-setup' "$t/log" && fail "setup ran after answering n"
+else
+	echo "test_install_from_source: skipped the terminal setup checks (needs a non root user and script(1))"
+fi
 ls "$t" | grep -q '^phantom-mirage-build' && fail "temp build dir left behind"
 
 # refused: symlinked output dir; install still done from the temp dir

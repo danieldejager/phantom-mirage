@@ -3,7 +3,7 @@
 # the service (#110). POSIX sh, run as root.
 #
 #   sudo phantom-mirage-setup [--interface IF] [--network CIDR] [--no-farpd] [--dry-run]
-#         [console options]
+#         [--yes] [console options]
 #   sudo phantom-mirage-setup --console [console options]   (console only)
 #   sudo phantom-mirage-setup --reset-admin                 (terminal only)
 #
@@ -21,15 +21,26 @@
 # INTERFACE/NETWORK so the decoys answer ARP: /etc/default/farpd is
 # rewritten (the original kept once as /etc/default/farpd.phantom-mirage-orig,
 # which phantom-mirage-uninstall restores) and farpd is enabled/restarted.
+#
+# Before it enables or starts anything it prints the interface, subnet,
+# gateway and /29 it will use (and that farpd claims those 8 addresses on
+# the LAN over ARP) and asks [Y/n] on the terminal, on every run. Without
+# a terminal it writes the config but starts nothing, unless --yes (-y)
+# is given: the explicit opt in for unattended installs, e.g.
+#   sudo phantom-mirage-setup --yes -i eth1 -n 10.0.0.248/29
 set -eu
 
 DEFAULT=/etc/default/phantom-mirage
 LIBDIR=${PM_LIBDIR:-/usr/lib/phantom-mirage}
-IFACE= NET= DRY= FARPD=1 CONLY= CON= CONSOLE=$LIBDIR/console/pm-console-setup.py
+IFACE= NET= DRY= FARPD=1 YES= CONLY= CON= CONSOLE=$LIBDIR/console/pm-console-setup.py
 FDEFAULT=/etc/default/farpd
 FMARK='# written by phantom-mirage-setup'
+# test-only overrides, honoured only with PM_TESTING=1
+if [ "${PM_TESTING:-}" = 1 ]; then
+	DEFAULT=${PM_DEFAULT:-$DEFAULT} FDEFAULT=${PM_FDEFAULT:-$FDEFAULT}
+fi
 
-usage() { sed -n '2,25s/^# \{0,1\}//p' "$0"; exit "${1:-0}"; }
+usage() { sed -n '2,32s/^# \{0,1\}//p' "$0"; exit "${1:-0}"; }
 die() { echo "phantom-mirage-setup: $*" >&2; exit 1; }
 say() { echo "phantom-mirage-setup: $*"; }
 
@@ -42,6 +53,7 @@ while [ $# -gt 0 ]; do
 		--dry-run) DRY=1; CON="$CON
 --dry-run"; shift ;;
 		--no-farpd) FARPD=; shift ;;
+		--yes|-y) YES=1; shift ;;
 		--pass*|-p|--pw|--pw=*|--secret*)
 			die "the admin password is never accepted as an option; you will be asked for it at a hidden prompt" ;;
 		--sensor-name|--admin-user|--console-port|--time-source|--ntp-server|--timezone|--retention)
@@ -197,9 +209,30 @@ pm_enable() {
 	return 0
 }
 
+# Ask before enabling or starting anything (every run, re-runs too).
+# $1 is the plan already printed. Without a terminal, only --yes starts.
+confirm_start() {
+	if [ -n "$YES" ]; then
+		say "--yes given: starting without asking"
+		return 0
+	fi
+	if [ -t 0 ]; then
+		printf 'phantom-mirage-setup: %s? [Y/n] ' "$1"
+		_a=
+		read -r _a || _a=n
+		case $_a in ''|y|Y|yes|YES) return 0 ;; esac
+		say "not starting anything (answered no); the config is written"
+	else
+		say "not starting anything: no terminal to confirm (pass --yes to start without asking); the config is written"
+	fi
+	say "to start it, run on a terminal: sudo phantom-mirage-setup"
+	exit 0
+}
+
 console_setup
 if [ -n "$CONLY" ]; then
 	[ -n "$DRY" ] && exit 0
+	[ -n "$CONSOLE_OK" ] && confirm_start "start the phantom-mirage-firewall and phantom-mirage-console services now"
 	console_start
 	exit 0
 fi
@@ -243,10 +276,10 @@ in_use() {
 	return 1
 }
 
+CIDR=$(ip -4 -o addr show dev "$IFACE" scope global 2>/dev/null | awk '{print $4; exit}')
+GW=$(ip -4 route show default dev "$IFACE" 2>/dev/null | awk '{print $3; exit}')
 if [ -z "$NET" ]; then
-	CIDR=$(ip -4 -o addr show dev "$IFACE" scope global | awk '{print $4; exit}')
 	[ -n "$CIDR" ] || die "$IFACE has no IPv4 address; pass --network"
-	GW=$(ip -4 route show default dev "$IFACE" 2>/dev/null | awk '{print $3; exit}')
 	say "subnet of $IFACE: $CIDR${GW:+, gateway $GW}"
 	self=$(ip2int "${CIDR%/*}") plen=${CIDR#*/}
 	[ "$plen" -le 28 ] || die "subnet $CIDR is too small for a /29 of decoys; pass --network"
@@ -349,8 +382,35 @@ fi
 printf '%s\n' "$NEW" > "$DEFAULT.new" && mv "$DEFAULT.new" "$DEFAULT"
 say "wrote $DEFAULT"
 "$LIBDIR/check-default" "$DEFAULT"
+echo
+say "about to enable and start the sensor with:"
+say "  interface: $IFACE"
+say "  subnet:    ${CIDR:-unknown (no IPv4 address on $IFACE)}"
+say "  gateway:   ${GW:-none on $IFACE}"
+say "  decoys:    $NET"
+if [ -n "$FARPD" ]; then
+	say "  farpd:     will claim the 8 addresses of $NET on the LAN (answers ARP for them on $IFACE)"
+else
+	say "  farpd:     $farpd_state"
+fi
+[ -n "$CONSOLE_OK" ] && say "  console:   phantom-mirage-firewall and phantom-mirage-console are started too"
+confirm_start "enable and start phantom-mirage${FARPD:+ and farpd} now"
 pm_enable phantom-mirage
-systemctl restart phantom-mirage
+if ! systemctl restart phantom-mirage; then
+	# a bare "Job ... failed" says nothing; show why and what to send us
+	echo >&2
+	say "error: phantom-mirage did not start. Last 20 journal lines:" >&2
+	# control characters (escape sequences included) are stripped: the
+	# journal holds text from the network and must not drive the terminal
+	{ journalctl -u phantom-mirage --no-pager -n 20 2>&1 || true; } |
+		LC_ALL=C tr -d '\000-\010\013-\037\177' |
+		LC_ALL=C sed "s/$(printf '\302')[$(printf '\200')-$(printf '\237')]//g" >&2
+	echo >&2
+	say "please send the lines above when you report this problem." >&2
+	say "after fixing the cause, run: sudo systemctl restart phantom-mirage" >&2
+	say "or check the config with: sudo /usr/lib/phantom-mirage/pm-start verify" >&2
+	exit 1
+fi
 if [ -n "$FARPD" ]; then
 	if [ -e "$FDEFAULT" ] && ! grep -q "^$FMARK" "$FDEFAULT" && [ ! -e "$FDEFAULT.phantom-mirage-orig" ]; then
 		cp -p "$FDEFAULT" "$FDEFAULT.phantom-mirage-orig"

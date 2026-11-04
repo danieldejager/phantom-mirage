@@ -31,11 +31,12 @@ except OSError as e:
     print("connect=n")'
 SH
 chmod 755 /etc/phantom-mirage/ns_probe.sh
+# personality from columbo-v1.db: the unit loads only that database (pm-start -p)
 cat > /etc/phantom-mirage/phantom-mirage.conf <<'CONF'
 create default
 set default default tcp action reset
 create linux
-set linux personality "Linux 2.6.32"
+set linux personality "ubuntu2404"
 set linux default tcp action reset
 add linux tcp port 2424 "/bin/sh /etc/phantom-mirage/ns_probe.sh"
 add linux tcp port 2525 "/nonexistent/pm-missing-script"
