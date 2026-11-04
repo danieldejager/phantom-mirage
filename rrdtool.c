@@ -427,8 +427,16 @@ rrdtool_db_update(struct rrdtool_db *db, struct timeval *tv, char *update)
 		tv = &tv_now;
 	}
 
-	snprintf(line, sizeof(line), "update %s %ld:%s",
-	    db->rrd_file, tv->tv_sec, update);
+	int n;
+
+	n = snprintf(line, sizeof(line), "update %s %ld:%s",
+	    db->rrd_file, (long)tv->tv_sec, update);
+	if (n < 0 || (size_t)n >= sizeof(line)) {
+		/* never hand rrdtool a cut off update line */
+		syslog(LOG_WARNING, "%s: update line too long, skipped",
+		    __func__);
+		return (-1);
+	}
 
 	rrdtool_command(db->drv, line, NULL, NULL);
 

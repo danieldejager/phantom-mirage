@@ -94,7 +94,9 @@ sd_sigsys(int sig, siginfo_t *si, void *ctx)
 	memcpy(buf + len, num + i, sizeof(num) - i - 1);
 	len += sizeof(num) - i - 1;
 	buf[len++] = '\n';
-	(void)write(STDERR_FILENO, buf, len);
+	if (write(STDERR_FILENO, buf, len) == -1) {
+		/* nothing more we can do in a signal handler; syslog below */
+	}
 	/* best effort for daemons without a terminal; we die right after */
 	syslog(LOG_CRIT, "%.*s", (int)len - 1, buf + 8);
 	signal(SIGSYS, SIG_DFL);

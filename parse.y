@@ -216,7 +216,6 @@ delete		: DELETE template
 ;
 newbcast    : BCAST template SRCPORT NUMBER DSTPORT NUMBER TIME NUMBER action
 	{
-		struct action *action;
 		if ($2 == NULL) {
 			yyerror("No template");
 			break;
