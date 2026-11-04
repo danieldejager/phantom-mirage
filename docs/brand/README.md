@@ -9,3 +9,5 @@ Design references only, not shipped in the product.
 - `source/splash2.py`, `logo_extract.py`, `logo_masks.npz`: how the mock-ups were produced (logo traced from the reference at 6x).
 
 Notes: "Pty Ltd" appears in the mock-ups only; do not ship it until the company is registered. Status wording in the mock-ups ("integrity check passed") is placeholder and must only appear if the sensor really performs that check. Supporting text uses the Aldrich font as the closest match; the exact font of the logo lettering is unknown.
+
+Terminal logo: `debian/brand/logo-24bit.ans` and `logo-256.ans` are the logo pre-rendered as Unicode half-block art (60 columns) by `tools/render-term-logo.py` (needs Pillow, development only). phantom-mirage-setup prints them on a UTF-8 colour terminal and falls back to a plain wordmark otherwise. Rerun the tool after any change to `docs/assets/phantom-mirage-logo-light.png`.

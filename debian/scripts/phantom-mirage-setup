@@ -68,7 +68,8 @@ $1"; shift ;;
 done
 
 # ---- splash banner (#141): names from the single branding file; colour
-# only on a terminal and without NO_COLOR; block art only in a UTF-8 locale
+# only on a terminal and without NO_COLOR or TERM=dumb; logo art only in a
+# UTF-8 locale, else a plain wordmark
 BRANDING=$LIBDIR/console/branding.conf
 # PM_BRANDING is a test-only override, honoured only with PM_TESTING=1
 [ "${PM_TESTING:-}" = 1 ] && [ -n "${PM_BRANDING:-}" ] && BRANDING=$PM_BRANDING
@@ -106,39 +107,35 @@ load_branding() {
 	done < "$BRANDING"
 	[ -n "$PM_PRODUCT" ] && [ -n "$PM_LEGAL_NAME" ] && [ -n "$PM_COPYRIGHT" ]
 }
+# pre-rendered half-block logo (tools/render-term-logo.py), installed as
+# plain text so no image tooling is needed here
+LOGODIR=$LIBDIR/brand
+# PM_LOGODIR is a test-only override, honoured only with PM_TESTING=1
+[ "${PM_TESTING:-}" = 1 ] && [ -n "${PM_LOGODIR:-}" ] && LOGODIR=$PM_LOGODIR
 banner() {
 	[ -z "${PM_NO_BANNER:-}" ] && [ -r "$BRANDING" ] || return 0
 	load_branding || { echo "phantom-mirage-setup: ignoring malformed $BRANDING" >&2; return 0; }
-	_v= _e= _o=
+	_h= _o= _logo=
 	if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
-		# Grey two-tone logo: the front P (_v) is bold in the terminal's own
-		# default foreground so it stays readable on dark and light
-		# backgrounds; back P and the MIRAGE I lettering #8A909A (_e, _h).
-		# 24-bit only when COLORTERM says so, otherwise 256-colour 245 (#8A8A8A).
-		_v=$(printf '\033[1m')
+		# lettering grey #8A909A: 24-bit only when COLORTERM says so,
+		# otherwise 256-colour 245 (#8A8A8A); the logo file follows suit
 		case "${COLORTERM:-}" in
-			truecolor|24bit) _e=$(printf '\033[38;2;138;144;154m') ;;
-			*) _e=$(printf '\033[38;5;245m') ;;
+			truecolor|24bit) _h=$(printf '\033[38;2;138;144;154m') _logo=$LOGODIR/logo-24bit.ans ;;
+			*) _h=$(printf '\033[38;5;245m') _logo=$LOGODIR/logo-256.ans ;;
 		esac
-		_h=$_e _o=$(printf '\033[0m')
-	else
-		_h=
+		_o=$(printf '\033[0m')
 	fi
 	case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
-		*UTF-8*|*utf-8*|*UTF8*|*utf8*)
-			printf '%s\n' \
-				"$_v    ▄██████▄$_o" \
-				"$_v   ██▀   ▄█▀$_o   $_h$PM_PRODUCT$_o" \
-				"$_v  ██████▀▀$_o     $_h$PM_LEGAL_NAME$_o" \
-				"${_e} ▄▄$_v██$_o           $PM_COPYRIGHT" ;;
-		*)
-			_c=$(printf '%s' "$PM_COPYRIGHT" | sed 's/©/(c)/g')
-			printf '%s\n' \
-				"$_v    ______$_o" \
-				"$_v   / __  /$_o   $_h$PM_PRODUCT$_o" \
-				"$_v  / ____/$_o    $_h$PM_LEGAL_NAME$_o" \
-				"${_e}_$_v/_/$_o         $_c" ;;
+		*UTF-8*|*utf-8*|*UTF8*|*utf8*) _c=$PM_COPYRIGHT ;;
+		*) _c=$(printf '%s' "$PM_COPYRIGHT" | sed 's/©/(c)/g') _logo= ;;
 	esac
+	# colour logo only on a UTF-8 colour terminal; otherwise the plain wordmark
+	if [ -n "$_logo" ] && [ -r "$_logo" ]; then
+		cat "$_logo"
+		printf '%s\n' "$_h$PM_PRODUCT  $PM_LEGAL_NAME$_o" "$_h$_c$_o"
+	else
+		printf '%s\n' "$_h$PM_PRODUCT$_o" "$_h$PM_LEGAL_NAME$_o" "$_c"
+	fi
 	echo
 }
 banner

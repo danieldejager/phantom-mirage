@@ -61,6 +61,8 @@ override_dh_auto_install:
 	  docs/assets/phantom-mirage-mark.svg $(D)/usr/lib/phantom-mirage/console/static/
 	install -D -m 0644 console/static/fonts/Aldrich-Regular.woff2 $(D)/usr/lib/phantom-mirage/console/static/fonts/Aldrich-Regular.woff2
 	install -D -m 0644 console/static/fonts/Aldrich-OFL.txt $(D)/usr/lib/phantom-mirage/console/static/fonts/Aldrich-OFL.txt
+	install -D -m 0644 debian/brand/logo-24bit.ans $(D)/usr/lib/phantom-mirage/brand/logo-24bit.ans
+	install -D -m 0644 debian/brand/logo-256.ans $(D)/usr/lib/phantom-mirage/brand/logo-256.ans
 	install -D -m 0755 console/pm-firewall $(D)/usr/lib/phantom-mirage/pm-firewall
 
 override_dh_installdocs:
