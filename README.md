@@ -77,11 +77,55 @@ Make sure that you have them installed.
 
 
 
-To install dependencies in Ubuntu:
+On Debian or Ubuntu, `./install-from-source.sh` in the source checkout does
+everything: it installs the packaging build dependencies with apt-get,
+builds the `phantom-mirage` and `phantom-mirage-common` .debs from the
+checkout with `dpkg-buildpackage -us -uc -b` in a private temporary copy
+and installs them with `apt-get` straight from there. That gives the full
+packaged install: `phantom-mirage-setup`, the web console, the systemd
+units and `/etc/phantom-mirage`. Nothing is enabled or started.
+
+It asks before each step that runs as root (with sudo when not root):
+first `apt-get update` plus `apt-get install` of the missing build
+dependencies (only when some are missing), then `apt-get install` of the
+built .debs. `--yes` answers yes to both.
 
 ```sh
-$ sudo apt-get install libevent-dev libdumbnet-dev libpcap-dev libpcre3-dev libedit-dev bison flex libtool automake
+$ git clone https://github.com/danieldejager/phantom-mirage.git
+$ cd phantom-mirage
+$ ./install-from-source.sh                # asks before each root step
+$ ./install-from-source.sh --yes          # non-interactive
+$ sudo phantom-mirage-setup               # then set it up; asks for the admin password at a hidden prompt
+$ ./install-from-source.sh --help
 ```
+
+After the install a copy of the .debs is kept in `phantom-mirage-debs`
+next to the checkout (change it with `--deb-dir DIR`). That directory must
+not be a symlink, must be owned by you and must not be writable by group
+or others; it is created if missing. If it fails those checks the install
+still stands, the copy is skipped and the script exits with code 3. It is
+safe to run again and keeps existing console and `/etc/phantom-mirage`
+config.
+
+`--source-install` keeps the plain autogen, configure, make and make
+install path instead (binaries and data only, no web console or
+`phantom-mirage-setup`; it asks before `make install`); `--prefix DIR` (default `/usr/local`) and
+`--with-python` only apply there:
+
+```sh
+$ ./install-from-source.sh --source-install --prefix /opt/phantom-mirage
+$ ./install-from-source.sh --source-install --with-python
+```
+
+To install dependencies in Ubuntu by hand:
+
+```sh
+$ sudo apt-get install build-essential autoconf automake libtool bison flex pkg-config libevent-dev libdumbnet-dev libpcap-dev libedit-dev zlib1g-dev libpcre3-dev
+```
+
+libpcre3-dev is optional and no longer exists on Ubuntu 26.04 or Debian
+13; leave it out there (configure only supports PCRE 1, so the smtp and
+proxy subsystems are not built without it).
 
 To install dependencies in ArchLinux:
 
