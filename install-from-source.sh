@@ -7,14 +7,18 @@
 # Default (Debian and Ubuntu): installs the packaging build dependencies
 # with apt-get, builds the phantom-mirage and phantom-mirage-common .debs
 # from this checkout with dpkg-buildpackage -us -uc -b (in a temporary
-# copy, so the checkout stays clean), copies them to the deb directory
-# and installs them with apt-get. That gives the same layout as the
+# private temporary copy, so the checkout stays clean), installs them
+# with apt-get straight from that copy, then copies them to the deb
+# directory if that directory is safe (exit 3 if the copy is skipped).
+# That gives the same layout as the
 # release packages: phantom-mirage-setup, the web console, systemd units
 # and /etc/phantom-mirage. Nothing is enabled or started and no admin
 # password is set; run sudo phantom-mirage-setup afterwards.
 #
 # --source-install keeps the plain ./autogen.sh, ./configure, make,
 # make install path (binaries and data only, no setup helper or console).
+#
+# Everything run as root is confirmed first (--yes answers yes).
 #
 # Safe to run again. It never touches existing /etc/phantom-mirage config
 # or the web console's config, admin account, certificate or alerts
@@ -33,14 +37,25 @@ Usage: ./install-from-source.sh [options]
 Build Phantom Mirage from this checkout and install it.
 
 By default the Debian packages are built from the checkout
-(dpkg-buildpackage -us -uc -b) and installed with apt-get. This installs
-phantom-mirage-setup, the web console, the systemd units and
-/etc/phantom-mirage, but enables and starts nothing.
+(dpkg-buildpackage -us -uc -b, in a private temporary copy) and installed
+with apt-get from there. This installs phantom-mirage-setup, the web
+console, the systemd units and /etc/phantom-mirage, but enables and
+starts nothing. A copy of the .debs is then kept in the deb directory.
+
+It asks before each step that runs as root (with sudo when not root):
+  1. apt-get update and apt-get install of missing build dependencies
+     (only asked, and only run, when some are missing)
+  2. apt-get install of the built .debs (or, with --source-install,
+     make install)
 
 Options:
-  --yes, -y         do not ask before installing packages
-  --deb-dir DIR     where to put the built .debs
-                    (default: phantom-mirage-debs next to the checkout)
+  --yes, -y         answer yes to both questions (needed without a terminal)
+  --deb-dir DIR     where to keep a copy of the built .debs
+                    (default: phantom-mirage-debs next to the checkout).
+                    Must not be a symlink, must be owned by you and not
+                    writable by group or others; it is created (0755) if
+                    missing. If it fails these checks the install still
+                    happens, the copy is skipped and the exit code is 3.
   --no-setup        do not print the phantom-mirage-setup next step
   --source-install  instead of .debs, run autogen, configure, make and
                     make install (no phantom-mirage-setup or web console)
@@ -140,12 +155,19 @@ available() {
 	[ -n "$cand" ] && [ "$cand" != "(none)" ]
 }
 
-say "updating the package index"
-$SUDO apt-get update -qq
+# Asks before anything runs as root; --yes answers yes.
+confirm() {
+	[ "$yes" = yes ] && return 0
+	[ -t 0 ] || die "not a terminal; rerun with --yes to allow: $1"
+	printf 'install-from-source.sh: %s? [Y/n] ' "$1"
+	read -r ans || ans=n
+	case $ans in ''|y|Y|yes|YES) ;; *) die "aborted; nothing more was run" ;; esac
+}
 
 # configure only finds PCRE through pcre-config (PCRE 1, libpcre3-dev).
 # PCRE2 is not supported, so on releases without libpcre3-dev the build
-# continues without the smtp and proxy subsystems.
+# continues without the smtp and proxy subsystems. Checked against the
+# current package index, before any apt-get update.
 if [ "$mode" = source ] && available libpcre3-dev; then
 	pkgs="$pkgs libpcre3-dev"
 elif [ "$mode" = source ]; then
@@ -157,37 +179,59 @@ for p in $pkgs; do
 	have_pkg "$p" || missing="$missing $p"
 done
 if [ -n "$missing" ]; then
-	say "packages to install:$missing"
-	if [ "$yes" != yes ]; then
-		if [ -t 0 ]; then
-			printf 'install-from-source.sh: install them now? [Y/n] '
-			read -r ans || ans=n
-			case $ans in ''|y|Y|yes|YES) ;; *) die "aborted; nothing installed" ;; esac
-		else
-			die "not a terminal; rerun with --yes to install packages"
-		fi
-	fi
+	say "missing build dependencies:$missing"
+	confirm "run apt-get update and apt-get install of these packages as root"
+	say "updating the package index"
+	$SUDO apt-get update -qq
 	# shellcheck disable=SC2086
 	$SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $missing
 else
-	say "all build dependencies already installed"
+	say "all build dependencies already installed; no apt-get update needed"
 fi
+
+# Copy the built packages from $work into $1 (see the comment where it is
+# called). Returns non zero, with a message, if $1 is unsafe.
+keep_debs() {
+	d=$1
+	if [ ! -e "$d" ] && [ ! -L "$d" ]; then
+		mkdir -m 0755 "$d" 2>/dev/null || { say "cannot create $d; not copying the .debs"; return 1; }
+	fi
+	if [ -L "$d" ]; then say "refusing $d: it is a symlink; not copying the .debs"; return 1; fi
+	if [ ! -d "$d" ]; then say "refusing $d: not a directory; not copying the .debs"; return 1; fi
+	owner=$(stat -c %u "$d") || return 1
+	if [ "$owner" != "$(id -u)" ]; then
+		say "refusing $d: owned by uid $owner, not by you (uid $(id -u)); not copying the .debs"; return 1
+	fi
+	if [ -n "$(find "$d" -maxdepth 0 -perm /022)" ]; then
+		say "refusing $d: writable by group or others; not copying the .debs"; return 1
+	fi
+	for f in "$work"/*.deb "$work"/*.ddeb "$work"/*.buildinfo "$work"/*.changes; do
+		[ -f "$f" ] && [ ! -L "$f" ] || continue
+		tmpf=$(mktemp "$d/.pm-copy.XXXXXX") || { say "cannot write in $d; not copying the .debs"; return 1; }
+		cp "$f" "$tmpf" && chmod 0644 "$tmpf" && mv -fT "$tmpf" "$d/${f##*/}" ||
+			{ rm -f "$tmpf"; say "copying ${f##*/} to $d failed"; return 1; }
+	done
+}
 
 # Build
 if [ "$mode" = deb ]; then
 	ver=$(dpkg-parsechangelog -S Version 2>/dev/null) || die "cannot read the version from debian/changelog"
 	[ -n "$deb_dir" ] || deb_dir=$(dirname "$src")/phantom-mirage-debs
-	mkdir -p "$deb_dir" || die "cannot create $deb_dir"
-	deb_dir=$(cd "$deb_dir" && pwd)
+	case "$deb_dir" in /*) ;; *) deb_dir=$(pwd)/$deb_dir ;; esac
 	case "$deb_dir/" in "$src/"*) die "--deb-dir must be outside the source checkout" ;; esac
 
 	# dpkg-buildpackage writes into debian/ and the parent directory, so
-	# build in a temporary copy (without .git) and keep the checkout clean.
+	# build in a private temporary copy (mktemp -d, mode 0700, without
+	# .git) and keep the checkout clean. The .debs are installed straight
+	# from there; the deb directory only gets a copy afterwards.
 	work=$(mktemp -d "${TMPDIR:-/tmp}/phantom-mirage-build.XXXXXX")
 	trap 'rm -rf "$work"' EXIT
+	chmod 0700 "$work"
 	say "copying the checkout to $work/phantom-mirage"
 	mkdir "$work/phantom-mirage"
-	tar -C "$src" --exclude=./.git -cf - . | tar -C "$work/phantom-mirage" -xf -
+	tar -C "$src" --exclude=./.git -cf "$work/src.tar" . || die "cannot archive the checkout"
+	tar -C "$work/phantom-mirage" -xf "$work/src.tar" || die "cannot unpack the checkout copy"
+	rm -f "$work/src.tar"
 	jobs=$(nproc 2>/dev/null || echo 1)
 	say "running dpkg-buildpackage -us -uc -b (version $ver)"
 	(cd "$work/phantom-mirage" && DEB_BUILD_OPTIONS="parallel=$jobs ${DEB_BUILD_OPTIONS:-}" dpkg-buildpackage -us -uc -b)
@@ -195,27 +239,38 @@ if [ "$mode" = deb ]; then
 	arch=$(dpkg --print-architecture)
 	bin="phantom-mirage_${ver}_${arch}.deb"
 	common="phantom-mirage-common_${ver}_all.deb"
-	[ -f "$work/$bin" ] && [ -f "$work/$common" ] || die "dpkg-buildpackage did not produce $bin and $common"
-	for f in "$work"/*.deb "$work"/*.ddeb "$work"/*.buildinfo "$work"/*.changes; do
-		if [ -f "$f" ]; then cp "$f" "$deb_dir/"; fi
-	done
-	say "packages are in $deb_dir:"
-	(cd "$deb_dir" && ls -1 ./*"_${ver}_"*.deb) | sed 's|^\./|  |'
+	[ -f "$work/$bin" ] && [ ! -L "$work/$bin" ] && [ -f "$work/$common" ] && [ ! -L "$work/$common" ] ||
+		die "dpkg-buildpackage did not produce $bin and $common"
 
 	if [ -x /usr/local/bin/phantom-mirage ] || [ -x /usr/local/sbin/phantom-mirage ]; then
 		say "warning: an earlier --source-install is in /usr/local and comes first in PATH;"
 		say "warning: remove it (sudo make uninstall in the checkout) to use the packaged binaries"
 	fi
-	say "installing $bin and $common with apt-get"
+	confirm "install $bin and $common with apt-get as root"
+	say "installing $bin and $common with apt-get from $work"
 	$SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall \
-		"$deb_dir/$bin" "$deb_dir/$common"
+		"$work/$bin" "$work/$common"
 
 	say "installed phantom-mirage $ver from the built packages (nothing enabled or started)"
 	if [ "$setup" = yes ]; then
 		say "next step: sudo phantom-mirage-setup"
 		say "it asks for the admin password at a hidden prompt; existing console config is kept"
 	fi
-	exit 0
+
+	# Keep a copy of the .debs. Only into a directory that is ours: not a
+	# symlink, owned by this user and not writable by group or others
+	# (created here with mode 0755 if missing). Each file goes to a fresh
+	# mktemp name in that directory and is renamed into place, so no
+	# planted symlink is followed. If the directory fails the checks the
+	# install above stands, the copy is skipped and the exit code is 3.
+	if keep_debs "$deb_dir"; then
+		say "packages are in $deb_dir:"
+		(cd "$deb_dir" && ls -1 ./*"_${ver}_"*.deb) | sed 's|^\./|  |'
+		exit 0
+	fi
+	say "the install succeeded, but the .debs were NOT copied to $deb_dir (see above)"
+	say "rerun with --deb-dir pointing at a directory you own, or omit it"
+	exit 3
 fi
 
 say "running ./autogen.sh"
@@ -229,6 +284,7 @@ jobs=$(nproc 2>/dev/null || echo 1)
 say "running make -j$jobs"
 make -j"$jobs"
 
+confirm "run make install into $prefix as root"
 say "running make install"
 $SUDO make install
 

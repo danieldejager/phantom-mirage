@@ -78,30 +78,38 @@ Make sure that you have them installed.
 
 
 On Debian or Ubuntu, `./install-from-source.sh` in the source checkout does
-everything: it installs the packaging build dependencies with apt-get
-(sudo when not root), builds the `phantom-mirage` and
-`phantom-mirage-common` .debs from the checkout with
-`dpkg-buildpackage -us -uc -b` and installs them with `apt-get`. That
-gives the full packaged install: `phantom-mirage-setup`, the web console,
-the systemd units and `/etc/phantom-mirage`. Nothing is enabled or started.
+everything: it installs the packaging build dependencies with apt-get,
+builds the `phantom-mirage` and `phantom-mirage-common` .debs from the
+checkout with `dpkg-buildpackage -us -uc -b` in a private temporary copy
+and installs them with `apt-get` straight from there. That gives the full
+packaged install: `phantom-mirage-setup`, the web console, the systemd
+units and `/etc/phantom-mirage`. Nothing is enabled or started.
+
+It asks before each step that runs as root (with sudo when not root):
+first `apt-get update` plus `apt-get install` of the missing build
+dependencies (only when some are missing), then `apt-get install` of the
+built .debs. `--yes` answers yes to both.
 
 ```sh
 $ git clone https://github.com/danieldejager/phantom-mirage.git
 $ cd phantom-mirage
-$ ./install-from-source.sh                # asks before installing packages
+$ ./install-from-source.sh                # asks before each root step
 $ ./install-from-source.sh --yes          # non-interactive
 $ sudo phantom-mirage-setup               # then set it up; asks for the admin password at a hidden prompt
 $ ./install-from-source.sh --help
 ```
 
-The build runs in a temporary copy, so the checkout stays clean. The
-.debs are left in `phantom-mirage-debs` next to the checkout (change it
-with `--deb-dir DIR`). It is safe to run again and keeps existing console
-and `/etc/phantom-mirage` config.
+After the install a copy of the .debs is kept in `phantom-mirage-debs`
+next to the checkout (change it with `--deb-dir DIR`). That directory must
+not be a symlink, must be owned by you and must not be writable by group
+or others; it is created if missing. If it fails those checks the install
+still stands, the copy is skipped and the script exits with code 3. It is
+safe to run again and keeps existing console and `/etc/phantom-mirage`
+config.
 
 `--source-install` keeps the plain autogen, configure, make and make
 install path instead (binaries and data only, no web console or
-`phantom-mirage-setup`); `--prefix DIR` (default `/usr/local`) and
+`phantom-mirage-setup`; it asks before `make install`); `--prefix DIR` (default `/usr/local`) and
 `--with-python` only apply there:
 
 ```sh
