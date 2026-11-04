@@ -4,6 +4,8 @@
 # to the release as install.sh next to the .debs and SHA256SUMS.
 #
 #   sudo sh install.sh [phantom-mirage-setup options, e.g. --network CIDR]
+#   sudo sh install.sh --yes -i IF -n CIDR   (unattended: --yes lets setup
+#                                           start services without a terminal)
 #
 # Verifies SHA256SUMS, picks the .debs for this distro (ubuntu26.04 or
 # debian13) and architecture (dpkg --print-architecture), purges any

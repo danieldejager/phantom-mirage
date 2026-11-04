@@ -1,7 +1,7 @@
 #!/bin/sh
 # Build and install Phantom Mirage from this source checkout.
 #
-#   ./install-from-source.sh [--yes] [--deb-dir DIR] [--no-setup]
+#   ./install-from-source.sh [--yes] [--deb-dir DIR] [--setup|--no-setup]
 #   ./install-from-source.sh --source-install [--with-python] [--prefix DIR] [--yes]
 #
 # Default (Debian and Ubuntu): installs the packaging build dependencies
@@ -12,9 +12,9 @@
 # directory if that directory is safe (exit 3 if the copy is skipped).
 # That gives the same layout as the
 # release packages: phantom-mirage-setup, the web console, systemd units
-# and /etc/phantom-mirage. It then runs sudo phantom-mirage-setup on this
-# terminal (asked first; --yes answers yes), which asks for the sensor
-# name and the admin password itself. --no-setup skips that step.
+# and /etc/phantom-mirage. It then asks, on a terminal, whether to run
+# sudo phantom-mirage-setup (Enter = yes). --yes never answers that
+# question; --setup answers it yes and --no-setup skips it.
 #
 # --source-install keeps the plain ./autogen.sh, ./configure, make,
 # make install path (binaries and data only, no setup helper or console).
@@ -42,27 +42,39 @@ By default the Debian packages are built from the checkout
 (dpkg-buildpackage -us -uc -b, in a private temporary copy) and installed
 with apt-get from there. This installs phantom-mirage-setup, the web
 console, the systemd units and /etc/phantom-mirage. A copy of the .debs
-is then kept in the deb directory, and sudo phantom-mirage-setup runs on
-this terminal to configure and start the sensor.
+is then kept in the deb directory, and it offers to run
+sudo phantom-mirage-setup on this terminal to configure and start the
+sensor (one question, Enter = yes).
 
 It asks before each step that runs as root (with sudo when not root):
   1. apt-get update and apt-get install of missing build dependencies
      (only asked, and only run, when some are missing)
   2. apt-get install of the built .debs (or, with --source-install,
      make install)
-  3. sudo phantom-mirage-setup (deb mode only, skipped with --no-setup).
-     It asks for the sensor name and console settings, and for the
-     admin password at its own hidden prompt. It needs a terminal: with
-     --yes and no terminal it is skipped and the command is printed.
+  3. sudo phantom-mirage-setup (deb mode only). This is a separate
+     question that --yes does NOT answer:
+       Run phantom-mirage-setup now? It configures the sensor, picks a
+       network interface and a free /29 on your LAN, and starts the
+       sensor, farpd (claims 8 LAN addresses over ARP), the firewall
+       and the console. [Y/n]
+     Enter answers yes. End of input, or no terminal, answers no: setup
+     is skipped, the exact command is printed and the exit code is 0.
+     --setup answers yes without asking; --no-setup skips it. Setup
+     itself shows the interface, subnet, gateway and /29 and asks
+     before it starts anything, and asks for the admin password at its
+     own hidden prompt on first run.
 
 Options:
-  --yes, -y         answer yes to every question (needed without a terminal)
+  --yes, -y         answer yes to the root questions (steps 1 and 2);
+                    never answers the setup question (step 3)
   --deb-dir DIR     where to keep a copy of the built .debs
                     (default: phantom-mirage-debs next to the checkout).
                     Must not be a symlink, must be owned by you and not
                     writable by group or others; it is created (0755) if
                     missing. If it fails these checks the install still
                     happens, the copy is skipped and the exit code is 3.
+  --setup           answer yes to the setup question (step 3); needs a
+                    terminal, setup still confirms the network itself
   --no-setup        do not run phantom-mirage-setup afterwards (run it
                     yourself later with: sudo phantom-mirage-setup)
   --source-install  instead of .debs, run autogen, configure, make and
@@ -74,9 +86,11 @@ Options:
   --help, -h        show this help
 
 Examples:
-  ./install-from-source.sh                 # build, install, then set up; asks first
-  ./install-from-source.sh --yes           # same without the questions; setup still
-                                           # asks for the sensor name and admin password
+  ./install-from-source.sh                 # build, install, then offer setup; asks each step
+  ./install-from-source.sh --yes           # no root questions; still asks
+                                           # "Run phantom-mirage-setup now?" (Enter = yes)
+  ./install-from-source.sh --yes --setup   # no questions from this script; setup
+                                           # still confirms the network it will use
   ./install-from-source.sh --yes --no-setup  # build and install only
   sudo phantom-mirage-setup                # run setup later (after --no-setup)
   ./install-from-source.sh --deb-dir ~/debs  # keep the .debs in ~/debs
@@ -93,7 +107,7 @@ with_python=no
 prefix=
 deb_dir=
 yes=no
-setup=yes
+setup=ask
 while [ $# -gt 0 ]; do
 	case $1 in
 	--source-install) mode=source ;;
@@ -103,6 +117,7 @@ while [ $# -gt 0 ]; do
 	--deb-dir) [ $# -ge 2 ] || die "--deb-dir needs a directory"; deb_dir=$2; [ -n "$deb_dir" ] || die "--deb-dir needs a directory"; shift ;;
 	--deb-dir=*) deb_dir=${1#--deb-dir=}; [ -n "$deb_dir" ] || die "--deb-dir needs a directory" ;;
 	--yes|-y) yes=yes ;;
+	--setup) setup=yes ;;
 	--no-setup) setup=no ;;
 	--help|-h) usage; exit 0 ;;
 	*) usage >&2; die "unknown option: $1" ;;
@@ -280,10 +295,10 @@ if [ "$mode" = deb ]; then
 		rc=3
 	fi
 
-	# Run phantom-mirage-setup on this terminal. It prompts for the sensor
-	# name and, at a hidden prompt, the admin password; nothing is passed
-	# to it or read from it here. Without a terminal it cannot ask for the
-	# password, so it is skipped and the exact command is printed.
+	# Offer phantom-mirage-setup on this terminal. --yes never answers
+	# this: setup changes the network (farpd claims LAN addresses), so a
+	# person answers it, or --setup opts in explicitly. Without a
+	# terminal, or on end of input, it is skipped and the command printed.
 	setup_cmd="${SUDO:+sudo }phantom-mirage-setup"
 	if [ "$setup" = no ]; then
 		say "skipped phantom-mirage-setup (--no-setup); next step: $setup_cmd"
@@ -294,8 +309,8 @@ if [ "$mode" = deb ]; then
 		say "next step, on a terminal: $setup_cmd"
 		exit $rc
 	fi
-	if [ "$yes" != yes ]; then
-		printf 'install-from-source.sh: run %s now to configure and start the sensor? [Y/n] ' "$setup_cmd"
+	if [ "$setup" != yes ]; then
+		printf '%s' 'Run phantom-mirage-setup now? It configures the sensor, picks a network interface and a free /29 on your LAN, and starts the sensor, farpd (claims 8 LAN addresses over ARP), the firewall and the console. [Y/n] '
 		read -r ans || ans=n
 		case $ans in ''|y|Y|yes|YES) ;; *)
 			say "not running phantom-mirage-setup; next step: $setup_cmd"
@@ -304,7 +319,19 @@ if [ "$mode" = deb ]; then
 	fi
 	say "running $setup_cmd (existing console config is kept)"
 	src_rc=0
-	$SUDO /usr/sbin/phantom-mirage-setup || src_rc=$?
+	if [ -z "$SUDO" ]; then
+		# Running as root: start setup from a clean environment with a
+		# fixed PATH, keeping only what the prompts and logo need.
+		set -- PATH=/usr/sbin:/usr/bin:/sbin:/bin
+		for v in TERM LANG LC_ALL COLORTERM NO_COLOR; do
+			if eval "[ -n \"\${$v+x}\" ]"; then
+				eval "set -- \"\$@\" \"$v=\${$v}\""
+			fi
+		done
+		env -i "$@" /usr/sbin/phantom-mirage-setup || src_rc=$?
+	else
+		sudo /usr/sbin/phantom-mirage-setup || src_rc=$?
+	fi
 	if [ $src_rc != 0 ]; then
 		say "phantom-mirage-setup failed (exit $src_rc); the packages are installed"
 		say "fix the problem shown above, then run: $setup_cmd"
@@ -329,7 +356,7 @@ say "running make install"
 $SUDO make install
 
 say "installed into $prefix"
-if [ "$setup" = yes ]; then
+if [ "$setup" != no ]; then
 	if command -v phantom-mirage-setup >/dev/null 2>&1; then
 		say "next step: sudo phantom-mirage-setup"
 		say "it asks for the admin password at a hidden prompt; existing console config is kept"
