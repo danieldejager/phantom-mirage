@@ -3119,7 +3119,6 @@ handle_udp_packet(struct template *tmpl, void *wrapper)
 	struct spoof spoof;
 	char unicast;
 	char isBroadcast = 0;
-	int i;
 	
 	uint16_t uh_sum;
 	u_char *data;
@@ -3362,7 +3361,7 @@ icmp_recv_cb(struct template *tmpl, u_char *pkt, u_short pktlen)
 	struct tuple icmphdr;
 	struct addr src, dst;
 	struct spoof spoof;
-	char asrc[100], adst[100];
+	char asrc[2 * 100 + 8], adst[2 * 100 + 8];	/* "x (was y)" */
 	char osrc[100], odst[100];
 	char ssrc[100], sdst[100];
 	u_char *dat;

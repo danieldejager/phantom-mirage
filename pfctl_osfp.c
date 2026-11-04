@@ -595,12 +595,18 @@ fingerprint_name_entry(struct name_list *list, char *name)
 void
 print_name_list(int opts, struct name_list *nml, const char *prefix)
 {
-	char newprefix[32];
+	char newprefix[256];
 	struct name_entry *nm;
 
 	LIST_FOREACH(nm, nml, nm_entry) {
-		snprintf(newprefix, sizeof(newprefix), "%s%s\t", prefix,
-		    nm->nm_name);
+		int n = snprintf(newprefix, sizeof(newprefix), "%s%s\t",
+		    prefix, nm->nm_name);
+		if (n < 0 || (size_t)n >= sizeof(newprefix)) {
+			/* nesting deeper than any real fingerprint file */
+			warnx("print_name_list: name too long: %s%s",
+			    prefix, nm->nm_name);
+			continue;
+		}
 		printf("%s\n", newprefix);
 		print_name_list(opts, &nm->nm_sublist, newprefix);
 	}

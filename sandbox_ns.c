@@ -334,8 +334,10 @@ ns_launcher(int ctl, pid_t parent)
 			if (i == njobs)
 				continue;
 			if (jobs[i].chan != -1) {
-				(void)write(jobs[i].chan, &status,
-				    sizeof(status));
+				if (write(jobs[i].chan, &status,
+				    sizeof(status)) != sizeof(status))
+					syslog(LOG_WARNING, "%s: status write: %m",
+					    __func__);
 				close(jobs[i].chan);
 			}
 			jobs[i] = jobs[--njobs];
@@ -421,7 +423,10 @@ ns_launcher(int ctl, pid_t parent)
 			close(fds[1]);
 			if (pid == -1) {
 				status = W_EXITCODE(EXIT_FAILURE, 0);
-				(void)write(fds[2], &status, sizeof(status));
+				if (write(fds[2], &status, sizeof(status)) !=
+				    sizeof(status))
+					syslog(LOG_WARNING, "%s: status write: %m",
+					    __func__);
 				close(fds[2]);
 				continue;
 			}

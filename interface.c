@@ -126,11 +126,24 @@ interface_new(char *dev)
 	}
 
 	if (dev == NULL) {
-		if ((dev = pcap_lookupdev(ebuf)) == NULL)
+		/*
+		 * pcap_lookupdev() is deprecated; pcap_findalldevs() lists
+		 * the same devices in the same order, so take the first one.
+		 */
+		static char defdev[INTF_NAME_LEN];
+		pcap_if_t *alldevs = NULL;
+
+		if (pcap_findalldevs(&alldevs, ebuf) == -1 ||
+		    alldevs == NULL)
 		{
-			syslog(LOG_ERR, "pcap_lookupdev: %s",ebuf);
+			syslog(LOG_ERR, "pcap_findalldevs: %s",
+			    alldevs == NULL ? "no suitable device found" :
+			    ebuf);
 			exit(EXIT_FAILURE);
 		}
+		strlcpy(defdev, alldevs->name, sizeof(defdev));
+		pcap_freealldevs(alldevs);
+		dev = defdev;
 	}
 
 	TAILQ_INSERT_TAIL(&interfaces, inter, next);

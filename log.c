@@ -111,7 +111,7 @@ honeyd_logtuple(const struct tuple *hdr)
 static char *
 honeyd_logtime(void)
 {
-	static char logtime[32];
+	static char logtime[64];
 	struct timeval tv;
 	struct tm *tm;
 	time_t seconds;
@@ -137,7 +137,7 @@ honeyd_logtime(void)
 char *
 honeyd_logdate(void)
 {
-	static char logtime[32];
+	static char logtime[64];
 	struct timeval tv;
 	struct tm *tm;
 	time_t seconds;
@@ -572,7 +572,7 @@ honeyd_log_service(FILE *fp, int proto, const struct tuple *hdr,
     const char *line)
 {
 	static char myline[1024];
-	char *p;
+	const char *p;
 	int len;
 
 	syslog(LOG_NOTICE, "E%s: %s", honeyd_contoa(hdr), line);
