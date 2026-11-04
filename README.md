@@ -77,16 +77,16 @@ Make sure that you have them installed.
 
 
 
-On Debian or Ubuntu, `./install.sh` in the source checkout does all of
+On Debian or Ubuntu, `./install-from-source.sh` in the source checkout does all of
 the steps below: it installs the build dependencies with apt-get, then
 runs autogen, configure, make and make install (with sudo when not root).
 
 ```sh
-$ ./install.sh                # asks before installing packages
-$ ./install.sh --yes          # non-interactive
-$ ./install.sh --with-python  # also installs python3-dev, configures --with-python
-$ ./install.sh --prefix /opt/phantom-mirage
-$ ./install.sh --help
+$ ./install-from-source.sh                # asks before installing packages
+$ ./install-from-source.sh --yes          # non-interactive
+$ ./install-from-source.sh --with-python  # also installs python3-dev, configures --with-python
+$ ./install-from-source.sh --prefix /opt/phantom-mirage
+$ ./install-from-source.sh --help
 ```
 
 It is safe to run again and never touches existing console config. A

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Build and install Phantom Mirage from this source checkout.
 #
-#   ./install.sh [--with-python] [--prefix DIR] [--yes] [--no-setup]
+#   ./install-from-source.sh [--with-python] [--prefix DIR] [--yes] [--no-setup]
 #
 # Installs the build dependencies with apt-get (Debian and Ubuntu), then
 # runs ./autogen.sh, ./configure, make and make install. Safe to run
@@ -9,16 +9,17 @@
 # place. It never touches /etc/phantom-mirage or the web console's
 # config, admin account, certificate or alerts.
 #
+# Not called install.sh: automake 1.17 rejects a top-level install.sh.
 # To install the release .debs instead (web console, systemd units and
 # phantom-mirage-setup included) use release/get-mirage.sh.
 set -eu
 
-say() { echo "install.sh: $*"; }
-die() { echo "install.sh: error: $*" >&2; exit 1; }
+say() { echo "install-from-source.sh: $*"; }
+die() { echo "install-from-source.sh: error: $*" >&2; exit 1; }
 
 usage() {
 	cat <<'USAGE'
-Usage: ./install.sh [options]
+Usage: ./install-from-source.sh [options]
 
 Build Phantom Mirage from this checkout and install it.
 
@@ -109,7 +110,7 @@ if [ -n "$missing" ]; then
 	say "packages to install:$missing"
 	if [ "$yes" != yes ]; then
 		if [ -t 0 ]; then
-			printf 'install.sh: install them now? [Y/n] '
+			printf 'install-from-source.sh: install them now? [Y/n] '
 			read -r ans || ans=n
 			case $ans in ''|y|Y|yes|YES) ;; *) die "aborted; nothing installed" ;; esac
 		else

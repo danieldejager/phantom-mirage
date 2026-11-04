@@ -201,7 +201,7 @@ jobs:
           shellcheck --version | head -2
           # SC1007 (a= b=), SC1090/SC2010/SC2034: intentional patterns
           shellcheck -s sh -S warning -e SC1007,SC1090,SC2010,SC2034 \
-            release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh ci/test_install_rollback.sh console/pm-firewall ci/test_decoy_tcp.sh debian/mkconf.sh install.sh ci/test_install_sh.sh
+            release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh ci/test_install_rollback.sh console/pm-firewall ci/test_decoy_tcp.sh debian/mkconf.sh install-from-source.sh ci/test_install_from_source.sh
       - name: Default personality file pinned sha256 + parse check (#150)
         run: |
           (cd fingerprints && sha256sum -c columbo-v1.db.sha256)
@@ -215,7 +215,7 @@ jobs:
           sh ci/test_get_mirage.sh && dash ci/test_get_mirage.sh
           sh ci/test_make_run.sh && dash ci/test_make_run.sh
           sh ci/test_install_rollback.sh && dash ci/test_install_rollback.sh
-          sh ci/test_install_sh.sh && dash ci/test_install_sh.sh
+          sh ci/test_install_from_source.sh && dash ci/test_install_from_source.sh
 
   sanitizers:
     name: Debian 13 / ASan + UBSan
