@@ -77,11 +77,33 @@ Make sure that you have them installed.
 
 
 
-To install dependencies in Ubuntu:
+On Debian or Ubuntu, `./install.sh` in the source checkout does all of
+the steps below: it installs the build dependencies with apt-get, then
+runs autogen, configure, make and make install (with sudo when not root).
 
 ```sh
-$ sudo apt-get install libevent-dev libdumbnet-dev libpcap-dev libpcre3-dev libedit-dev bison flex libtool automake
+$ ./install.sh                # asks before installing packages
+$ ./install.sh --yes          # non-interactive
+$ ./install.sh --with-python  # also installs python3-dev, configures --with-python
+$ ./install.sh --prefix /opt/phantom-mirage
+$ ./install.sh --help
 ```
+
+It is safe to run again and never touches existing console config. A
+source install has no web console or `phantom-mirage-setup`; those ship in
+the Debian packages (`release/get-mirage.sh`), after which you run
+`sudo phantom-mirage-setup` yourself (it asks for the admin password at a
+hidden prompt).
+
+To install dependencies in Ubuntu by hand:
+
+```sh
+$ sudo apt-get install build-essential autoconf automake libtool bison flex pkg-config libevent-dev libdumbnet-dev libpcap-dev libedit-dev zlib1g-dev libpcre3-dev
+```
+
+libpcre3-dev is optional and no longer exists on Ubuntu 26.04 or Debian
+13; leave it out there (configure only supports PCRE 1, so the smtp and
+proxy subsystems are not built without it).
 
 To install dependencies in ArchLinux:
 
