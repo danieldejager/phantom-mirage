@@ -27,7 +27,7 @@
 # the LAN over ARP) and asks [Y/n] on the terminal, on every run. Without
 # a terminal it writes the config but starts nothing, unless --yes (-y)
 # is given: the explicit opt in for unattended installs, e.g.
-#   sudo phantom-mirage-setup --yes -i eth1 -n 192.168.1.248/29
+#   sudo phantom-mirage-setup --yes -i eth1 -n 10.0.0.248/29
 set -eu
 
 DEFAULT=/etc/default/phantom-mirage

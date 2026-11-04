@@ -109,7 +109,7 @@ skipped, the command to run next is printed and the exit code is 0.
 and asks `[Y/n]` before it enables or starts anything, on every run
 (re-runs too). Without a terminal it writes the config but starts
 nothing, unless you pass `--yes` to setup (for unattended installs, e.g.
-`sudo phantom-mirage-setup --yes -i eth1 -n 192.168.1.248/29`).
+`sudo phantom-mirage-setup --yes -i eth1 -n 10.0.0.248/29`).
 
 ```sh
 $ git clone https://github.com/danieldejager/phantom-mirage.git
