@@ -622,7 +622,7 @@ jobs:
           test -x /usr/lib/phantom-mirage/pm-start && test -f /usr/lib/phantom-mirage/default-lib.sh
           test -x /usr/sbin/phantom-mirage-setup && test -x /usr/sbin/phantom-mirage-uninstall
           # web console (#118): shipped, not enabled, own user, firewall rules
-          for f in pm-console.py pm-console-setup.py pmauth.py pmstore.py branding.py branding.conf static/index.html static/console.js static/console.css static/phantom-mirage-mark.svg static/phantom-mirage-logo-light.png static/phantom-mirage-logo-dark.png static/fonts/Aldrich-Regular.woff2 static/fonts/Aldrich-OFL.txt; do
+          for f in pm-console.py pm-console-setup.py pmauth.py pmstore.py branding.py branding.conf static/index.html static/console.js static/theme.js static/console.css static/phantom-mirage-mark.svg static/phantom-mirage-logo-light.png static/phantom-mirage-logo-dark.png static/fonts/Aldrich-Regular.woff2 static/fonts/Aldrich-OFL.txt; do
             test -f /usr/lib/phantom-mirage/console/$f
           done
           test -x /usr/lib/phantom-mirage/pm-firewall

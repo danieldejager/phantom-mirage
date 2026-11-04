@@ -237,6 +237,35 @@ class Server(unittest.TestCase):
             self.assertTrue(body)
         self.assertEqual(self.raw("/static/fonts/Aldrich-Regular.woff2")[2][:4], b"wOF2")
 
+    def test_theme_toggle_served_csp_unchanged(self):
+        csp = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; "
+               "font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+        st, r, page = self.raw("/")
+        self.assertEqual(st, 200)
+        self.assertEqual(r.getheader("Content-Security-Policy"), csp)
+        page = page.decode()
+        head = page[:page.index("</head>")]
+        # theme.js runs from <head>, before the stylesheet, so there is no flash
+        self.assertLess(head.index('<script src="/static/theme.js"></script>'), head.index("/static/console.css"))
+        self.assertNotRegex(page, r'<script(?![^>]*\bsrc=)')
+        for v in ("light", "dark", "auto"):
+            self.assertIn('data-theme-pick="%s"' % v, page)
+        self.assertIn('role="radiogroup" aria-label="Colour theme"', page)
+        self.assertIn('aria-checked="true" data-theme-pick="auto"', page)   # default Auto
+        st, r, js = self.raw("/static/theme.js")
+        self.assertEqual(st, 200)
+        self.assertEqual(r.getheader("Content-Type"), "text/javascript; charset=utf-8")
+        self.assertEqual(r.getheader("Content-Security-Policy"), csp)
+        js = js.decode()
+        self.assertIn("localStorage", js)
+        self.assertNotIn("cookie", js.lower())
+        st, r, css = self.raw("/static/console.css")
+        self.assertEqual(st, 200)
+        css = css.decode()
+        self.assertIn(":root[data-theme=light]{", css)
+        self.assertIn("@media(prefers-color-scheme:light){:root:not([data-theme=dark]){", css)
+        self.assertIn(".theme button[aria-checked=true]", css)
+
     def test_static_only_exact_names(self):
         for p in ("/static/fonts/../pmauth.py", "/static/fonts/", "/static/fonts", "/static/fonts/x.woff2",
                   "/static/fonts/%2e%2e/console.css", "/static/fonts//Aldrich-OFL.txt",
@@ -244,7 +273,7 @@ class Server(unittest.TestCase):
                   "/static//etc/passwd", "/static/README.md"):
             self.assertEqual(self.raw(p)[0], 404, p)
         self.assertEqual(sorted(pmc.STATIC_FILES), sorted([
-            "index.html", "console.css", "console.js", "phantom-mirage-mark.svg", "phantom-mirage-mark.png",
+            "index.html", "console.css", "console.js", "theme.js", "phantom-mirage-mark.svg", "phantom-mirage-mark.png",
             "phantom-mirage-logo-light.png", "phantom-mirage-logo-dark.png",
             "fonts/Aldrich-Regular.woff2", "fonts/Aldrich-OFL.txt"]))
 

@@ -34,7 +34,7 @@ TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
 # exact-name allowlist for /static/ (#141): URL name -> file under STATIC.
 # Nothing from the request is ever joined onto a path.
 STATIC_FILES = {n: n for n in (
-    "index.html", "console.css", "console.js", "phantom-mirage-mark.svg",
+    "index.html", "console.css", "console.js", "theme.js", "phantom-mirage-mark.svg",
     "phantom-mirage-mark.png", "phantom-mirage-logo-light.png",
     "phantom-mirage-logo-dark.png")}
 STATIC_FILES.update({"fonts/Aldrich-Regular.woff2": os.path.join("fonts", "Aldrich-Regular.woff2"),

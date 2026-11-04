@@ -227,7 +227,8 @@ class TestLoginPage(unittest.TestCase):
         self.assertIn("static/phantom-mirage-logo-dark.png", open(os.path.join(REPO, ".github", "workflows", "build.yml")).read())
         css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
         self.assertIn("--sbg:#0B0C0F", css)
-        self.assertRegex(css, r'prefers-color-scheme:light\)\{\.slogo \.lg-dark\{display:none\}')
+        self.assertRegex(css, r'prefers-color-scheme:light\)\{:root:not\(\[data-theme=dark\]\) \.slogo \.lg-dark\{display:none\}')
+        self.assertIn(":root[data-theme=light] .slogo .lg-dark{display:none}", css)
 
     def test_assets_served_and_packaged(self):
         rules = open(os.path.join(REPO, "debian", "rules"), encoding="utf-8").read()
