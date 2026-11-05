@@ -175,7 +175,8 @@ class TestChrony(TimeBase):
         self.assertEqual((t["synced"], t["reference"], t["stratum"], t["offset_s"], t["ready"]),
                          (True, "192.168.1.5", 3, -0.000123, None))
         for c in self.r("chronyc_calls").splitlines():
-            self.assertTrue(c.startswith("-h 127.0.0.1 "), c)
+            self.assertTrue(c.startswith("-h /run/chrony/chronyd.sock "), c)
+        self.assertIsNone(t["read_error"])
         self.assertEqual(t["sources"][0]["reach"], "377")
 
     def test_set_time_refuses_own_and_loopback(self):
@@ -223,6 +224,18 @@ class TestChrony(TimeBase):
         self.w("chronyc", "#!/bin/sh\necho '506 Cannot talk to daemon' >&2\nexit 1\n")
         t = self.req("timeinfo")["result"]
         self.assertEqual((t["synced"], t["stratum"], t["sources"]), (False, None, []))
+        self.assertEqual(t["read_error"], "506 Cannot talk to daemon")
+
+    def test_chronyc_falls_back_to_loopback(self):
+        self.w("chronyc", FAKE_CHRONYC.replace("@D@", self.d).replace(
+            'echo "$*" >> "$D/chronyc_calls"',
+            'echo "$*" >> "$D/chronyc_calls"\ncase "$2" in /run/*) printf "506 Cannot talk to daemon\\033[0m\\n" >&2; exit 1 ;; esac'))
+        t = self.req("timeinfo")["result"]
+        self.assertEqual((t["synced"], t["reference"], t["read_error"]), (True, "192.168.1.5", None))
+        calls = self.r("chronyc_calls").splitlines()
+        self.assertIn("-h /run/chrony/chronyd.sock tracking", calls)
+        self.assertIn("-h 127.0.0.1 tracking", calls)
+        self.assertLess(calls.index("-h /run/chrony/chronyd.sock tracking"), calls.index("-h 127.0.0.1 tracking"))
 
     def test_apply(self):
         r = self.set(["192.168.1.6", "ntp.lan"])
@@ -364,5 +377,8 @@ class TestUnitFile(unittest.TestCase):
             u = f.read()
         lines = [l.strip() for l in u.splitlines() if not l.startswith("#")]
         self.assertIn("IPAddressDeny=any", lines)
-        self.assertIn("IPAddressAllow=localhost", lines)
-        self.assertEqual([l for l in lines if l.startswith("IPAddressAllow=")], ["IPAddressAllow=localhost"])
+        self.assertEqual([l for l in lines if l.startswith("IPAddressAllow=")], ["IPAddressAllow=localhost 127.0.0.0/8 ::1/128"])
+        fam = [l for l in lines if l.startswith("RestrictAddressFamilies=")][0].split("=")[1].split()
+        self.assertTrue({"AF_UNIX", "AF_INET", "AF_INET6"} <= set(fam))
+        self.assertIn("CAP_DAC_OVERRIDE", [l for l in lines if l.startswith("CapabilityBoundingSet=")][0])
+        self.assertTrue(any(l.startswith("ReadWritePaths=") and "-/run/chrony" in l.split() for l in lines))

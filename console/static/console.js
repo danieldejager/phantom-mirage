@@ -676,11 +676,12 @@ function offs(v) { if (typeof v !== "number") return "unknown"; const a = Math.a
 function timeCard(c) {
   const t = data.ti || {}, ntp = c.time_source === "ntp";
   const can = ntp && !t.error && t.service && !t.ready;
-  const st = t.error ? "" : !t.service ? "" : !t.active ? '<span class="bad">not running</span>' : t.synced ? '<span class="ok">synchronised</span>' : '<span class="bad">not synchronised</span>';
+  const st = t.error ? "" : !t.service ? "" : !t.active ? '<span class="bad">not running</span>' : t.read_error ? '<span class="bad">unknown</span>' : t.synced ? '<span class="ok">synchronised</span>' : '<span class="bad">not synchronised</span>';
   const lc = t.last_change, lct = lc ? {applied: "applied", applied_unverified: "applied, server not reached yet", rolled_back: "rolled back", rollback_failed: "rollback failed", interrupted: "interrupted, undone"}[lc.result] || lc.result : "";
   return `<div class="card" id="timecard"><div class="k">Time</div>
 <p>${ntp ? "Source: NTP on the local network" : "Console time source: this browser at each sign-in"}</p>${t.service ? `<p>Sensor clock: <code>${esc(t.unit)}</code></p>` : ""}
 ${t.error ? `<p class="note" id="tunavail">Time status unavailable: ${esc(t.error)}</p>` : !t.service ? `<p class="note bad" id="tunavail">${esc(t.ready || "no time service found")}</p>` : `<table class="kv" id="tinfo"><tr><th>Servers</th><td id="tsrv">${(t.servers || []).length ? t.servers.map(x => "<code>" + esc(x) + "</code>").join(" ") : (t.sources || []).length ? t.sources.map(x => "<code>" + esc(x.name) + "</code>").join(" ") + '<br><span class="note">set by the system, not by Mirage</span>' : "none"}</td></tr><tr><th>Status</th><td id="tsync">${st}</td></tr><tr><th>Offset</th><td id="toff">${esc(offs(t.offset_s))}</td></tr><tr><th>Stratum</th><td>${esc(t.stratum == null ? "unknown" : t.stratum)}</td></tr><tr><th>Reference</th><td>${esc(t.reference || "none")}</td></tr>${lc ? `<tr><th>Last change</th><td id="tlast">${esc(lct)}, ${esc(when(new Date(lc.time * 1000).toISOString()))}</td></tr>` : ""}</table>`}
+${t.read_error && t.service ? `<p class="note bad" id="treaderr">Could not read the time service: ${esc(t.read_error)}</p>` : ""}
 ${t.ready && t.service ? `<p class="note bad">${esc(t.ready)}. Run <code>sudo phantom-mirage-setup --reconfigure-console</code> and choose local NTP.</p>` : ""}
 <p class="note">Warns when the sensor clock is more than ${esc(c.drift_warn_seconds)} s off.${ntp ? "" : " To use an NTP server instead, run <code>sudo phantom-mirage-setup --reconfigure-console</code> on the sensor."}</p>
 ${can ? '<button data-act="time" id="timechange">Change time servers</button>' : ""}<div id="tmsg" role="status"></div></div>`;

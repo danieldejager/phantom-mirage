@@ -1274,18 +1274,43 @@ def _tool(*argv):
         return -1, ""
 
 
-# chronyc talks to chronyd over UDP on the loopback command port (monitoring
-# commands such as tracking and sources are allowed from localhost by
-# default). The default first try, the Unix socket in /run/chrony, cannot
-# work here: that directory is 0750 _chrony and the unit keeps no
-# CAP_DAC_OVERRIDE, so chronyc would fall back to UDP anyway, which
-# IPAddressDeny=any used to drop. pm-decoyd.service allows loopback only.
-CHRONYC_HOST = ("-h", "127.0.0.1")
+# chronyc reads chronyd first over its Unix socket /run/chrony/chronyd.sock
+# (some installs set cmdport 0, so there is no UDP command port at all),
+# then over UDP on the loopback command port 127.0.0.1:323. The socket
+# directory is 0750 _chrony, so the unit keeps CAP_DAC_OVERRIDE and can
+# write in /run/chrony, where chronyc binds its own reply socket. The
+# reason of a failure is kept for the journal and the Time card.
+CHRONYC_HOSTS = (("-h", "/run/chrony/chronyd.sock"), ("-h", "127.0.0.1"))
+
+
+def _tool_err(*argv):
+    """(rc, stdout, short stderr reason)."""
+    try:
+        r = subprocess.run(list(argv), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, timeout=10, close_fds=True,
+                           env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"})
+        err = re.sub(r'[\x00-\x1f\x7f]+', " ", r.stderr.decode("utf-8", "replace")).strip()[:200]
+        return r.returncode, r.stdout.decode("utf-8", "replace"), err
+    except subprocess.TimeoutExpired:
+        return -1, "", "chronyc timed out"
+    except OSError as e:
+        return -1, "", "could not run chronyc: %s" % (e.strerror or e)
+
+
+def chronyc(*args):
+    """(rc, out, reason) trying loopback, then the Unix socket."""
+    first = None
+    for h in CHRONYC_HOSTS:
+        rc, out, err = _tool_err(P["chronyc"], *h, *args)
+        if rc == 0:
+            return rc, out, None
+        first = first or (err or "chronyc exited with status %d" % rc)
+    return rc, out, first
 
 
 def chrony_sources():
     """[(name, state, stratum, reach)] from chronyc -n -c sources."""
-    rc, out = _tool(P["chronyc"], *CHRONYC_HOST, "-n", "-c", "sources")
+    rc, out, _ = chronyc("-n", "-c", "sources")
     res = []
     for line in out.splitlines() if rc == 0 else ():
         f = line.split(",")
@@ -1317,11 +1342,13 @@ def parse_tracking(out):
 
 
 def chrony_tracking():
-    rc, out = _tool(P["chronyc"], *CHRONYC_HOST, "tracking")
+    """(tracking dict or None, reason or None)."""
+    rc, out, err = chronyc("tracking")
     if rc != 0:
-        log(syslog.LOG_WARNING, "chronyc tracking failed (exit %d)" % rc)
-        return None
-    return parse_tracking(out)
+        log(syslog.LOG_WARNING, "chronyc tracking failed: %s" % err)
+        return None, err
+    t = parse_tracking(out)
+    return t, None if t else "chronyc tracking gave an unexpected report"
 
 
 def timesyncd_status():
@@ -1388,7 +1415,7 @@ def op_timeinfo():
     kind, unit = time_service()
     r = {"service": kind, "unit": unit, "active": False, "servers": [], "synced": False,
          "reference": None, "stratum": None, "offset_s": None, "sources": [],
-         "ready": None, "last_change": time_outcome(), "max_servers": MAX_SERVERS}
+         "ready": None, "read_error": None, "last_change": time_outcome(), "max_servers": MAX_SERVERS}
     if not kind:
         r["ready"] = "no time service (chrony or systemd-timesyncd) is installed"
         return r
@@ -1396,7 +1423,7 @@ def op_timeinfo():
     r["servers"] = read_servers(kind)
     if kind == "chrony":
         r["ready"] = chrony_ready()
-        t = chrony_tracking() if r["active"] else None
+        t, r["read_error"] = chrony_tracking() if r["active"] else (None, None)
         r["sources"] = chrony_sources() if r["active"] else []
     else:
         t = timesyncd_status() if r["active"] else None
