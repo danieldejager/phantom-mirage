@@ -41,9 +41,8 @@ class SimHelper:
         self.reqs, self.force = [], None      # force: an error code to return once
         self.reloaded = True
         # what timeinfo reports; set_time to a server in unreachable fails
-        self.time = {"service": "chrony", "unit": "chrony.service", "active": True,
-                     "servers": ["192.168.1.5"], "synced": True, "reference": "192.168.1.5",
-                     "stratum": 3, "offset_s": -0.000412, "sources": [], "ready": None, "max_servers": 3}
+        self.time = {"service": "chrony", "unit": "chrony.service", "servers": ["192.168.1.5"],
+                     "status": "up", "ready": None, "max_servers": 3}
         self.unreachable = set()
         self.own = {D.ipaddress.IPv4Address("192.168.1.20"), D.ipaddress.IPv4Address("127.0.0.1")}
         with open(conf_out, "w") as f:
@@ -72,9 +71,7 @@ class SimHelper:
                     "gateways": sorted({str(g) for g in self.info["gateways"]}),
                     "min_prefix": D.MIN_PREFIX, "last_change": getattr(self, "last_change", None)}
         if op == "timeinfo":
-            t = dict(self.time)
-            t["last_change"] = getattr(self, "time_change", None)
-            return t
+            return dict(self.time)
         if op == "set_time":
             D._keys(args, "args", ("servers", "expect"), ("keep",))
             servers = D.check_servers(args["servers"], self.nets, self.own)
@@ -84,15 +81,10 @@ class SimHelper:
                 raise D.Err("E_UNCHANGED", "args.servers", "those are already the time servers")
             reached = not any(s in self.unreachable for s in servers)
             if not reached and not args.get("keep"):
-                self.time_change = {"id": "", "result": "rolled_back", "servers": self.time["servers"],
-                                    "previous": self.time["servers"], "time": time.time()}
                 e = D.Err("E_TIME_UNREACHABLE_ROLLED_BACK", None, "%s could not reach %s within 20 s; "
                           "the previous servers are back" % (self.time["unit"], " ".join(servers)))
                 raise e
-            prev = self.time["servers"]
-            self.time.update(servers=servers, synced=reached, reference=servers[0] if reached else None)
-            self.time_change = {"id": "", "result": "applied" if reached else "applied_unverified",
-                                "servers": servers, "previous": prev, "time": time.time()}
+            self.time.update(servers=servers, status="up" if reached else "not_reached")
             res = {"service": self.time["service"], "unit": self.time["unit"], "servers": servers, "reached": reached}
             if not reached:
                 res["warnings"] = ["%s has not reached the new servers yet; kept as asked" % self.time["unit"]]

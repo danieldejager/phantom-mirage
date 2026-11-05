@@ -75,7 +75,6 @@ P = {
     "timedatectl": "/usr/bin/timedatectl",
     "time_service": None,         # tests only; production asks systemd
     "time_journal": "/var/lib/phantom-mirage/timechange.journal",
-    "time_outcome": "/var/lib/phantom-mirage/timechange.last",
 }
 # phantom-mirage-setup writes /etc/default/farpd with this first line; only
 # then does set_network rewrite it (a hand written farpd config is left alone).
@@ -1274,13 +1273,14 @@ def _tool(*argv):
         return -1, ""
 
 
-# chronyc reads chronyd first over its Unix socket /run/chrony/chronyd.sock
-# (some installs set cmdport 0, so there is no UDP command port at all),
-# then over UDP on the loopback command port 127.0.0.1:323. The socket
-# directory is 0750 _chrony, so the unit keeps CAP_DAC_OVERRIDE and can
-# write in /run/chrony, where chronyc binds its own reply socket. The
-# reason of a failure is kept for the journal and the Time card.
-CHRONYC_HOSTS = (("-h", "/run/chrony/chronyd.sock"), ("-h", "127.0.0.1"))
+# chronyc reads chronyd over UDP on the loopback command port 127.0.0.1:323
+# (monitoring commands are allowed from localhost by default). Started as
+# root, chronyc 4.8 and later switches to the chrony user first, which needs
+# setgroups/setuid that the unit does not grant; "-u root" tells it to stay
+# as it is (it then holds no capabilities but CAP_NET_RAW and only talks
+# UDP to loopback). Older chronyc has no -u and never switches, so a usage
+# error is retried without it. The reason of a failure goes to the journal.
+CHRONYC = ("-h", "127.0.0.1")
 
 
 def _tool_err(*argv):
@@ -1292,103 +1292,50 @@ def _tool_err(*argv):
         err = re.sub(r'[\x00-\x1f\x7f]+', " ", r.stderr.decode("utf-8", "replace")).strip()[:200]
         return r.returncode, r.stdout.decode("utf-8", "replace"), err
     except subprocess.TimeoutExpired:
-        return -1, "", "chronyc timed out"
+        return -1, "", "timed out"
     except OSError as e:
-        return -1, "", "could not run chronyc: %s" % (e.strerror or e)
-
-
-def chronyc(*args):
-    """(rc, out, reason) trying loopback, then the Unix socket."""
-    first = None
-    for h in CHRONYC_HOSTS:
-        rc, out, err = _tool_err(P["chronyc"], *h, *args)
-        if rc == 0:
-            return rc, out, None
-        first = first or (err or "chronyc exited with status %d" % rc)
-    return rc, out, first
+        return -1, "", "could not run: %s" % (e.strerror or e)
 
 
 def chrony_sources():
-    """[(name, state, stratum, reach)] from chronyc -n -c sources."""
-    rc, out, _ = chronyc("-n", "-c", "sources")
+    """[{name, state, reach}] from chronyc -n -c sources, or None when
+    chronyd cannot be read (the reason is logged)."""
+    rc, out, err = _tool_err(P["chronyc"], "-u", "root", *CHRONYC, "-n", "-c", "sources")
+    if rc != 0 and ("invalid option" in err or "Usage" in err):
+        rc, out, err = _tool_err(P["chronyc"], *CHRONYC, "-n", "-c", "sources")
+    if rc != 0:
+        log(syslog.LOG_WARNING, "chronyc sources failed: %s" % (err or "exit %d" % rc))
+        return None
     res = []
-    for line in out.splitlines() if rc == 0 else ():
+    for line in out.splitlines():
         f = line.split(",")
         if len(f) >= 6:
-            res.append({"name": f[2], "state": f[1], "stratum": _num(f[3]), "reach": f[5]})
+            res.append({"name": f[2], "state": f[1], "reach": f[5]})
     return res
 
 
-def parse_tracking(out):
-    """The plain 'chronyc tracking' report. offset_s is the sensor clock
-    minus NTP time: positive when it says 'fast of NTP time'."""
-    d = {}
-    for line in out.splitlines():
-        k, sep, v = line.partition(":")
-        if sep:
-            d[k.strip()] = v.strip()
-    if "Reference ID" not in d or "Leap status" not in d:
-        return None
-    m = re.match(r'^([0-9A-Fa-f]{8})\s*(?:\((.*)\))?$', d["Reference ID"])
-    refid, name = (m.group(1).upper(), (m.group(2) or "").strip()) if m else ("", "")
-    off = None
-    m = re.match(r'^([0-9.]+) seconds (fast|slow) of NTP time$', d.get("System time", ""))
-    if m:
-        off = float(m.group(1)) * (1 if m.group(2) == "fast" else -1)
-    leap = d["Leap status"]
-    synced = bool(refid) and refid != "00000000" and leap != "Not synchronised"
-    return {"synced": synced, "reference": (name or refid) if synced else None,
-            "stratum": _num(d.get("Stratum", "")), "offset_s": off, "leap": leap}
+def timesyncd_synced():
+    """True, False, or None when it cannot be read."""
+    rc, out, err = _tool_err(P["timedatectl"], "show", "-p", "NTPSynchronized", "--value")
+    v = {"yes": True, "no": False}.get(out.strip()) if rc == 0 else None
+    if v is None:
+        log(syslog.LOG_WARNING, "timedatectl show failed: %s" % (err or "exit %d" % rc))
+    return v
 
 
-def chrony_tracking():
-    """(tracking dict or None, reason or None)."""
-    rc, out, err = chronyc("tracking")
-    if rc != 0:
-        log(syslog.LOG_WARNING, "chronyc tracking failed: %s" % err)
-        return None, err
-    t = parse_tracking(out)
-    return t, None if t else "chronyc tracking gave an unexpected report"
-
-
-def timesyncd_status():
+def timesyncd_reached():
     rc, out = _tool(P["timedatectl"], "timesync-status")
-    d = {}
     for line in out.splitlines() if rc == 0 else ():
         k, _, v = line.partition(":")
-        d[k.strip()] = v.strip()
-    rc2, sync = _tool(P["timedatectl"], "show", "-p", "NTPSynchronized", "--value")
-    off = None
-    m = re.match(r'^([+-]?[0-9.]+)(us|ms|s|min)$', d.get("Offset", "").replace("\u00b5s", "us").replace(" ", ""))
-    if m:
-        off = float(m.group(1)) * {"us": 1e-6, "ms": 1e-3, "s": 1.0, "min": 60.0}[m.group(2)]
-    st = d.get("Stratum", "")
-    return {"synced": sync.strip() == "yes", "reference": d.get("Server") or None,
-            "stratum": int(st) if st.isdigit() else None, "offset_s": off,
-            "reached": bool(d.get("Packet count", "0").strip("0 ")) or off is not None}
+        if k.strip() == "Packet count":
+            return v.strip().strip("0") != ""
+    return False
 
 
 def time_reached(kind):
     if kind == "chrony":
-        return any(s["reach"] not in ("", "0") for s in chrony_sources())
-    return timesyncd_status()["reached"]
-
-
-def time_outcome():
-    try:
-        with open(P["time_outcome"]) as f:
-            o = json.load(f)
-        return o if isinstance(o, dict) else None
-    except (OSError, ValueError):
-        return None
-
-
-def record_time(rid, result, servers, previous):
-    try:
-        replace_file(P["time_outcome"], json.dumps({"id": rid, "result": result, "servers": servers,
-                                                    "previous": previous, "time": time.time()}), 0o644)
-    except OSError as e:
-        log(syslog.LOG_ERR, "could not record the time change outcome: %s" % e)
+        return any(s["reach"] not in ("", "0") for s in chrony_sources() or ())
+    return timesyncd_reached()
 
 
 def chrony_ready():
@@ -1412,24 +1359,28 @@ def chrony_ready():
 
 
 def op_timeinfo():
+    """The servers set and one status: up (synchronised with a source),
+    not_reached (running, no source selected yet), not_running, or
+    unreadable (the reason is in the journal only)."""
     kind, unit = time_service()
-    r = {"service": kind, "unit": unit, "active": False, "servers": [], "synced": False,
-         "reference": None, "stratum": None, "offset_s": None, "sources": [],
-         "ready": None, "read_error": None, "last_change": time_outcome(), "max_servers": MAX_SERVERS}
+    r = {"service": kind, "unit": unit, "servers": [], "status": "unreadable",
+         "ready": None, "max_servers": MAX_SERVERS}
     if not kind:
         r["ready"] = "no time service (chrony or systemd-timesyncd) is installed"
         return r
-    r["active"] = systemctl("is-active", unit)[1] == "active"
     r["servers"] = read_servers(kind)
     if kind == "chrony":
         r["ready"] = chrony_ready()
-        t, r["read_error"] = chrony_tracking() if r["active"] else (None, None)
-        r["sources"] = chrony_sources() if r["active"] else []
+    if systemctl("is-active", unit)[1] != "active":
+        r["status"] = "not_running"
+    elif kind == "chrony":
+        src = chrony_sources()
+        if src is not None:
+            r["status"] = "up" if any(x["state"] == "*" for x in src) else "not_reached"
     else:
-        t = timesyncd_status() if r["active"] else None
-        t and t.pop("reached", None)
-    if t:
-        r.update({k: t[k] for k in ("synced", "reference", "stratum", "offset_s")})
+        v = timesyncd_synced()
+        if v is not None:
+            r["status"] = "up" if v else "not_reached"
     return r
 
 
@@ -1463,7 +1414,6 @@ def recover_time_journal():
             pass
     clear_time_journal()
     systemctl("restart", unit)
-    record_time(str(j.get("id", "")), "interrupted", j.get("previous") or [], j.get("previous") or [])
     log(syslog.LOG_CRIT, "interrupted time change %s: previous servers restored" % j.get("id", "?"))
     return True
 
@@ -1526,7 +1476,6 @@ def set_time(helper, args, actor, rid):
             clear_time_journal()
             rc2, _ = systemctl("restart", unit)
             ok = rc2 == 0 and systemctl("is-active", unit)[1] == "active"
-            record_time(rid, "rolled_back" if ok else "rollback_failed", old_servers, old_servers)
             e = Err(code if ok else "E_ROLLBACK_FAILED", None, msg + ("; the previous servers are back"
                     if ok else "; %s is not running after restoring the previous servers" % unit))
             e.reloaded, e.rolled_back = True, True
@@ -1541,7 +1490,6 @@ def set_time(helper, args, actor, rid):
                  "%s could not reach %s within %d s" % (unit, " ".join(servers), int(T["time_wait"])))
         clear_time_journal()
         result = "applied" if reached else "applied_unverified"
-        record_time(rid, result, servers, old_servers)
         log(syslog.LOG_INFO, "id=%s time servers %s -> %s (%s, %s)" % (
             rid, " ".join(old_servers) or "-", " ".join(servers), unit, result))
         res = {"service": kind, "unit": unit, "servers": servers, "reached": reached}

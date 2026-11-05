@@ -936,8 +936,8 @@ class DecoyTime(DecoyStopStart):
     def test_timeinfo(self):
         st, j = self.c.req("GET", "/api/decoyd/timeinfo")
         self.assertEqual(st, 200)
-        self.assertEqual((j["result"]["service"], j["result"]["servers"], j["result"]["synced"]),
-                         ("chrony", ["192.168.1.5"], True))
+        self.assertEqual((j["result"]["service"], j["result"]["servers"], j["result"]["status"]),
+                         ("chrony", ["192.168.1.5"], "up"))
 
     def test_change(self):
         st, j = self.st(["192.168.1.6", "ntp.lan"])
@@ -948,8 +948,6 @@ class DecoyTime(DecoyStopStart):
         a = pmstore.read_audit()[0]
         self.assertEqual(a["action"], "decoy-set_time")
         self.assertIn("time servers 192.168.1.6 ntp.lan applied, chrony.service restarted, server reached", a["detail"])
-        lc = self.c.req("GET", "/api/decoyd/timeinfo")[1]["result"]["last_change"]
-        self.assertEqual((lc["result"], lc["previous"]), ("applied", ["192.168.1.5"]))
 
     def test_unreachable_and_keep(self):
         self.h.unreachable = {"192.168.1.9"}

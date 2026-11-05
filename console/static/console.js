@@ -672,18 +672,13 @@ ${timeCard(c)}
 /* ---- Time: the NTP servers of chrony or systemd-timesyncd. The helper
    checks the servers again, restarts only the time service, waits for it
    to reach one and rolls back if it does not (unless kept anyway). ---- */
-function offs(v) { if (typeof v !== "number") return "unknown"; const a = Math.abs(v); return (v < 0 ? "-" : "+") + (a < 0.001 ? (a * 1e6).toFixed(0) + " \u00b5s" : a < 1 ? (a * 1e3).toFixed(1) + " ms" : a.toFixed(2) + " s"); }
 function timeCard(c) {
   const t = data.ti || {}, ntp = c.time_source === "ntp";
   const can = ntp && !t.error && t.service && !t.ready;
-  const st = t.error ? "" : !t.service ? "" : !t.active ? '<span class="bad">not running</span>' : t.read_error ? '<span class="bad">unknown</span>' : t.synced ? '<span class="ok">synchronised</span>' : '<span class="bad">not synchronised</span>';
-  const lc = t.last_change, lct = lc ? {applied: "applied", applied_unverified: "applied, server not reached yet", rolled_back: "rolled back", rollback_failed: "rollback failed", interrupted: "interrupted, undone"}[lc.result] || lc.result : "";
+  const st = {up: ["ok", "Up and running"], not_reached: ["bad", "Not reachable yet"], not_running: ["bad", "Not running"]}[t.status] || ["bad", "Cannot be read right now"];
   return `<div class="card" id="timecard"><div class="k">Time</div>
-<p>${ntp ? "Source: NTP on the local network" : "Console time source: this browser at each sign-in"}</p>${t.service ? `<p>Sensor clock: <code>${esc(t.unit)}</code></p>` : ""}
-${t.error ? `<p class="note" id="tunavail">Time status unavailable: ${esc(t.error)}</p>` : !t.service ? `<p class="note bad" id="tunavail">${esc(t.ready || "no time service found")}</p>` : `<table class="kv" id="tinfo"><tr><th>Servers</th><td id="tsrv">${(t.servers || []).length ? t.servers.map(x => "<code>" + esc(x) + "</code>").join(" ") : (t.sources || []).length ? t.sources.map(x => "<code>" + esc(x.name) + "</code>").join(" ") + '<br><span class="note">set by the system, not by Mirage</span>' : "none"}</td></tr><tr><th>Status</th><td id="tsync">${st}</td></tr><tr><th>Offset</th><td id="toff">${esc(offs(t.offset_s))}</td></tr><tr><th>Stratum</th><td>${esc(t.stratum == null ? "unknown" : t.stratum)}</td></tr><tr><th>Reference</th><td>${esc(t.reference || "none")}</td></tr>${lc ? `<tr><th>Last change</th><td id="tlast">${esc(lct)}, ${esc(when(new Date(lc.time * 1000).toISOString()))}</td></tr>` : ""}</table>`}
-${t.read_error && t.service ? `<p class="note bad" id="treaderr">Could not read the time service: ${esc(t.read_error)}</p>` : ""}
-${t.ready && t.service ? `<p class="note bad">${esc(t.ready)}. Run <code>sudo phantom-mirage-setup --reconfigure-console</code> and choose local NTP.</p>` : ""}
-<p class="note">Warns when the sensor clock is more than ${esc(c.drift_warn_seconds)} s off.${ntp ? "" : " To use an NTP server instead, run <code>sudo phantom-mirage-setup --reconfigure-console</code> on the sensor."}</p>
+${!ntp ? '<p>Console time source: this browser at each sign-in. To use an NTP server, run <code>sudo phantom-mirage-setup --reconfigure-console</code> on the sensor.</p>' : t.error || !t.service ? `<p class="note bad" id="tunavail">${esc(t.service ? "" : t.ready || "") || "The time service cannot be read right now."}</p>` : `<table class="kv" id="tinfo"><tr><th>NTP servers</th><td id="tsrv">${(t.servers || []).length ? t.servers.map(x => "<code>" + esc(x) + "</code>").join(" ") : "none set"}</td></tr><tr><th>Status</th><td id="tsync"><span class="${st[0]}">${st[1]}</span></td></tr></table>`}
+${ntp && t.ready && t.service ? `<p class="note bad">${esc(t.ready)}. Run <code>sudo phantom-mirage-setup --reconfigure-console</code> and choose local NTP.</p>` : ""}
 ${can ? '<button data-act="time" id="timechange">Change time servers</button>' : ""}<div id="tmsg" role="status"></div></div>`;
 }
 function timeDialog() {
@@ -724,7 +719,7 @@ async function timePoll() {
     if (cur !== "Settings" || $("modal").classList.contains("open")) return;
     try { data.ti = (await api("/api/decoyd/timeinfo")).result; } catch (e) { return; }
     if (cur === "Settings" && $("timecard")) $("timecard").outerHTML = timeCard(data.settings);
-    if (data.ti.synced) return;
+    if (data.ti.status === "up") return;
   }
 }
 async function timeApply() {

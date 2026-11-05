@@ -18,9 +18,11 @@ RuntimeDirectoryMode=0700
 RuntimeDirectoryPreserve=yes
 # CAP_NET_RAW: --verify-config opens the sensor INTERFACE for real
 # (eth_open), which fails without it. Same reason there is no
-# PrivateNetwork=: the interface must be visible. CAP_DAC_OVERRIDE:
-# chronyc reaches chronyd through /run/chrony (0750 _chrony).
-CapabilityBoundingSet=CAP_NET_RAW CAP_DAC_OVERRIDE
+# PrivateNetwork=: the interface must be visible. Nothing else: chronyc
+# runs with "-u root" so it does not try to switch user (no CAP_SETUID or
+# CAP_SETGID needed) and reads chronyd over loopback UDP (no access to
+# /run/chrony needed).
+CapabilityBoundingSet=CAP_NET_RAW
 NoNewPrivileges=yes
 ProtectSystem=strict
 # /etc/default: the address block change (set_network) rewrites
@@ -32,7 +34,7 @@ ProtectSystem=strict
 # one in use; "-" skips a directory that is not there). timedatectl uses
 # D-Bus (AF_UNIX).
 ReadWritePaths=/etc/phantom-mirage /var/lib/phantom-mirage /etc/default
-ReadWritePaths=-/etc/chrony/sources.d -/etc/systemd/timesyncd.conf.d -/run/chrony
+ReadWritePaths=-/etc/chrony/sources.d -/etc/systemd/timesyncd.conf.d
 ProtectHome=yes
 PrivateTmp=yes
 ProtectKernelModules=yes
@@ -41,8 +43,7 @@ ProtectKernelLogs=yes
 ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes
-# Loopback only: when chronyd's Unix socket fails, chronyc falls back to
-# the command port on 127.0.0.1:323.
+# Loopback only: chronyc reads chronyd's command port on 127.0.0.1:323.
 IPAddressDeny=any
 IPAddressAllow=localhost 127.0.0.0/8 ::1/128
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_PACKET AF_NETLINK

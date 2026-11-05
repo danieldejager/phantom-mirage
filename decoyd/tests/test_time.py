@@ -10,6 +10,8 @@ import unittest
 from test_decoyd import Base, D
 
 ORIG_OWN = D.own_addresses
+DROP = 'case "$1 $2" in "-u root") ;; *) echo "setgroups() failed : Operation not permitted" >&2; exit 1 ;; esac'
+OLD = 'case "$1" in -u) echo "chronyc: invalid option -- \'u\'" >&2; echo "Usage: chronyc [OPTION]" >&2; exit 1 ;; esac'
 
 FAKE_SYSTEMCTL = r"""#!/bin/sh
 D=@D@
@@ -29,6 +31,9 @@ exit 0
 FAKE_CHRONYC = r"""#!/bin/sh
 D=@D@
 echo "$*" >> "$D/chronyc_calls"
+# chronyc 4.8 as root switches to the chrony user unless "-u root"; the
+# unit denies that, as on a real sensor.
+case "$1 $2" in "-u root") ;; *) echo "setgroups() failed : Operation not permitted" >&2; exit 1 ;; esac
 case "$*" in
 *sources*) if [ -s "$D/reach" ]; then sed "s/@R@/$(cat "$D/reach")/" "$D/sources"; fi ;;
 *tracking*) cat "$D/tracking" ;;
@@ -45,50 +50,6 @@ esac
 
 CHRONY_CONF = ("confdir /etc/chrony/conf.d\n#pm-disabled pool ntp.ubuntu.com iburst\n"
                "sourcedir /run/chrony-dhcp\nsourcedir @SD@\n")
-TRACKING = """Reference ID    : C0A80105 (192.168.1.5)
-Stratum         : 3
-Ref time (UTC)  : Thu Nov 05 08:20:11 2026
-System time     : 0.000123000 seconds slow of NTP time
-Last offset     : -0.000000100 seconds
-RMS offset      : 0.000000100 seconds
-Frequency       : 1.200 ppm fast
-Residual freq   : +0.010 ppm
-Skew            : 0.100 ppm
-Root delay      : 0.002000000 seconds
-Root dispersion : 0.001000000 seconds
-Update interval : 64.0 seconds
-Leap status     : Normal
-"""
-# What chronyc tracking printed on an Ubuntu 26.04 arm64 VM before setup,
-# with chrony on its default NTS pools (the regression this pins down).
-TRACKING_UBUNTU = """Reference ID    : 5BBD5B70 (ntp-nts-2.ps6.canonical.com)
-Stratum         : 3
-Ref time (UTC)  : Thu Nov 05 08:29:41 2026
-System time     : 0.000747161 seconds fast of NTP time
-Last offset     : -0.000000672 seconds
-RMS offset      : 0.000000672 seconds
-Frequency       : 9.873 ppm fast
-Residual freq   : -0.000 ppm
-Skew            : 0.032 ppm
-Root delay      : 0.369115323 seconds
-Root dispersion : 0.003040781 seconds
-Update interval : 1036.9 seconds
-Leap status     : Normal
-"""
-TRACKING_UNSYNC = """Reference ID    : 00000000 ()
-Stratum         : 0
-Ref time (UTC)  : Thu Jan 01 00:00:00 1970
-System time     : 0.000000000 seconds fast of NTP time
-Last offset     : +0.000000000 seconds
-RMS offset      : 0.000000000 seconds
-Frequency       : 9.873 ppm fast
-Residual freq   : +0.000 ppm
-Skew            : 0.000 ppm
-Root delay      : 1.000000000 seconds
-Root dispersion : 1.000000000 seconds
-Update interval : 0.0 seconds
-Leap status     : Not synchronised
-"""
 TSS = ("       Server: 192.168.1.5 (192.168.1.5)\nPoll interval: 32s (min: 32s; max 34min 8s)\n"
        "         Leap: normal\n      Stratum: 3\n    Reference: C0A80101\n       Offset: -1.234ms\n"
        " Packet count: 2\n")
@@ -111,14 +72,13 @@ class TimeBase(Base):
         self.w("chrony/sources.d/phantom-mirage.sources", "server 192.168.1.5 iburst\n")
         self.w("timesyncd.conf.d/phantom-mirage.conf", "[Time]\nNTP=192.168.1.5\nFallbackNTP=\n")
         self.w("sources", "^,*,192.168.1.5,3,6,@R@,10,0.0001,0.0001,0.001\n")
-        for k, v in (("tactive", "active"), ("trestart", "ok"), ("reach", "377"), ("tracking", TRACKING),
+        for k, v in (("tactive", "active"), ("trestart", "ok"), ("reach", "377"),
                      ("tss", TSS), ("ntpsync", "yes"), ("calls", "")):
             self.w(k, v + ("\n" if v and not v.endswith("\n") else ""))
         D.P.update({"chrony_conf": self.p("chrony/chrony.conf"), "chrony_src": src,
                     "timesyncd_dropin": drop, "chronyc": self.p("chronyc"),
                     "timedatectl": self.p("timedatectl"), "time_service": self.kind,
-                    "time_journal": self.p("run/timechange.journal"),
-                    "time_outcome": self.p("run/timechange.last")})
+                    "time_journal": self.p("run/timechange.journal")})
         D.T.update(time_wait=0.3)
         self.src = src if self.kind == "chrony" else drop
 
@@ -169,15 +129,10 @@ class TestChrony(TimeBase):
     def test_timeinfo(self):
         r = self.req("timeinfo")
         self.assertTrue(r["ok"], r)
-        t = r["result"]
-        self.assertEqual((t["service"], t["unit"], t["active"], t["servers"]),
-                         ("chrony", "chrony.service", True, ["192.168.1.5"]))
-        self.assertEqual((t["synced"], t["reference"], t["stratum"], t["offset_s"], t["ready"]),
-                         (True, "192.168.1.5", 3, -0.000123, None))
+        self.assertEqual(r["result"], {"service": "chrony", "unit": "chrony.service", "servers": ["192.168.1.5"],
+                                       "status": "up", "ready": None, "max_servers": D.MAX_SERVERS})
         for c in self.r("chronyc_calls").splitlines():
-            self.assertTrue(c.startswith("-h /run/chrony/chronyd.sock "), c)
-        self.assertIsNone(t["read_error"])
-        self.assertEqual(t["sources"][0]["reach"], "377")
+            self.assertTrue(c.startswith("-u root -h 127.0.0.1 "), c)
 
     def test_set_time_refuses_own_and_loopback(self):
         D.own_addresses = lambda: {D.ipaddress.IPv4Address("192.168.1.20"), D.ipaddress.IPv4Address("127.0.0.1")}
@@ -192,50 +147,35 @@ class TestChrony(TimeBase):
         finally:
             D.own_addresses = ORIG_OWN
 
-    def test_not_synced(self):
-        self.w("tracking", TRACKING_UNSYNC)
-        t = self.req("timeinfo")["result"]
-        self.assertEqual((t["synced"], t["reference"], t["stratum"], t["offset_s"]), (False, None, 0, 0.0))
+    def test_not_reached(self):
+        self.w("sources", "^,?,192.168.1.5,0,6,0,10,0.0001,0.0001,0.001\n")
+        self.assertEqual(self.req("timeinfo")["result"]["status"], "not_reached")
+        self.w("tactive", "inactive\n")
+        self.assertEqual(self.req("timeinfo")["result"]["status"], "not_running")
 
-    def test_ubuntu_default_pools_before_setup(self):
-        # setup not run: no Mirage server file, Ubuntu NTS pools active
+    def test_before_setup(self):
         os.unlink(self.src)
         self.w("chrony/sources.d/ubuntu-ntp-pools.sources", "pool 1.ntp.ubuntu.com iburst nts\n")
-        self.w("tracking", TRACKING_UBUNTU)
-        self.w("sources", "^,*,91.189.91.112,2,10,@R@,40,0.0001,0.0001,0.02\n")
         t = self.req("timeinfo")["result"]
-        self.assertEqual((t["synced"], t["reference"], t["stratum"], t["servers"]),
-                         (True, "ntp-nts-2.ps6.canonical.com", 3, []))
-        self.assertAlmostEqual(t["offset_s"], 0.000747161)
-        self.assertEqual([x["name"] for x in t["sources"]], ["91.189.91.112"])
+        self.assertEqual((t["servers"], t["status"]), ([], "up"))
         self.assertIn("ubuntu-ntp-pools.sources", t["ready"])
-
-    def test_tracking_parse(self):
-        self.assertAlmostEqual(D.parse_tracking(TRACKING_UBUNTU)["offset_s"], 0.000747161)
-        slow = TRACKING_UBUNTU.replace("seconds fast of NTP", "seconds slow of NTP")
-        self.assertAlmostEqual(D.parse_tracking(slow)["offset_s"], -0.000747161)
-        self.assertTrue(D.parse_tracking(slow)["synced"])
-        noname = TRACKING_UBUNTU.replace("5BBD5B70 (ntp-nts-2.ps6.canonical.com)", "5BBD5B70 ()")
-        self.assertEqual(D.parse_tracking(noname)["reference"], "5BBD5B70")
-        self.assertIsNone(D.parse_tracking(""))
-        self.assertIsNone(D.parse_tracking("506 Cannot talk to daemon\n"))
 
     def test_chronyc_fails(self):
         self.w("chronyc", "#!/bin/sh\necho '506 Cannot talk to daemon' >&2\nexit 1\n")
-        t = self.req("timeinfo")["result"]
-        self.assertEqual((t["synced"], t["stratum"], t["sources"]), (False, None, []))
-        self.assertEqual(t["read_error"], "506 Cannot talk to daemon")
+        logged = []
+        orig, D.log = D.log, lambda pri, msg: logged.append(msg)
+        try:
+            t = self.req("timeinfo")["result"]
+        finally:
+            D.log = orig
+        self.assertEqual(t["status"], "unreadable")
+        self.assertNotIn("506", json.dumps(t))
+        self.assertIn("chronyc sources failed: 506 Cannot talk to daemon", logged)
 
-    def test_chronyc_falls_back_to_loopback(self):
-        self.w("chronyc", FAKE_CHRONYC.replace("@D@", self.d).replace(
-            'echo "$*" >> "$D/chronyc_calls"',
-            'echo "$*" >> "$D/chronyc_calls"\ncase "$2" in /run/*) printf "506 Cannot talk to daemon\\033[0m\\n" >&2; exit 1 ;; esac'))
-        t = self.req("timeinfo")["result"]
-        self.assertEqual((t["synced"], t["reference"], t["read_error"]), (True, "192.168.1.5", None))
-        calls = self.r("chronyc_calls").splitlines()
-        self.assertIn("-h /run/chrony/chronyd.sock tracking", calls)
-        self.assertIn("-h 127.0.0.1 tracking", calls)
-        self.assertLess(calls.index("-h /run/chrony/chronyd.sock tracking"), calls.index("-h 127.0.0.1 tracking"))
+    def test_old_chronyc_without_u(self):
+        self.w("chronyc", FAKE_CHRONYC.replace("@D@", self.d).replace(DROP, OLD))
+        self.assertEqual(self.req("timeinfo")["result"]["status"], "up")
+        self.assertEqual(self.r("chronyc_calls").splitlines()[-1], "-h 127.0.0.1 -n -c sources")
 
     def test_apply(self):
         r = self.set(["192.168.1.6", "ntp.lan"])
@@ -249,8 +189,6 @@ class TestChrony(TimeBase):
         self.assertIn("restart chrony.service", self.tcalls())
         self.assertFalse([c for c in self.tcalls() if "phantom-mirage" in c])
         self.assertFalse(os.path.exists(D.P["time_journal"]))
-        o = self.req("timeinfo")["result"]["last_change"]
-        self.assertEqual((o["result"], o["servers"], o["previous"]), ("applied", ["192.168.1.6", "ntp.lan"], ["192.168.1.5"]))
 
     def test_unreachable_rolls_back(self):
         self.w("reach", "0\n")
@@ -260,7 +198,6 @@ class TestChrony(TimeBase):
         self.assertTrue(r["rolled_back"])
         self.assertEqual(self.r("chrony/sources.d/phantom-mirage.sources"), "server 192.168.1.5 iburst\n")
         self.assertEqual([c for c in self.tcalls() if c.startswith("restart")], ["restart chrony.service"] * 2)
-        self.assertEqual(D.time_outcome()["result"], "rolled_back")
 
     def test_keep_anyway(self):
         self.w("reach", "0\n")
@@ -269,7 +206,6 @@ class TestChrony(TimeBase):
         self.assertFalse(r["result"]["reached"])
         self.assertIn("kept as asked", r["result"]["warnings"][0])
         self.assertIn("192.168.1.6", self.r("chrony/sources.d/phantom-mirage.sources"))
-        self.assertEqual(D.time_outcome()["result"], "applied_unverified")
 
     def test_restart_fails(self):
         self.w("trestart", "failonce\n")
@@ -281,7 +217,6 @@ class TestChrony(TimeBase):
         self.w("trestart", "fail\n")
         r = self.set(["192.168.1.6"])
         self.assertEqual(r["error"]["code"], "E_ROLLBACK_FAILED")
-        self.assertEqual(D.time_outcome()["result"], "rollback_failed")
 
     def test_refusals(self):
         self.assertEqual(self.set(["192.168.1.6"], expect=["1.1.1.1"])["error"]["code"], "E_CONFLICT")
@@ -331,10 +266,12 @@ class TestTimesyncd(TimeBase):
 
     def test_timeinfo(self):
         t = self.req("timeinfo")["result"]
-        self.assertEqual((t["service"], t["unit"], t["servers"], t["synced"], t["stratum"]),
-                         ("timesyncd", "systemd-timesyncd.service", ["192.168.1.5"], True, 3))
-        self.assertAlmostEqual(t["offset_s"], -0.001234)
-        self.assertEqual(t["reference"], "192.168.1.5 (192.168.1.5)")
+        self.assertEqual((t["service"], t["unit"], t["servers"], t["status"]),
+                         ("timesyncd", "systemd-timesyncd.service", ["192.168.1.5"], "up"))
+        self.w("ntpsync", "no\n")
+        self.assertEqual(self.req("timeinfo")["result"]["status"], "not_reached")
+        self.w("ntpsync", "\n")
+        self.assertEqual(self.req("timeinfo")["result"]["status"], "unreadable")
 
     def test_apply(self):
         r = self.set(["192.168.1.6", "ntp.lan", "192.168.1.7"])
@@ -380,5 +317,4 @@ class TestUnitFile(unittest.TestCase):
         self.assertEqual([l for l in lines if l.startswith("IPAddressAllow=")], ["IPAddressAllow=localhost 127.0.0.0/8 ::1/128"])
         fam = [l for l in lines if l.startswith("RestrictAddressFamilies=")][0].split("=")[1].split()
         self.assertTrue({"AF_UNIX", "AF_INET", "AF_INET6"} <= set(fam))
-        self.assertIn("CAP_DAC_OVERRIDE", [l for l in lines if l.startswith("CapabilityBoundingSet=")][0])
-        self.assertTrue(any(l.startswith("ReadWritePaths=") and "-/run/chrony" in l.split() for l in lines))
+        self.assertIn("CapabilityBoundingSet=CAP_NET_RAW", lines)
