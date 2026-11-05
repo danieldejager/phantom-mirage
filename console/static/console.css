@@ -135,3 +135,15 @@ button.ssi{padding:4px 8px;line-height:0}button.ssi svg{vertical-align:middle}bu
 .sys{border-top:1px solid var(--b);padding-top:14px}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media(prefers-reduced-motion:reduce){.live.beat .pulse,.chart{animation:none}}
+
+/* Dashboard drill-down */
+[data-drill]{cursor:pointer}
+.kpi[data-drill]:hover{border-color:var(--a)}.brow:hover .bar,.brow:focus .bar{fill:var(--a2)}.brow:hover .blab{text-decoration:underline}
+.seg[data-drill]:hover,.seg[data-drill]:focus{stroke-width:24}
+.hit{fill:transparent}.hit:hover,.hit:focus{fill:color-mix(in srgb,var(--a) 14%,transparent)}
+[data-drill]:focus{outline:none}[data-drill]:focus-visible{outline:2px solid var(--a);outline-offset:2px}
+.lgb{border:0;background:none;color:inherit;font:inherit;padding:2px 4px;display:flex;align-items:center;gap:8px;border-radius:4px}.lgb:hover{background:var(--h)}
+.chip{display:inline-flex;align-items:center;gap:8px;background:var(--h);border:1px solid var(--a);border-radius:14px;padding:2px 4px 2px 12px;font-size:13px}.chip button{padding:2px 8px;border-radius:10px}
+#fwinrow:empty{display:none}
+@media(prefers-reduced-motion:reduce){.seg[data-drill]:hover,.seg[data-drill]:focus{stroke-width:18}}
+.brow:focus-visible .btrack,.brow:focus .btrack{stroke:var(--a);stroke-width:1.5}.hit:focus-visible{stroke:var(--a);stroke-width:2}

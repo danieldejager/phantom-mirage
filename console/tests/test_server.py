@@ -526,6 +526,28 @@ class DecoyStopStart(unittest.TestCase):
         with open(self.conf) as f:
             self.assertNotIn("bind", f.read())
 
+    def test_dashboard_drilldown(self):
+        """Dashboard chart parts open Activity with matching filters; they are
+        keyboard reachable and the time window shows as a clearable chip."""
+        with open(os.path.join(os.path.dirname(__file__), "..", "static", "console.js")) as f:
+            js = f.read()
+        for k in ('data-drill="proto"', 'data-drill="win"', 'data-drill="${id === "dbd" ? "decoy" : "src"}"', 'data-drill="${id}"'):
+            self.assertIn(k, js)
+        self.assertIn("Show ${p} events in Activity", js)
+        d = js[js.index("function drill("):js.index("function topN")]
+        for k in ("F.proto = v", "F.decoy = v", "F.src = v", "F.from = +el.dataset.from", 'go("Alerts")', 'go("Decoys")', 'go("Activity")'):
+            self.assertIn(k, d)
+        self.assertIn('(e.key === "Enter" || e.key === " ") && e.target.closest && e.target.closest("[data-drill]")', js)
+        self.assertIn("(!F.from || inWin(e.ts))", js)
+        self.assertIn('data-act="winclear"', js)
+        self.assertIn('case "winclear": F.from = F.to = 0; $("fwinrow").innerHTML = ""; rt();', js)
+        self.assertIn('data-act="fclear"', js)
+        self.assertNotIn("style=", js[js.index("function winChip"):js.index("function Activity")])
+        with open(os.path.join(os.path.dirname(__file__), "..", "static", "console.css")) as f:
+            css = f.read()
+        self.assertIn("[data-drill]{cursor:pointer}", css)
+        self.assertIn("[data-drill]:focus-visible", css)
+
     def test_dashboard_page(self):
         """Dashboard is the landing page: SVG metrics that a live refresh
         updates in place, then the system status cards under their own heading."""
