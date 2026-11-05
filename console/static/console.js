@@ -4,7 +4,7 @@
 (function () {
 const $ = id => document.getElementById(id);
 const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"})[c]);
-let CSRF = "", SESSION = {}, cur = "Status", timer = null, paused = false;
+let CSRF = "", SESSION = {}, cur = "Dashboard", timer = null, paused = false;
 let data = {status: null, decoys: null, alerts: null, activity: [], audit: [], settings: null};
 let F = {src: "", decoy: "", proto: "", event: ""};
 
@@ -80,12 +80,13 @@ function start() {
 
 /* ---- data ---- */
 async function load(p) {
-  if (p === "Status") data.status = await api("/api/status");
+  if (p === "Dashboard") data.status = await api("/api/status");
+  if (p === "Dashboard") { data.decoys = await api("/api/decoys"); data.dact = (await api("/api/activity")).events; }
   if (p === "Decoys" || p === "Activity") data.decoys = await api("/api/decoys");
   if (p === "Decoys") data.ni = await api("/api/decoyd/netinfo").then(j => j.result, e => { if (e.message === "signed out") throw e; return {error: e.message}; });
   if (p === "Decoys") netSettle();
   if (p === "Decoys") data.dd = await api("/api/decoyd/list").then(j => ({map: Object.fromEntries(j.result.decoys.map(x => [x.ip, x]))}), e => { if (e.message === "signed out") throw e; return {error: e.message}; });
-  if (p === "Alerts" || p === "Status") data.alerts = await api("/api/alerts");
+  if (p === "Alerts" || p === "Dashboard") data.alerts = await api("/api/alerts");
   if (p === "Activity" && !paused) data.activity = (await api("/api/activity")).events;
   if (p === "Settings") { data.settings = await api("/api/settings"); data.audit = (await api("/api/audit")).audit; data.alerts = await api("/api/alerts"); }
   if (!data.status) data.status = await api("/api/status");
@@ -114,7 +115,10 @@ async function refresh() {
   try {
     await load(cur);
     /* Activity: update the table in place so the search box keeps focus and caret */
-    if (cur === "Activity" && $("fsrc")) actUpdate(); else render();
+    if (cur === "Activity" && $("fsrc")) actUpdate();
+    /* Dashboard: charts and counters animate to the new values in place */
+    else if (cur === "Dashboard" && $("dash")) dashUpdate();
+    else render();
   } catch (e) { /* shown on next action */ }
 }
 async function go(p) {
@@ -123,29 +127,124 @@ async function go(p) {
 }
 
 /* ---- rendering ---- */
-const ICONS = {Status: "\u25C9", Decoys: "\u25C8", Alerts: "\u26A0", Activity: "\u2248", Settings: "\u2699"};
-const pages = {Status, Decoys, Alerts, Activity, Settings};
+const ICONS = {Dashboard: "\u25C9", Decoys: "\u25C8", Alerts: "\u26A0", Activity: "\u2248", Settings: "\u2699"};
+const pages = {Dashboard, Decoys, Alerts, Activity, Settings};
 function openAlerts() { return data.alerts ? data.alerts.alerts.filter(a => a.status === "Open").length : 0; }
 function nav() {
   const n = openAlerts();
   $("nav").innerHTML = Object.keys(pages).map(p => `<a href="#" class="${p === cur ? "on" : ""}" data-go="${p}" data-tip="${p}" title="${p}" aria-label="${p}${p === "Alerts" && n ? ", " + n + " open" : ""}"${p === cur ? ' aria-current="page"' : ""}><span class="ic" aria-hidden="true">${ICONS[p]}</span><span class="lb">${p}</span>${p === "Alerts" && n ? `<span class="badge">${n}</span>` : ""}</a>`).join("");
 }
-function render() { nav(); $("main").innerHTML = pages[cur](); if (cur === "Activity") rt(); }
+function render() { nav(); $("main").innerHTML = pages[cur](); if (cur === "Activity") rt(); if (cur === "Dashboard") dashUpdate(); }
 function card(k, v) { return `<div class="card"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`; }
 function dot(c) { return `<span class="dot ${c}"></span>`; }
 function svc(s) { return s === "active" ? dot("g") + "Running" : s === "inactive" ? dot("r") + "Stopped" : s === "failed" ? dot("r") + "Failed" : dot("y") + esc(s || "unknown"); }
 function when(ts) { if (!ts) return "never"; const t = Date.parse(ts); if (isNaN(t)) return esc(ts); const s = Math.round((Date.now() - t) / 1000); return s < 60 ? s + " s ago" : s < 3600 ? Math.round(s / 60) + " min ago" : s < 86400 ? Math.round(s / 3600) + " h ago" : new Date(t).toLocaleString(); }
 function tm(ts) { const t = Date.parse(ts); return isNaN(t) ? esc(ts) : esc(new Date(t).toLocaleString()); }
 
-function Status() {
+function Dashboard() { return dashMetrics() + sysStatus(); }
+function sysStatus() {
   const s = data.status, sv = s.services;
   const health = sv["phantom-mirage"] !== "active" ? dot("r") + "Sensor not running" : sv["phantom-mirage-firewall"] !== "active" ? dot("y") + "Firewall not active" : !s.event_log ? dot("y") + "No event log yet" : dot("g") + "OK";
-  return `<h2>Status</h2><div class="cards">
+  return `<section class="sys" aria-labelledby="sysh"><h2 id="sysh">System status</h2><div class="cards">
 ${card("Sensor", esc(s.sensor_name))}${card("Phantom Mirage service", svc(sv["phantom-mirage"]))}${card("farpd (ARP responder)", svc(sv.farpd))}${card("Console firewall", svc(sv["phantom-mirage-firewall"]))}
 ${card("Health", health)}${card("Interface", esc(s.interface || "-"))}${card("Decoy address block", esc(s.network || "-"))}${card("Open alerts", s.open_alerts)}
 ${card("Last activity", when(s.last_activity))}${card("Sensor clock", esc(new Date(s.server_time_ms).toLocaleString()) + `<div class="note">source: ${esc(s.time_source)}${s.ntp_server ? " " + esc(s.ntp_server) : ""}; zone ${esc(s.timezone)}</div>`)}</div>
 <p class="note">Start, stop and reconfigure the sensor on its terminal (<code>sudo phantom-mirage-setup</code>, <code>systemctl</code>). All data stays on the sensor; no outbound connections.</p>
-<p class="note">Console certificate SHA-256: <code>${esc(s.cert_sha256)}</code> · version ${esc(s.version)}</p>`;
+<p class="note">Console certificate SHA-256: <code>${esc(s.cert_sha256)}</code> · version ${esc(s.version)}</p></section>`;
+}
+/* ---- Dashboard metrics: built once, then updated in place by dashUpdate()
+   so a live refresh animates between values instead of rebuilding. All
+   figures come from the console's own events, alerts and decoys. ---- */
+const DWIN = 60, DBK = 12, DTOP = 5, DPROTO = ["TCP", "UDP", "ICMP"], DCIRC = 2 * Math.PI * 52;
+const dstate = {};
+function calm() { return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
+function tween(key, to, draw) {
+  /* start from the values on screen, so an interrupted animation carries on smoothly */
+  const from = dstate[key] && dstate[key].length === to.length ? dstate[key] : to.map(() => 0);
+  const tok = {}; dstate[key + "#"] = tok;
+  const show = v => { dstate[key] = v; draw(v); };
+  if (calm()) { show(to.slice()); return; }
+  const t0 = performance.now(), ms = 700;
+  /* a newer refresh supersedes this animation (tok changes) */
+  const step = now => { if (dstate[key + "#"] !== tok) return; const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3); show(from.map((f, i) => f + (to[i] - f) * e)); if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+function barSlots(id, label) {
+  let r = "";
+  for (let i = 0; i < DTOP; i++) r += `<g class="brow" id="${id}${i}"><text class="blab" x="0" y="${i * 30 + 14}"></text><rect class="btrack" x="105" y="${i * 30 + 4}" width="160" height="14" rx="3"></rect><rect class="bar" x="105" y="${i * 30 + 4}" width="0" height="14" rx="3"></rect><text class="bval" x="300" y="${i * 30 + 15}" text-anchor="end"></text></g>`;
+  return `<svg class="bars" id="${id}" viewBox="0 0 300 150" role="img" aria-label="${label}">${r}<text class="dempty" id="${id}e" x="150" y="80" text-anchor="middle">No events in the last hour</text></svg>`;
+}
+function dashMetrics() {
+  const kpi = (id, k) => `<div class="card kpi"><div class="k">${k}</div><div class="v big" id="${id}" aria-live="polite">0</div></div>`;
+  let ax = "";
+  for (let i = 0; i <= DBK; i += 3) ax += `<text class="ax" x="${40 + i * 945 / DBK}" y="192" text-anchor="${i === DBK ? "end" : i ? "middle" : "start"}">${i === DBK ? "now" : "-" + (DWIN - i * DWIN / DBK) + "m"}</text>`;
+  return `<div id="dash"><div class="dhead"><h2>Dashboard</h2><span class="live" id="dlive"><span class="pulse" aria-hidden="true"></span><span id="dlivet">Live</span></span></div>
+<div class="cards kpis">${kpi("kev", "Events (last hour)")}${kpi("kal", "Open alerts")}${kpi("kdc", "Active decoys")}${kpi("ksrc", "Distinct sources (last hour)")}</div>
+<div class="dgrid">
+<figure class="card chart wide"><figcaption class="k">Connections over the last hour (5 minute buckets)</figcaption>
+<svg id="dline" viewBox="0 0 1000 200" role="img" aria-label="Connections over time"><line class="grid" x1="40" y1="170" x2="985" y2="170"></line><line class="grid" x1="40" y1="20" x2="985" y2="20"></line><text class="ax" id="dmax" x="34" y="24" text-anchor="end">0</text><text class="ax" x="34" y="174" text-anchor="end">0</text>${ax}<path class="area" id="darea" d=""></path><path class="line" id="dpath" d=""></path><text class="dempty" id="dlinee" x="512" y="100" text-anchor="middle">No connections in the last hour</text></svg>
+<table class="vh" id="dlinet"><caption>Connections per 5 minute bucket</caption></table></figure>
+<figure class="card chart"><figcaption class="k">Protocol split (last hour)</figcaption>
+<div class="donutw"><svg id="donut" viewBox="0 0 140 140" role="img" aria-label="Protocol split"><circle class="dtrack" cx="70" cy="70" r="52"></circle>${DPROTO.map(p => `<circle class="seg seg-${p.toLowerCase()}" id="dseg${p}" cx="70" cy="70" r="52" stroke-dasharray="0 ${DCIRC}" transform="rotate(-90 70 70)"></circle>`).join("")}<text class="dtot" id="dtot" x="70" y="76" text-anchor="middle">0</text></svg>
+<ul class="legend">${DPROTO.map(p => `<li><span class="sw seg-${p.toLowerCase()}" aria-hidden="true"></span>${p} <b id="dlg${p}">0</b></li>`).join("")}</ul></div></figure>
+<figure class="card chart"><figcaption class="k">Busiest decoys (last hour)</figcaption>${barSlots("dbd", "Busiest decoys")}</figure>
+<figure class="card chart"><figcaption class="k">Top source addresses (last hour)</figcaption>${barSlots("dbs", "Top source addresses")}</figure>
+</div></div>`;
+}
+function topN(rows, f) { const m = {}; rows.forEach(r => { const k = r[f]; if (k) m[k] = (m[k] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, DTOP); }
+function countUp(id, n) {
+  const el = $(id);
+  if (el) tween("k" + id, [n], v => { el.textContent = String(Math.round(v[0])); });
+}
+function barsUpdate(id, top, what) {
+  const max = Math.max(1, ...top.map(t => t[1]));
+  $(id + "e").classList.toggle("hide", top.length > 0);
+  for (let i = 0; i < DTOP; i++) {
+    const g = $(id + i), t = top[i];
+    g.classList.toggle("hide", !t);
+    g.querySelector(".blab").textContent = t ? t[0] : "";
+    g.querySelector(".bval").textContent = t ? String(t[1]) : "";
+  }
+  const to = [...Array(DTOP).keys()].map(i => top[i] ? 160 * top[i][1] / max : 0);
+  tween(id, to, v => v.forEach((w, i) => $(id + i).querySelector(".bar").setAttribute("width", Math.max(0, w).toFixed(1))));
+  $(id).setAttribute("aria-label", what + ": " + (top.length ? top.map(t => t[0] + " " + t[1]).join(", ") : "no events in the last hour"));
+}
+function dashUpdate() {
+  if (!$("dash")) return;
+  nav(); /* keep the Alerts badge in step with the counter */
+  const now = Date.now(), t0 = now - DWIN * 60000, bw = DWIN * 60000 / DBK;
+  const rows = (data.dact || []).filter(r => { const t = Date.parse(r.ts); return !isNaN(t) && t >= t0 && t <= now + 60000; });
+  const dec = data.decoys && data.decoys.decoys ? data.decoys.decoys.filter(x => !x.reserved).length : 0;
+  countUp("kev", rows.length); countUp("kal", openAlerts()); countUp("kdc", dec); countUp("ksrc", new Set(rows.map(r => r.src)).size);
+  /* connections over time: connection.start, or packet for udp/icmp */
+  const conn = rows.filter(r => r.event === "connection.start" || r.proto !== "TCP");
+  const b = Array(DBK).fill(0);
+  conn.forEach(r => { b[Math.min(DBK - 1, Math.max(0, Math.floor((Date.parse(r.ts) - t0) / bw)))]++; });
+  const mx = Math.max(1, ...b);
+  $("dmax").textContent = String(mx);
+  $("dlinee").classList.toggle("hide", conn.length > 0);
+  tween("line", b.map(v => v / mx), v => {
+    const pts = v.map((y, i) => [40 + (i + 0.5) * 945 / DBK, 170 - y * 150]);
+    const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+    $("dpath").setAttribute("d", d);
+    $("darea").setAttribute("d", d + ` L${pts[DBK - 1][0].toFixed(1)} 170 L${pts[0][0].toFixed(1)} 170 Z`);
+  });
+  $("dline").setAttribute("aria-label", "Connections over the last hour, " + conn.length + " in total, peak " + Math.max(...b) + " in 5 minutes");
+  $("dlinet").innerHTML = "<caption>Connections per 5 minute bucket</caption><tr><th>Bucket start</th><th>Connections</th></tr>" + b.map((v, i) => `<tr><td>${esc(new Date(t0 + i * bw).toLocaleTimeString())}</td><td>${v}</td></tr>`).join("");
+  /* protocol donut */
+  const pc = DPROTO.map(p => rows.filter(r => r.proto === p).length), tot = pc.reduce((a, c) => a + c, 0);
+  $("dtot").textContent = String(tot);
+  DPROTO.forEach((p, i) => { $("dlg" + p).textContent = String(pc[i]); });
+  $("donut").setAttribute("aria-label", "Protocol split, last hour: " + DPROTO.map((p, i) => p + " " + pc[i]).join(", "));
+  tween("donut", pc.map(c => tot ? c / tot : 0), v => {
+    let off = 0;
+    DPROTO.forEach((p, i) => { const L = v[i] * DCIRC; const c = $("dseg" + p); c.setAttribute("stroke-dasharray", L.toFixed(2) + " " + DCIRC.toFixed(2)); c.setAttribute("stroke-dashoffset", (-off).toFixed(2)); off += L; });
+  });
+  barsUpdate("dbd", topN(rows, "decoy"), "Busiest decoys");
+  barsUpdate("dbs", topN(rows, "src"), "Top source addresses");
+  /* live pulse: restart the beat on each refresh */
+  const l = $("dlive"); l.classList.remove("beat"); void l.getBoundingClientRect(); l.classList.add("beat");
+  $("dlivet").textContent = "Live · updated " + new Date().toLocaleTimeString();
 }
 function Decoys() {
   const d = data.decoys, dd = data.dd || {};

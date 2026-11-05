@@ -110,3 +110,28 @@ button.ssi{padding:4px 8px;line-height:0}button.ssi svg{vertical-align:middle}bu
 .ptw{display:inline-block;height:13px;aspect-ratio:12.26;background:currentColor;color:var(--tm);-webkit-mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat;mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat}.sptw{height:16px;display:block;margin:0 auto}
 /* MIRAGE wordmark centred in the sidebar pane */
 .nbrand{justify-content:center}
+
+/* Dashboard */
+:root{--udp:#D96BE8}:root[data-theme=light]{--udp:#C0399A}@media(prefers-color-scheme:light){:root:not([data-theme=dark]){--udp:#C0399A}}
+.dhead{display:flex;align-items:center;gap:14px;margin-bottom:12px}.dhead h2{margin:0}
+.live{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--tm)}
+.pulse{width:10px;height:10px;border-radius:50%;background:var(--g);box-shadow:0 0 0 0 color-mix(in srgb,var(--g) 60%,transparent)}
+.live.beat .pulse{animation:pmpulse 1.6s ease-out 2}
+@keyframes pmpulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--g) 60%,transparent)}100%{box-shadow:0 0 0 10px transparent}}
+.kpi .big{font-size:32px;font-weight:600;color:var(--ta);font-variant-numeric:tabular-nums}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin-bottom:22px}
+.chart{margin:0;animation:pmfade .5s ease-out}.chart.wide{grid-column:1/-1}.chart svg{width:100%;height:auto;display:block;margin-top:8px}
+@keyframes pmfade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+#dline .grid{stroke:var(--b);stroke-width:1}#dline .ax,.bars text{fill:var(--tm);font-size:11px}
+#dline .line{fill:none;stroke:var(--a);stroke-width:2.5;stroke-linejoin:round}#dline .area{fill:color-mix(in srgb,var(--a) 22%,transparent)}
+.dempty{fill:var(--tm);font-size:13px}
+.donutw{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.donutw svg{width:150px;flex:none}
+.dtrack{fill:none;stroke:var(--h);stroke-width:18}.seg{fill:none;stroke-width:18}
+.dtot{fill:var(--t);font-size:22px;font-weight:600}
+.seg-tcp{stroke:var(--a);background:var(--a)}.seg-udp{stroke:var(--udp);background:var(--udp)}.seg-icmp{stroke:var(--y);background:var(--y)}
+.legend{list-style:none;margin:0;padding:0;font-size:13px}.legend li{margin:4px 0;display:flex;align-items:center;gap:8px}.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.bars .blab{font-size:11px;fill:var(--t)}.btrack{fill:var(--h)}.bar{fill:var(--a)}#dbs .bar{fill:var(--udp)}
+.bars .bval{font-weight:600}.bars .hide,svg .hide{display:none}
+.sys{border-top:1px solid var(--b);padding-top:14px}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media(prefers-reduced-motion:reduce){.live.beat .pulse,.chart{animation:none}}

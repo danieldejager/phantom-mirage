@@ -526,12 +526,39 @@ class DecoyStopStart(unittest.TestCase):
         with open(self.conf) as f:
             self.assertNotIn("bind", f.read())
 
+    def test_dashboard_page(self):
+        """Dashboard is the landing page: SVG metrics that a live refresh
+        updates in place, then the system status cards under their own heading."""
+        d = os.path.join(os.path.dirname(__file__), "..", "static")
+        with open(os.path.join(d, "console.js")) as f:
+            js = f.read()
+        with open(os.path.join(d, "console.css")) as f:
+            css = f.read()
+        self.assertIn('cur = "Dashboard"', js)
+        self.assertIn("const pages = {Dashboard, Decoys, Alerts, Activity, Settings}", js)
+        self.assertNotIn('"Status"', js)
+        self.assertIn('else if (cur === "Dashboard" && $("dash")) dashUpdate();', js)
+        for i in ('id="dline"', 'id="donut"', 'barSlots("dbd"', 'barSlots("dbs"', 'kpi("kev"', 'kpi("kal"', 'kpi("kdc"', 'kpi("ksrc"', 'class="pulse"', '<h2 id="sysh">System status</h2>'):
+            self.assertIn(i, js)
+        dash = js[js.index("function dashMetrics"):js.index("function Decoys")]
+        self.assertNotIn("style=", dash)
+        self.assertNotIn(".style", dash)
+        self.assertIn('role="img"', dash)
+        self.assertIn("aria-label", dash)
+        self.assertIn("No connections in the last hour", dash)
+        upd = js[js.index("function dashUpdate"):js.index("function Decoys")]
+        self.assertNotIn("innerHTML = dashMetrics", upd)
+        self.assertIn("prefers-reduced-motion: reduce", js)
+        self.assertIn("@media(prefers-reduced-motion:reduce)", css)
+        for card in ("Sensor clock", "Console firewall", "Decoy address block", "Last activity"):
+            self.assertIn(card, js)
+
     def test_activity_filter_live_safe(self):
         """The live refresh must not re-render the Activity filter controls
         (that dropped focus and keystrokes); typing is debounced and Enter applies."""
         with open(os.path.join(os.path.dirname(__file__), "..", "static", "console.js")) as f:
             js = f.read()
-        self.assertIn('if (cur === "Activity" && $("fsrc")) actUpdate(); else render();', js)
+        self.assertIn('if (cur === "Activity" && $("fsrc")) actUpdate();', js)
         upd = js[js.index("function actUpdate"):js.index("const ACT_MAX")]
         self.assertNotIn("fsrc", upd)
         self.assertNotIn('$("main")', upd)
