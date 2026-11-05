@@ -1,0 +1,31 @@
+sequenceDiagram
+  autonumber
+  actor U as Admin (browser)
+  participant C as Console (phantom-mirage-console)
+  participant H as pm-decoyd (root, via socket)
+  participant F as Files (/etc/default, /etc/phantom-mirage, decoys.json)
+  participant P as phantom-mirage.service
+  participant X as farpd + firewall units
+  Note over U,X: Legend: trust boundaries are browser | console (low privilege) | socket + helper (root) | files | sensor units. Solid arrow = request or action, dashed arrow = response. Example block 192.0.2.0/28 is a documentation range. The real helper accepts private ranges only.
+  U->>C: Network section: new block, interface, password
+  C->>C: session, CSRF, password check with back off, audit "requested"
+  C->>H: set_network {network, interface, expect:{network, interface}} (240 s timeout)
+  H->>H: peer uid, envelope, flock, 10 s gap
+  H->>F: read NETWORK and INTERFACE, compare with expect (else E_CONFLICT)
+  H->>H: ip -j -4 addr / route: interfaces, LANs, gateways
+  H->>H: check block: CIDR, at most /24, private, on LAN of interface,<br/>no own address, no gateway, no LAN network or broadcast
+  H->>H: drop overrides outside the new block, render decoys.conf
+  H->>F: rewrite NETWORK= and INTERFACE= lines (farpd file only with setup marker)
+  H->>H: --verify-config with new interface and block (else E_VERIFY_FAILED, nothing written)
+  H->>F: keep .prev of every file, replace each file
+  alt sensor not active
+    H->>X: restart firewall (and farpd if rewritten) only if active
+    H-->>C: ok, restarted:false, sensor left stopped
+  else sensor active
+    H->>P: systemctl restart phantom-mirage
+    H->>P: active within 20 s, then active after 3 s settle
+    H->>X: restart firewall (and farpd if rewritten) only if active
+    H-->>C: ok, network, interface, dropped, warnings
+  end
+  C->>C: audit "applied, dropped settings for ..."
+  C-->>U: new block shown

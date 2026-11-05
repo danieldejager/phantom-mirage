@@ -1,63 +1,71 @@
 # Decoy management from the console: design
 
-**Status: Design, draft, not yet implemented.** Nothing described here as new (the helper, its socket, decoys.conf, decoys.json, the new console screens) exists in the repository yet. Statements about current behaviour are taken from master at commit 9fca4ff and from the investigation notes, with file and line references so they can be checked.
+**Status.** Design document, updated to match the code on branch feat/decoy-settings (draft PR 256, head 8a4cbe6, not merged). Where this document says "implemented", it means implemented on that branch only. Nothing here is on master. Each section says what is built, what is tested offline, and what has not been tried on a real systemd host.
+
+Labels used below:
+
+- **Implemented (PR 256)**: the code exists on feat/decoy-settings, draft PR 256, not merged.
+- **Tested offline**: covered by unit or shell tests that run without systemd, using a fake `systemctl`, a fake daemon and temp directories. I ran these tests on PR 256 head 8a4cbe6: decoyd/tests 56 tests pass (3 skipped), console/tests 137 tests pass, ci/test_decoys_include.sh and ci/test_decoyd_socket.sh pass.
+- **Untested on a real host**: nothing in PR 256 has been seen working under real systemd, with a real socket, real reload or restart, or on a real LAN.
+- **Not started**: no code yet.
 
 ## In short
 
-- The console will let you change single decoys: give one its own operating system look, choose which services it shows, stop it, start it again, or put it back to the shared default.
-- The console itself stays a low privilege program. A small separate helper, started only when needed, does the actual change after checking every value against fixed lists.
-- If a change would break the sensor, the helper refuses it, or puts the old settings back and restarts the sensor.
-- Every change briefly reloads all decoys, so anyone connected to any decoy at that moment is disconnected.
-- "Stop" makes a decoy silent, but the address still appears on the network.
-- Two points still need your decision: whether the address block stays read only in the console, and whether you must re-enter your password to make a change.
+- From the console you can now (on PR 256, not merged) give one decoy its own operating system look and its own services, stop it, start it again, or put it back on the shared default.
+- You can also change the address block and the network interface the sensor uses, from a new Network section. This is a decision, not a proposal.
+- The first and last address of the block (network and broadcast) show no Stop or Start button and no settings gear. They are marked reserved.
+- The console stays a low privilege program. A small separate helper, `pm-decoyd`, started only when needed, makes the change after checking every value against fixed lists. You must type your password for every change.
+- If a change would break the sensor, the helper refuses it, or puts the old files back and restarts the sensor.
+- A decoy change reloads all decoys, so anyone connected to any decoy at that moment is cut off. An address block change restarts the whole sensor.
+- Deleting a decoy is not started. It is a later slice.
+- All of this passes its offline tests. None of it has been tried on a real sensor host yet.
 
 ## 1. Overview (plain words)
 
-**What it is.** Phantom Mirage pretends to be several computers on your network. These pretend computers are called decoys. Today all decoys share one setup, and changing anything means editing a configuration file by hand on the sensor and reloading it.
+**What it is.** Phantom Mirage pretends to be several computers on your network. These pretend computers are called decoys. Before this work all decoys shared one setup, and changing anything meant editing a configuration file by hand on the sensor.
 
-**What you will be able to do.** From the web console you will be able to:
+**What you can do on PR 256 (not merged).** From the web console you can:
 
 - see each decoy's settings in detail;
-- give a decoy its own personality, chosen from the 6 operating system profiles the sensor ships with;
-- choose which services a decoy appears to offer, picked from a fixed list (for example "SSH" or "web server");
+- give a decoy its own personality, chosen from the profiles in the sensor's pinned personality file;
+- choose which services a decoy appears to offer, picked from a fixed list of 25 (for example "SSH" on tcp 22);
+- set what the decoy does with any other port (open, closed, reset, block, filtered);
 - stop a decoy so it no longer answers, and start it again;
-- remove a decoy's own settings so it goes back to the shared default.
+- put a decoy back on the shared default ("Use default template");
+- change the address block and interface in the Network section.
 
 **What changes for you.**
 
 - You no longer need to edit files on the sensor for these tasks.
-- Each change takes a few seconds and reloads every decoy, so any connection an attacker has open to any decoy at that moment is cut. The console will warn you about this before you confirm.
-- A stopped decoy goes quiet, but other machines can still see that something owns the address. To them it looks like a computer behind a firewall.
+- Every change asks for your password again.
+- A decoy change takes a few seconds and reloads every decoy, cutting any connection open to any decoy at that moment.
+- An address block change restarts the sensor, and restarts farpd and the firewall if they are running. Settings for decoys that fall outside the new block are dropped, and the console tells you which.
+- A stopped decoy goes quiet, but other machines can still see that something owns the address.
 
 **What does not change.**
 
-- The range of addresses the sensor covers is still set during setup, not from these new screens.
 - You cannot type commands or file names anywhere. Only choices from fixed lists are accepted.
 - The console keeps the same login, the same address (only on the sensor itself) and the same low privileges.
-- The hand edited main configuration file stays yours. The new settings live in a separate generated file.
+- The hand edited main config still works. Addresses bound there are shown as "main config" and cannot be changed from the console.
 
-## 2. Goals and non-goals
+## 2. Goals and non goals
 
 Goals
 
-- Per decoy override of personality, default protocol actions and ports, from the console.
-- Per decoy stop and start without restarting the sensor.
-- No new privilege for the console process; all config writing in one small, strict, auditable helper.
-- A bad change must never leave the sensor down if the previous config still works.
-- Every change audited in the console audit log and the system journal.
+- Per decoy personality, default actions and port list from the console. Implemented (PR 256).
+- Stop and start a single decoy. Implemented (PR 256).
+- Change the address block and interface from the console. Implemented (PR 256).
+- No free text from the browser ever reaches the sensor config.
+- Every change checked by the sensor's own `--verify-config` before it goes live, with automatic rollback.
 
-Non-goals
+Non goals
 
-- Editing NETWORK or INTERFACE from the console (needs a full sensor restart and a farpd restart).
-- Free form config text, free form script commands, or `proxy` lines (investigation notes, section 3: a proxy would make decoys relay traffic).
-- Adding personalities beyond the 6 in columbo-v1.db (that needs a rebuilt, re-pinned db).
-- Per decoy reload. The daemon has none: a SIGHUP frees every template (honeyd.c, `honeyd_sighup`, `template_free_all(TEMPLATE_FREE_REGULAR)` then `config_read`).
-- Making a stopped address vanish from ARP (optional later slice, see section 10).
-- IPv6 decoys.
+- Deleting a decoy (taking an address out of service). Not started, later slice. See section 10.
+- Service scripts, proxies, tarpits or backdoor emulations. The service list maps each service to a plain port action only.
+- More than one address block, blocks wider than /24, or public ranges from the console.
+- Per address ARP control. farpd still answers for the whole block.
 
 ## 3. Architecture and trust boundaries
-
-![Overall architecture](img/01-architecture.png)
 
 ```mermaid
 flowchart TB
@@ -65,41 +73,44 @@ flowchart TB
     BR["Browser<br/>console UI"]
   end
   subgraph C["Console trust zone: user phantom-mirage-console, low privilege"]
-    CON["pm-console.py<br/>HTTPS on 127.0.0.1 only<br/>session + CSRF checks"]
-    CST[("/var/lib/phantom-mirage/console<br/>console state, audit")]
+    CON["pm-console.py + decoyclient.py<br/>HTTPS on 127.0.0.1 only<br/>session, CSRF, password re-entry, reserved check"]
+    CST[("/var/lib/phantom-mirage/console<br/>console state, audit, lockout")]
   end
-  subgraph H["Helper trust zone: root, started on demand"]
+  subgraph H["Helper trust zone: root, socket activated"]
     SOCK{{"pm-decoyd.socket<br/>/run/phantom-mirage-decoyd.sock<br/>root:phantom-mirage-console 0660"}}
-    HLP["pm-decoyd (Python, stdlib)<br/>validate, generate, verify,<br/>swap, reload, check, roll back"]
-    JS[("/var/lib/phantom-mirage/decoys.json<br/>source of truth, root 0600")]
+    HLP["pm-decoyd (python3 -I, stdlib)<br/>SO_PEERCRED, validate, render,<br/>verify, swap, reload or restart, roll back"]
+    JS[("/var/lib/phantom-mirage/decoys.json<br/>overrides, root 0600")]
+    SVC[("/usr/share/phantom-mirage/decoy-services.json<br/>25 services, plain port actions")]
   end
-  subgraph E["Sensor config (root owned, read by sensor)"]
+  subgraph E["Sensor config (root owned)"]
     MAIN[("/etc/phantom-mirage/phantom-mirage.conf<br/>hand edited + one include line")]
-    DC[("/etc/phantom-mirage/decoys.conf<br/>generated only, root 0644")]
-    PREV[("decoys.conf.prev<br/>last good copy")]
-    DEF[("/etc/default/phantom-mirage<br/>NETWORK, INTERFACE")]
-    DB[("/etc/phantom-mirage/columbo-v1.db<br/>6 personalities, sha256 pinned")]
+    DC[("/etc/phantom-mirage/decoys.conf<br/>generated, root 0644, plus .prev")]
+    DEF[("/etc/default/phantom-mirage<br/>NETWORK, INTERFACE (set_network writes)")]
+    FD[("/etc/default/farpd<br/>written only if it carries the setup marker")]
+    DB[("/etc/phantom-mirage/columbo-v1.db<br/>sha256 pinned")]
   end
   subgraph S["Sensor zone"]
     SD["systemd PID 1"]
-    PM["phantom-mirage.service<br/>starts root, drops to user phantom-mirage<br/>Landlock + script sandbox"]
-    FARP["farpd<br/>answers ARP for whole NETWORK"]
+    PM["phantom-mirage.service"]
+    FARP["farpd.service<br/>answers ARP for whole NETWORK"]
+    FW["phantom-mirage-firewall.service"]
   end
-  BR -- "1 HTTPS POST /api/decoys/*<br/>cookie + X-CSRF-Token" --> CON
-  CON -- "2 audit before/after" --> CST
-  CON -- "3 typed JSON request<br/>AF_UNIX, SO_PEERCRED" --> SOCK
-  SOCK -- "4 activates" --> HLP
-  HLP -- "5 read" --> DEF
+  BR -- "1 HTTPS POST /api/decoyd/change<br/>cookie, X-CSRF-Token, password" --> CON
+  CON -- "2 audit requested / applied / refused" --> CST
+  CON -- "3 one JSON line per connection<br/>AF_UNIX" --> SOCK
+  SOCK -- "4 activates, fd 3" --> HLP
   HLP -- "5 read" --> DB
-  HLP -- "6 write" --> JS
-  HLP -- "7 write tmp, verify, rename" --> DC
-  HLP -- "7 keep" --> PREV
+  HLP -- "5 read" --> SVC
+  HLP -- "5 read, set_network writes" --> DEF
+  HLP -- "set_network only" --> FD
+  HLP -- "6 write after health check" --> JS
+  HLP -- "7 write .new, verify, keep .prev, rename" --> DC
   MAIN -. "include" .-> DC
-  HLP -- "8 systemctl reload / is-active<br/>(D-Bus)" --> SD
-  SD -- "9 ExecReload: SIGHUP" --> PM
-  PM -- "10 re-read on HUP" --> MAIN
-  HLP -- "11 typed JSON response" --> CON
-  classDef zone fill:#f6f8fa,stroke:#555
+  HLP -- "8 systemctl reload (decoy ops)<br/>restart (set_network)" --> SD
+  SD -- "9 HUP or restart" --> PM
+  SD -- "set_network: restart if active" --> FARP
+  SD -- "set_network: restart if active" --> FW
+  HLP -- "10 JSON reply" --> CON
   classDef priv fill:#fde2e2,stroke:#b00
   classDef low fill:#e2f0fd,stroke:#036
   class HLP,SOCK priv
@@ -112,70 +123,58 @@ flowchart TB
   end
 ```
 
+![01-architecture](img/01-architecture.png)
+
+Source: [img/src/01-architecture.mmd](img/src/01-architecture.mmd)
+
 ### Components
 
-| Component | Status | Runs as | Notes |
-|---|---|---|---|
-| Admin browser | exists | n/a | Untrusted input. Talks HTTPS to the console on 127.0.0.1 only. |
-| `console/pm-console.py` (unit `debian/phantom-mirage-console.service`) | exists | `phantom-mirage-console` | `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ReadWritePaths=/var/lib/phantom-mirage/console`, only `CAP_SYS_TIME`. Session cookie plus `X-CSRF-Token` check on POST (pm-console.py around line 257). Will gain new API routes and a socket client. |
-| `console/pmstore.py` | exists | console user | `parse_decoys`, `decoy_list`, `audit`. Read only view of the config today. |
-| `pm-decoyd.socket` | proposed | systemd | `ListenStream=/run/phantom-mirage-decoyd.sock`, `SocketUser=root`, `SocketGroup=phantom-mirage-console`, `SocketMode=0660`, `Accept=no`. |
-| `pm-decoyd.service` and `/usr/lib/phantom-mirage/pm-decoyd` | proposed | root | Python 3, `python3 -I`, standard library only. Started by the socket, exits when idle. |
-| `/var/lib/phantom-mirage/decoys.json` | proposed | root, 0600 | Source of truth for overrides. |
-| `/etc/phantom-mirage/decoys.conf` | proposed | root, 0644 | Generated only. Never hand edited. Included by one line at the end of phantom-mirage.conf. |
-| `/etc/phantom-mirage/decoys.conf.prev` | proposed | root, 0644 | Last known good copy for rollback. |
-| `/etc/phantom-mirage/phantom-mirage.conf` | exists | root | Built from config.sample by `debian/mkconf.sh` (debian/rules line 32). Gains `include /etc/phantom-mirage/decoys.conf`. |
-| `/etc/default/phantom-mirage` | exists | root | `INTERFACE`, `NETWORK`, `OPTIONS`. Parsed by `debian/scripts/pm-start` with the strict parser in `default-lib.sh`. |
-| `/etc/phantom-mirage/columbo-v1.db` | exists | root | 6 `Fingerprint` entries, sha256 pinned (`fingerprints/columbo-v1.db.sha256`, checked by `pm_check_fpdb`). |
-| `phantom-mirage.service` | exists | starts root, drops to `phantom-mirage` | `ExecStartPre=pm-start check`, `ExecStartPre=pm-start verify`, `ExecStart=pm-start run`, `ExecReload=+/bin/kill -HUP $MAINPID`, `Restart=on-failure`, `RestartPreventExitStatus=78`. |
-| farpd | exists | separate service | Answers ARP for the whole NETWORK (written by `debian/scripts/phantom-mirage-setup`). Not touched by this feature. |
+| Component | What it is | Status |
+|---|---|---|
+| `pm-console.py` + `decoyclient.py` | Console web server (user phantom-mirage-console). Routes `GET /api/decoyd/list`, `/api/decoyd/options`, `/api/decoyd/netinfo` and `POST /api/decoyd/change`. Client sends one JSON line per connection, timeout 90 s, 240 s for set_network. | Implemented (PR 256), tested offline |
+| `pm-decoyd.socket` | `ListenStream=/run/phantom-mirage-decoyd.sock`, `SocketUser=root`, `SocketGroup=phantom-mirage-console`, `SocketMode=0660`, `Accept=no` | Implemented (PR 256), untested on a real host |
+| `pm-decoyd.service` | Runs `/usr/bin/python3 -I /usr/lib/phantom-mirage/pm-decoyd` as root. Refuses to start unless systemd passed exactly one socket (fd 3). Exits after 30 s with no connection. | Implemented (PR 256), untested on a real host |
+| `/usr/lib/phantom-mirage/pm-decoys-include` | Postinst script: creates `/etc/phantom-mirage/decoys.conf` with a header if missing, appends `include /etc/phantom-mirage/decoys.conf` to phantom-mirage.conf once, after a backup to `phantom-mirage.conf.pre-decoys.bak`. Refuses symlinked config. | Implemented (PR 256), tested offline (ci/test_decoys_include.sh) |
+| `/usr/lib/phantom-mirage/pm-decoyd-socket` | Postinst script: when the console is enabled (or the socket already is), enables and restarts the socket and stops an old helper. A failing systemctl does not fail the install. | Implemented (PR 256), tested offline with a fake systemctl (ci/test_decoyd_socket.sh) |
+| `/usr/share/phantom-mirage/decoy-services.json` | 25 services, each an id, label, proto, port and a plain action `open`. No scripts. | Implemented (PR 256) |
+| `/var/lib/phantom-mirage/decoys.json` | Helper store: `{v:1, overrides:{ip:{rev, state, decoy}}, conf_sha256}`, root 0600 | Implemented (PR 256) |
+| `/etc/phantom-mirage/decoys.conf` | Generated from the store, root 0644, with `decoys.conf.prev` kept | Implemented (PR 256) |
 
 ### Trust boundaries
 
-1. Browser to console: HTTPS on loopback, existing login, session and CSRF checks.
-2. Console to helper: the unix socket. Only members of group `phantom-mirage-console` can connect (mode 0660), and the helper also checks `SO_PEERCRED` uid equals the `phantom-mirage-console` user. The message is typed JSON; the console never sends config text.
-3. Helper to config files: only the helper (root) writes `decoys.json`, `decoys.conf` and `.prev`. Its unit uses `ProtectSystem=strict` with `ReadWritePaths=/etc/phantom-mirage /var/lib/phantom-mirage` (narrowest that still allows an atomic rename in the directory), `PrivateNetwork=yes`, `NoNewPrivileges=yes`, empty `CapabilityBoundingSet` if systemctl over D-Bus works without capabilities (to be confirmed on a real host).
-4. Helper to sensor: only through `systemctl reload|restart|is-active phantom-mirage` and `systemctl show -p MainPID`.
-5. Sensor reads config after its privilege drop; investigation notes that the Landlock rules keep the config directory readable (honeyd.c, `sbd_dir(config.config, 0)`), so the include file must live in /etc/phantom-mirage.
+1. **Browser to console.** Existing login, session cookie and `X-CSRF-Token`. New: password re-entry on every change, with back off after wrong passwords. The console also refuses network and broadcast addresses before calling the helper.
+2. **Console to helper.** The socket is root:phantom-mirage-console 0660, and the helper checks `SO_PEERCRED` and refuses any uid other than the console user (`E_PEER`). Everything the console sends is checked again by the helper. The helper never trusts the console's checks.
+3. **Helper to sensor.** The helper writes only fixed paths, verifies with the real daemon, and talks to systemd with `systemctl`.
+
+### Helper unit hardening (as written in PR 256)
+
+`NoNewPrivileges`, `ProtectSystem=strict` with `ReadWritePaths=/etc/phantom-mirage /var/lib/phantom-mirage /etc/default`, `ProtectHome`, `PrivateTmp`, kernel and control group protections, `IPAddressDeny=any`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_PACKET AF_NETLINK`, `MemoryDenyWriteExecute`, `SystemCallFilter=@system-service`, `UMask=0077`, `CapabilityBoundingSet=CAP_NET_RAW`.
+
+Two things differ from the first draft of this design:
+
+- There is **no** `PrivateNetwork`, and `CAP_NET_RAW` is kept, because `--verify-config` opens the interface. Network access is limited by `IPAddressDeny=any` instead.
+- `/etc/default` is writable as a whole directory, because set_network rewrites `/etc/default/phantom-mirage` and maybe `/etc/default/farpd`.
+
+Whether this unit can really run `systemctl reload` and `restart`, and open the interface for verify, under these settings has **not** been checked on a real host.
 
 ### Generated config model
 
-Template names are derived from the address only, never from user text. Example for 192.0.2.9 (running):
+The main config keeps its hand written templates and binds and gains one line, `include /etc/phantom-mirage/decoys.conf`. The helper writes decoys.conf from the store only. For each override, in address order:
 
-```
-create pm_d_192_0_2_9
-set pm_d_192_0_2_9 personality "ws2022-fwoff"
-set pm_d_192_0_2_9 default tcp action reset
-set pm_d_192_0_2_9 default udp action closed
-set pm_d_192_0_2_9 default icmp action open
-add pm_d_192_0_2_9 tcp port 22 "sh /usr/share/phantom-mirage/scripts/linux/ssh.sh"
-add pm_d_192_0_2_9 tcp port 80 open
-bind 192.0.2.9 pm_d_192_0_2_9
-```
+- **Running:** template `pm_d_<ip with underscores>`, for example `pm_d_192_0_2_9`. `set ... personality "<name>"` if one is chosen, `set ... default tcp|udp|icmp action <state>`, then one `add ... <tcp|udp> port <N> <action>` per port. A service entry is written as its fixed action from the service list, never as a command.
+- **Stopped:** template `pm_s_<ip>` with `default tcp`, `udp` and `icmp action block` and no personality and no ports.
+- Then `bind <ip> <template>`.
 
-Stopped (drop template, proposed prefix `pm_s_`):
-
-```
-create pm_s_192_0_2_9
-set pm_s_192_0_2_9 default tcp action block
-set pm_s_192_0_2_9 default udp action block
-set pm_s_192_0_2_9 default icmp action block
-bind 192.0.2.9 pm_s_192_0_2_9
-```
-
-Addresses without an override keep falling back to template `default` (config.c, `template_find_best`).
+The helper keeps the sha256 of the text it last wrote. If decoys.conf on disk no longer matches, every change except reset_all is refused with `E_CONFLICT` until you reset all overrides.
 
 ## 4. Data flow diagrams
 
-### 4.1 Happy path change (add, edit, start, stop, delete)
+### 4.1 Decoy change (add, edit, stop, start, reset to default)
 
-All five operations follow the same path; only the state change in step 9 differs.
-
-![Happy path change flow](img/02-change-flow.png)
+Implemented (PR 256), tested offline with a fake systemctl and fake daemon. Untested on a real host.
 
 ```mermaid
 sequenceDiagram
-  Note over U,F: Legend: trust boundaries are browser | console (low privilege) | socket + helper (root) | config files | sensor. Solid arrow = request or action, dashed arrow = response.
   autonumber
   actor U as Admin (browser)
   participant C as Console (phantom-mirage-console)
@@ -183,68 +182,81 @@ sequenceDiagram
   participant H as pm-decoyd (root)
   participant F as /etc/phantom-mirage files
   participant P as phantom-mirage.service
-  U->>C: POST add / edit / start / stop / delete (session, CSRF)
-  C->>C: session, CSRF, rate limit, audit "requested"
+  Note over U,P: Legend: trust boundaries are browser | console (low privilege) | socket + helper (root) | config files | sensor. Solid arrow = request or action, dashed arrow = response.
+  U->>C: POST /api/decoyd/change {op, args, password}<br/>op = add, edit, stop, start, delete (reset to default)
+  C->>C: session, CSRF, refuse network or broadcast row, password check with back off, audit "requested"
   C->>S: connect /run/phantom-mirage-decoyd.sock
-  S->>H: start helper with socket fd
-  C->>H: JSON request {v:1, op, id, args}
-  H->>H: SO_PEERCRED uid check, take lock
-  H->>H: validate every field against fixed lists
-  H->>F: read NETWORK, columbo-v1.db, main conf binds
-  H->>H: build new decoys.json state, render decoys.conf
-  H->>F: write decoys.conf.new (O_EXCL, fsync)
-  H->>H: phantom-mirage --verify-config on full config using .new
-  H->>F: copy current to decoys.conf.prev, rename .new over decoys.conf
-  H->>P: systemctl reload phantom-mirage (SIGHUP)
-  Note over P: all templates freed and re-read,<br/>live sessions on every decoy drop
-  H->>P: wait, systemctl is-active, MainPID unchanged
-  H->>F: commit decoys.json
+  S->>H: start helper, socket on fd 3
+  C->>H: {v:1, id, ts, actor, op, args}
+  H->>H: SO_PEERCRED uid, envelope, replay check, flock, 10 s gap
+  H->>F: read NETWORK, columbo-v1.db, service list, main conf binds
+  H->>H: decoys.conf hash still matches store? apply op, render
+  H->>F: write decoys.conf.new (O_EXCL, O_NOFOLLOW, fsync)
+  H->>H: phantom-mirage --verify-config on temp main conf naming .new
+  H->>F: keep decoys.conf.prev, rename .new over decoys.conf
+  H->>P: systemctl reload phantom-mirage (HUP)
+  Note over H,P: all templates freed and re-read,<br/>live sessions on every decoy drop
+  H->>P: 3 s settle, is-active, MainPID unchanged
+  H->>F: write decoys.json
   H-->>C: {ok:true, result, reloaded:true}
   C->>C: audit "applied"
-  C-->>U: success, note that sessions were reset
+  C-->>U: done, sensor reloaded
 ```
 
-### 4.2 Failure and rollback
+![02-change-flow](img/02-change-flow.png)
 
-![Failure and rollback flow](img/03-rollback.png)
+Source: [img/src/02-change-flow.mmd](img/src/02-change-flow.mmd)
+
+### 4.2 Decoy change failure and rollback
+
+Implemented (PR 256). Rollback paths tested offline (daemon died, new MainPID, reload rc, rollback failed, no previous file). Untested on a real host.
 
 ```mermaid
 flowchart TD
-  A(["Request received"]) --> B{"Peer uid is<br/>phantom-mirage-console?"}
-  B -- no --> X1["E_PEER, close,<br/>nothing written"]
-  B -- yes --> C{"Lock free and<br/>rate limit ok?"}
-  C -- no --> X2["E_BUSY / E_RATE_LIMIT,<br/>nothing written"]
-  C -- yes --> D{"Schema and field<br/>validation ok?"}
-  D -- no --> X3["E_INVALID_* ,<br/>nothing written"]
+  A(["Request received (decoy op)"]) --> B{"Peer uid is<br/>phantom-mirage-console?"}
+  B -- no --> X1["E_PEER, nothing written"]
+  B -- yes --> C{"Envelope, replay,<br/>lock within 25 s?"}
+  C -- no --> X2["E_BAD_JSON / E_REPLAY / E_BUSY ...<br/>nothing written"]
+  C -- yes --> W["Wait out the 10 s gap<br/>since the last reload"]
+  W --> CF{"decoys.conf hash<br/>matches store?"}
+  CF -- no --> X5["E_CONFLICT, reset all to continue"]
+  CF -- yes --> D{"Op and field<br/>validation ok?"}
+  D -- no --> X3["E_INVALID_* / E_ADDRESS_* / E_CONFLICT,<br/>nothing written"]
   D -- yes --> E["Render decoys.conf.new"]
   E --> F{"--verify-config<br/>passes?"}
   F -- no --> X4["Delete .new, E_VERIFY_FAILED,<br/>live config untouched"]
-  F -- yes --> G["Save .prev, atomic rename<br/>.new to decoys.conf"]
-  G --> H["systemctl reload phantom-mirage"]
-  H --> I{"Unit active and<br/>MainPID unchanged<br/>after settle time?"}
-  I -- yes --> J["Commit decoys.json,<br/>ok:true"]
-  I -- no --> K["Restore .prev by<br/>atomic rename"]
+  F -- yes --> G["Keep .prev, rename<br/>.new to decoys.conf"]
+  G --> SA{"Sensor active?"}
+  SA -- no --> J0["Write decoys.json, ok,<br/>reloaded:false, applies at next start"]
+  SA -- yes --> H["systemctl reload phantom-mirage"]
+  H --> I{"rc 0, active and<br/>MainPID unchanged<br/>after 3 s?"}
+  I -- yes --> J["Write decoys.json,<br/>ok, reloaded:true"]
+  I -- no --> K["Put the old decoys.conf back FIRST<br/>(RestartPreventExitStatus=78)"]
   K --> L["systemctl restart phantom-mirage"]
-  L --> M{"Active after restart?"}
+  L --> M{"Active within 20 s?"}
   M -- yes --> N["E_RELOAD_FAILED_ROLLED_BACK,<br/>old decoys serving"]
-  M -- no --> O["E_ROLLBACK_FAILED,<br/>sensor DOWN, console shows<br/>red banner, journal has detail"]
+  M -- no --> O["E_ROLLBACK_FAILED,<br/>sensor DOWN, see journal"]
   classDef bad fill:#fde2e2,stroke:#b00
   classDef good fill:#e3f6e3,stroke:#060
   classDef warn fill:#fff4d6,stroke:#a60
-  class X1,X2,X3,X4 warn
-  class N warn
+  class X1,X2,X3,X4,X5,N warn
   class O bad
-  class J good
+  class J,J0 good
   subgraph LEG["Legend"]
     LG1["Green: change applied"]:::good
     LG2["Amber: refused or rolled back, sensor still serving"]:::warn
     LG3["Red: sensor down, manual action needed"]:::bad
+    LG4["All boxes run inside the root helper,<br/>behind the socket trust boundary"]
   end
 ```
 
+![03-rollback](img/03-rollback.png)
+
+Source: [img/src/03-rollback.mmd](img/src/03-rollback.mmd)
+
 ### 4.3 Stop by drop template
 
-![Stop by drop template](img/04-stop-drop.png)
+Rendering implemented (PR 256) and checked by golden output tests. The packet behaviour shown here (no reply while ARP is still answered) has **not** been tested on a real LAN.
 
 ```mermaid
 flowchart LR
@@ -271,9 +283,13 @@ flowchart LR
   end
 ```
 
+![04-stop-drop](img/04-stop-drop.png)
+
+Source: [img/src/04-stop-drop.mmd](img/src/04-stop-drop.mmd)
+
 ### 4.4 Socket activation lifecycle
 
-![Socket activation lifecycle](img/05-socket-lifecycle.png)
+Implemented (PR 256): the helper exits after 30 s idle and refuses to start without `LISTEN_FDS=1`. Offline tests use a socket pair. Real socket activation is untested.
 
 ```mermaid
 stateDiagram-v2
@@ -282,10 +298,10 @@ stateDiagram-v2
   Listening --> Starting: console connects
   Starting: systemd starts pm-decoyd.service<br/>passes listening fd (Accept=no)
   Starting --> Serving
-  Serving: helper accepts, one request at a time,<br/>flock serialises changes
+  Serving: helper accepts, one request at a time,<br/>one request per connection, flock serialises changes
   Serving --> Serving: next connection within idle window
-  Serving --> Exiting: idle timeout reached
-  Serving --> Failed: helper crash or watchdog
+  Serving --> Exiting: 30 s with no connection
+  Serving --> Failed: helper crash
   Exiting: helper exits 0, socket stays with systemd
   Exiting --> Listening
   Failed: unit marked failed, socket stays,<br/>next connect starts a fresh helper
@@ -298,313 +314,254 @@ stateDiagram-v2
   end note
 ```
 
-Rendered PNGs are in `img/`, mermaid sources in `img/src/`. Regenerate with `mmdc` from the mermaid-cli npm package, version 11: `mmdc -i img/src/NAME.mmd -o img/NAME.png -w 2000 -s 2 -b white`.
+![05-socket-lifecycle](img/05-socket-lifecycle.png)
+
+Source: [img/src/05-socket-lifecycle.mmd](img/src/05-socket-lifecycle.mmd)
+
+### 4.5 Address block change (set_network)
+
+Implemented (PR 256), tested offline with a fake systemctl, fake `ip` output and a fake daemon. Untested on a real host.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Admin (browser)
+  participant C as Console (phantom-mirage-console)
+  participant H as pm-decoyd (root, via socket)
+  participant F as Files (/etc/default, /etc/phantom-mirage, decoys.json)
+  participant P as phantom-mirage.service
+  participant X as farpd + firewall units
+  Note over U,X: Legend: trust boundaries are browser | console (low privilege) | socket + helper (root) | files | sensor units. Solid arrow = request or action, dashed arrow = response. Example block 192.0.2.0/28 is a documentation range. The real helper accepts private ranges only.
+  U->>C: Network section: new block, interface, password
+  C->>C: session, CSRF, password check with back off, audit "requested"
+  C->>H: set_network {network, interface, expect:{network, interface}} (240 s timeout)
+  H->>H: peer uid, envelope, flock, 10 s gap
+  H->>F: read NETWORK and INTERFACE, compare with expect (else E_CONFLICT)
+  H->>H: ip -j -4 addr / route: interfaces, LANs, gateways
+  H->>H: check block: CIDR, at most /24, private, on LAN of interface,<br/>no own address, no gateway, no LAN network or broadcast
+  H->>H: drop overrides outside the new block, render decoys.conf
+  H->>F: rewrite NETWORK= and INTERFACE= lines (farpd file only with setup marker)
+  H->>H: --verify-config with new interface and block (else E_VERIFY_FAILED, nothing written)
+  H->>F: keep .prev of every file, replace each file
+  alt sensor not active
+    H->>X: restart firewall (and farpd if rewritten) only if active
+    H-->>C: ok, restarted:false, sensor left stopped
+  else sensor active
+    H->>P: systemctl restart phantom-mirage
+    H->>P: active within 20 s, then active after 3 s settle
+    H->>X: restart firewall (and farpd if rewritten) only if active
+    H-->>C: ok, network, interface, dropped, warnings
+  end
+  C->>C: audit "applied, dropped settings for ..."
+  C-->>U: new block shown
+```
+
+![06-set-network](img/06-set-network.png)
+
+Source: [img/src/06-set-network.mmd](img/src/06-set-network.mmd)
+
+### 4.6 Address block change rollback
+
+Implemented (PR 256). Offline tests check that a failed restart puts every file back and that the old `/etc/default/phantom-mirage` is in place before the second restart; that a failed rollback gives `E_ROLLBACK_FAILED` with the files restored; and that a failed verify writes nothing and restarts nothing. Untested on a real host.
+
+```mermaid
+flowchart TD
+  A(["set_network passed every check<br/>and --verify-config"]) --> B["Keep .prev of /etc/default/phantom-mirage,<br/>decoys.conf, decoys.json, farpd file if marked"]
+  B --> C{"All files replaced?"}
+  C -- "no (OSError)" --> R0["Restore every file,<br/>E_INTERNAL, nothing changed"]
+  C -- yes --> SA{"Sensor was active?"}
+  SA -- no --> OK0["Restart firewall and farpd if active,<br/>ok, sensor left stopped"]
+  SA -- yes --> D["systemctl restart phantom-mirage"]
+  D --> E{"rc 0, active within 20 s,<br/>still active after 3 s?"}
+  E -- yes --> OK1["Restart firewall and farpd if active<br/>(failure is a warning), ok"]
+  E -- no --> F["Restore EVERY file first<br/>(old block, old decoys, old store)"]
+  F --> G["systemctl restart phantom-mirage"]
+  G --> AUX["Restart firewall and farpd if active"]
+  AUX --> H{"Active within 20 s?"}
+  H -- yes --> N["E_RESTART_FAILED_ROLLED_BACK,<br/>old block serving"]
+  H -- no --> O["E_ROLLBACK_FAILED,<br/>sensor DOWN, see journal"]
+  classDef bad fill:#fde2e2,stroke:#b00
+  classDef good fill:#e3f6e3,stroke:#060
+  classDef warn fill:#fff4d6,stroke:#a60
+  class R0,N warn
+  class O bad
+  class OK0,OK1 good
+  subgraph LEG["Legend"]
+    LG1["Green: new block applied"]:::good
+    LG2["Amber: rolled back, old block in place"]:::warn
+    LG3["Red: sensor down, manual action needed"]:::bad
+    LG4["Every box runs in the root helper behind the socket trust boundary.<br/>Arrows: order of steps, labelled with the outcome."]
+  end
+```
+
+![07-set-network-rollback](img/07-set-network-rollback.png)
+
+Source: [img/src/07-set-network-rollback.mmd](img/src/07-set-network-rollback.mmd)
 
 ## 5. Message format (typed JSON over the unix socket)
 
 ### 5.1 Framing
 
-- Stream socket. One request per connection. Request is one UTF-8 JSON object terminated by a newline, at most 16 KiB. The helper writes one JSON object plus newline and closes.
-- Read timeout 5 s on the request.
-- Unknown top level or argument fields are rejected with `E_UNKNOWN_FIELD`. Duplicate keys are rejected with `E_BAD_JSON` (parse with `object_pairs_hook`).
-- `v` must be the integer `1`; anything else gives `E_VERSION`.
+One request per connection: one JSON line in, one JSON line out. Requests over 16384 bytes, or not finished within 5 s, get `E_BAD_JSON`. Replies are capped at 1 MiB by the client.
 
 ### 5.2 Envelope
 
-Request
+Request: `{"v":1, "id":"<1 to 64 of A-Z a-z 0-9 ->", "ts":<unix seconds>, "actor":"<1 to 64 of A-Z a-z 0-9 . _ ->", "op":"<op>", "args":{...}}`
 
-| Field | Type | Rule |
+- `v` must be 1 (`E_VERSION`). Unknown fields give `E_UNKNOWN_FIELD`; duplicate keys give `E_BAD_JSON`.
+- `ts` must be within 60 s of the helper's clock, and an `id` may not be reused within 600 s (`E_REPLAY`). Seen ids are kept in `/run/phantom-mirage-decoyd/seen.json` so they survive a helper restart.
+
+Reply: `{"v":1, "id", "ok":true|false, "reloaded":bool, "rolled_back":bool, "result":{...}}` or, on failure, `"error":{"code", "field", "message"}`. Tracebacks are never sent.
+
+### 5.3 Operations
+
+| Op | Args | Result | Status |
+|---|---|---|---|
+| `list` | none | `network`, and one entry per address with `source` override, default or main_conf | Implemented |
+| `options` | none | personalities, states, services (id, label, proto, port), `max_ports` 64 | Implemented |
+| `netinfo` | none | current network and interface, interfaces with addresses, gateways, `min_prefix` 24 | Implemented |
+| `add` | `decoy` | `ip`, `state` running, `rev` 1 | Implemented |
+| `edit` | `decoy`, `expect_rev` (required) | new `rev` | Implemented |
+| `stop` | `ip`, `expect_rev` if an override exists | `state` stopped, `arp` "still_answered" | Implemented |
+| `start` | `ip`, `expect_rev` | running; a stop on a default decoy is simply removed | Implemented |
+| `delete` | `ip`, `expect_rev` | removes the override so the address is back on the default template | Implemented as "reset to default" only, see note |
+| `reset_all` | `confirm` = "reset-all" | `overrides` 0 | Implemented in the helper; not exposed in the console UI as far as I could see |
+| `set_network` | `network`, `interface`, `expect:{network, interface}` | `network`, `interface`, `dropped`, `farpd`, `restarted`, maybe `warnings` | Implemented |
+
+**Note on `delete`.** The helper op called `delete` removes a decoy's own settings. The console uses it for the "Use default template" button. It does **not** take an address out of service. Deleting a decoy in that sense is not started (section 10). The op name is confusing and is listed as an open question.
+
+A `decoy` object has exactly `ip`, `personality` (a name or null), `defaults` `{tcp, udp, icmp}` and `ports`, a list of `{proto, port, state}` or `{proto, port, service}`.
+
+### 5.4 Error codes
+
+| Group | Codes | Console HTTP status |
 |---|---|---|
-| `v` | integer | must be 1 |
-| `id` | string | 1 to 64 chars, `[A-Za-z0-9-]`, generated by the console; echoed back; used for replay detection (section 8) |
-| `ts` | integer | console unix time in seconds; must be within 60 s of helper time |
-| `actor` | string | console username, `[A-Za-z0-9._-]{1,64}`, for audit only, not trusted for authorisation |
-| `op` | string | one of `list`, `options`, `add`, `edit`, `start`, `stop`, `delete`, `reset_all` |
-| `args` | object | per operation, see below |
+| Transport (client side) | `E_UNAVAILABLE`, `E_TIMEOUT`, `E_BAD_REPLY` | 503 |
+| Envelope | `E_PEER` (500), `E_BAD_JSON`, `E_VERSION`, `E_UNKNOWN_FIELD`, `E_MISSING_FIELD`, `E_TYPE`, `E_REPLAY`, `E_UNKNOWN_OP` | 400 unless shown |
+| Queue | `E_BUSY` (lock not free within 25 s), `E_RATE_LIMIT` | 429 |
+| Decoy validation | `E_INVALID_ADDRESS`, `E_ADDRESS_OUTSIDE_NETWORK`, `E_ADDRESS_RESERVED`, `E_ADDRESS_IN_MAIN_CONF`, `E_INVALID_PERSONALITY`, `E_INVALID_STATE`, `E_INVALID_PORT`, `E_INVALID_SERVICE`, `E_TOO_MANY_PORTS` | 400 |
+| State | `E_CONFLICT`, `E_EXISTS`, `E_NOT_FOUND`, `E_NOT_RUNNING`, `E_NOT_STOPPED`, `E_UNCHANGED` | 409 |
+| Network validation | `E_INVALID_NETWORK`, `E_NETWORK_TOO_WIDE`, `E_NOT_PRIVATE`, `E_INVALID_INTERFACE`, `E_NOT_ON_LAN`, `E_HOST_ADDRESS`, `E_GATEWAY`, `E_LAN_EDGE` | 400 |
+| Apply | `E_VERIFY_FAILED` (400), `E_RELOAD_FAILED_ROLLED_BACK`, `E_RESTART_FAILED_ROLLED_BACK`, `E_ROLLBACK_FAILED`, `E_INTERNAL` | 500 unless shown |
 
-Response
+The console itself answers 403 for a wrong password, 423 while backing off after wrong passwords, and 400 `E_ADDRESS_RESERVED` for a network or broadcast address.
 
-| Field | Type | Notes |
-|---|---|---|
-| `v` | integer | 1 |
-| `id` | string | echo of request id (empty if unparseable) |
-| `ok` | boolean | |
-| `result` | object | present when ok |
-| `error` | object | `{"code": string, "field": string or null, "message": string}` when not ok |
-| `reloaded` | boolean | true if the sensor was reloaded (sessions dropped) |
-| `rolled_back` | boolean | true if a rollback happened |
+`E_RATE_LIMIT` is only raised if the wait would exceed 25 s. With a 10 s gap the helper normally just waits, so in practice it should not appear.
 
-### 5.3 Shared types
+## 6. Validation rules (as coded)
 
-`decoy` object:
+Decoy fields
 
-| Field | Type | Allowed values |
-|---|---|---|
-| `ip` | string | dotted IPv4 inside NETWORK |
-| `personality` | string or null | one of the 6 names in columbo-v1.db; null means daemon default stack |
-| `defaults` | object | keys `tcp`, `udp`, `icmp`; values `open`, `closed`, `reset`, `block`, `filtered` |
-| `ports` | array, max 64 | items `{"proto": "tcp" or "udp", "port": 1..65535, "state": state}` or `{"proto", "port", "service": service id}`; exactly one of `state` or `service` |
-| `state` | string | `running` or `stopped` (read only in responses; changed by `start` and `stop`) |
+- `ip`: canonical dotted IPv4, inside NETWORK, not bound in the main config, and not the network or broadcast address of its block when the block is /30 or wider. /31 and /32 have no reserved address.
+- `personality`: matches `[A-Za-z0-9._+-]{1,64}` and is a `Fingerprint` name in `/etc/phantom-mirage/columbo-v1.db`. The file's sha256 must match `columbo-v1.db.sha256` or every change fails.
+- `defaults` and port `state`: one of open, closed, reset, block, filtered.
+- `ports`: at most 64, proto tcp or udp, port 1 to 65535 as an integer, no duplicate proto and port, exactly one of `state` or `service`. A service must exist in the list and use the same proto.
+- Strings from root owned lists are checked against control characters, quotes, `#` and backslash.
 
-### 5.4 Operations
+Address block (set_network)
 
-**list**: no args. Returns every address in NETWORK with its effective source (`default`, `override`, `main_conf`) and the override if any.
+- `expect` must equal the current NETWORK and INTERFACE, else `E_CONFLICT`.
+- `network` written as `a.b.c.d/n`, the exact start of a block (host bits give a hint with the right start), at most /24 (no wide block switch in the console), inside 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16.
+- `interface` matches `[A-Za-z0-9_.-]{1,15}`, exists in /sys/class/net, is not loopback, has an IPv4 address.
+- The block is inside the LAN of that interface, holds none of the host's own addresses, no default gateway, and not the LAN's network or broadcast address.
+- The same values are unchanged gives `E_UNCHANGED`.
+- `/etc/default/phantom-mirage` must have exactly one `NETWORK=` and one `INTERFACE=` line. Only those two lines are rewritten. `/etc/default/farpd` is rewritten only if its first line is `# written by phantom-mirage-setup`.
 
-```json
-{"v":1,"id":"a1","ts":1793844000,"actor":"admin","op":"list","args":{}}
-```
-```json
-{"v":1,"id":"a1","ok":true,"reloaded":false,"rolled_back":false,
- "result":{"network":"192.0.2.8/29","decoys":[
-  {"ip":"192.0.2.9","source":"override","state":"running","personality":"ws2022-fwoff",
-   "defaults":{"tcp":"reset","udp":"closed","icmp":"open"},
-   "ports":[{"proto":"tcp","port":22,"service":"ssh"}]},
-  {"ip":"192.0.2.10","source":"default"}]}}
-```
-
-**options**: no args. Returns the allowed personalities, states and services so the console can build its menus.
-
-```json
-{"v":1,"id":"a2","ts":1793844000,"actor":"admin","op":"options","args":{}}
-```
-```json
-{"v":1,"id":"a2","ok":true,"reloaded":false,"rolled_back":false,
- "result":{"personalities":["ubuntu2404","ws2022-fwoff","ws2019-fwoff","ws2025-fwoff","win11-fwon","win11-fwoff"],
-  "states":["open","closed","reset","block","filtered"],
-  "services":[{"id":"ssh","label":"SSH (scripted)","proto":"tcp"}],
-  "max_ports":64}}
-```
-
-**add**: args `decoy` (without `state`). Creates an override for an address that has none. Fails with `E_EXISTS` if one exists, `E_ADDRESS_IN_MAIN_CONF` if the main conf binds it.
-
-```json
-{"v":1,"id":"a3","ts":1793844000,"actor":"admin","op":"add","args":{"decoy":
- {"ip":"192.0.2.9","personality":"ws2022-fwoff","defaults":{"tcp":"reset","udp":"closed","icmp":"open"},
-  "ports":[{"proto":"tcp","port":22,"service":"ssh"},{"proto":"tcp","port":80,"state":"open"}]}}}
-```
-```json
-{"v":1,"id":"a3","ok":true,"reloaded":true,"rolled_back":false,"result":{"ip":"192.0.2.9","state":"running"}}
-```
-
-**edit**: args `decoy` plus `expect_rev` (integer, the override revision the console showed). Replaces the whole override. `E_NOT_FOUND` if none, `E_CONFLICT` if `expect_rev` is stale.
-
-```json
-{"v":1,"id":"a4","ts":1793844000,"actor":"admin","op":"edit","args":{"expect_rev":3,"decoy":
- {"ip":"192.0.2.9","personality":"ubuntu2404","defaults":{"tcp":"reset","udp":"closed","icmp":"open"},"ports":[]}}}
-```
-```json
-{"v":1,"id":"a4","ok":true,"reloaded":true,"rolled_back":false,"result":{"ip":"192.0.2.9","rev":4}}
-```
-
-**stop**: args `ip`, `expect_rev` (optional for addresses without an override). Binds the address to its drop template. Works on addresses that use the shared default too (an override with `state: stopped` is created).
-
-```json
-{"v":1,"id":"a5","ts":1793844000,"actor":"admin","op":"stop","args":{"ip":"192.0.2.10"}}
-```
-```json
-{"v":1,"id":"a5","ok":true,"reloaded":true,"rolled_back":false,"result":{"ip":"192.0.2.10","state":"stopped","arp":"still_answered"}}
-```
-
-**start**: args `ip`, `expect_rev`. Returns a stopped address to its own override, or to the shared default if it had none. `E_NOT_STOPPED` if already running.
-
-```json
-{"v":1,"id":"a6","ts":1793844000,"actor":"admin","op":"start","args":{"ip":"192.0.2.10","expect_rev":1}}
-```
-```json
-{"v":1,"id":"a6","ok":true,"reloaded":true,"rolled_back":false,"result":{"ip":"192.0.2.10","state":"running"}}
-```
-
-**delete**: args `ip`, `expect_rev`. Removes the override; the address falls back to `default`.
-
-```json
-{"v":1,"id":"a7","ts":1793844000,"actor":"admin","op":"delete","args":{"ip":"192.0.2.9","expect_rev":4}}
-```
-```json
-{"v":1,"id":"a7","ok":true,"reloaded":true,"rolled_back":false,"result":{"ip":"192.0.2.9","source":"default"}}
-```
-
-**reset_all**: args `confirm` (must be the string `reset-all`). Empties decoys.conf.
-
-```json
-{"v":1,"id":"a8","ts":1793844000,"actor":"admin","op":"reset_all","args":{"confirm":"reset-all"}}
-```
-```json
-{"v":1,"id":"a8","ok":true,"reloaded":true,"rolled_back":false,"result":{"overrides":0}}
-```
-
-Example error:
-
-```json
-{"v":1,"id":"a3","ok":false,"reloaded":false,"rolled_back":false,
- "error":{"code":"E_ADDRESS_OUTSIDE_NETWORK","field":"decoy.ip","message":"198.51.100.4 is not inside 192.0.2.8/29"}}
-```
-
-### 5.5 Error codes
-
-| Code | Meaning | Config touched |
-|---|---|---|
-| `E_BAD_JSON` | not JSON, too large, duplicate key, not an object | no |
-| `E_VERSION` | `v` missing or not 1 | no |
-| `E_UNKNOWN_FIELD` | field not in schema | no |
-| `E_MISSING_FIELD` | required field absent | no |
-| `E_TYPE` | wrong JSON type | no |
-| `E_PEER` | caller uid not allowed | no |
-| `E_REPLAY` | `id` seen before or `ts` outside window | no |
-| `E_UNKNOWN_OP` | op not in list | no |
-| `E_INVALID_ADDRESS` | not a valid IPv4 | no |
-| `E_ADDRESS_OUTSIDE_NETWORK` | not in NETWORK | no |
-| `E_ADDRESS_RESERVED` | network or broadcast address (if owner keeps that rule) | no |
-| `E_ADDRESS_IN_MAIN_CONF` | main conf already binds the address | no |
-| `E_EXISTS` / `E_NOT_FOUND` / `E_NOT_STOPPED` / `E_NOT_RUNNING` | state precondition | no |
-| `E_CONFLICT` | stale `expect_rev` | no |
-| `E_INVALID_PERSONALITY` | not in columbo-v1.db | no |
-| `E_INVALID_STATE` | not an allowed action | no |
-| `E_INVALID_PORT` | not 1..65535, or duplicate proto and port | no |
-| `E_INVALID_SERVICE` | not in the service list, or wrong protocol | no |
-| `E_TOO_MANY_PORTS` | more than 64 | no |
-| `E_BUSY` | another change in progress | no |
-| `E_RATE_LIMIT` | under 10 s since last reload | no |
-| `E_VERIFY_FAILED` | `--verify-config` rejected the new config | no (temp file only) |
-| `E_RELOAD_FAILED_ROLLED_BACK` | reload broke the unit, previous config restored, unit restarted and active | restored |
-| `E_ROLLBACK_FAILED` | unit not active even after restore and restart | restored, sensor down |
-| `E_INTERNAL` | unexpected helper error | maybe; journal has detail |
-
-## 6. Validation rules
-
-The helper validates; the console may pre-check for nicer errors but is never trusted.
-
-| Field | Type | Rule | Source of allowed values | Error code |
-|---|---|---|---|---|
-| any string | string | no control characters, no `\n`, `"`, `#`, `\\`; max length per field | fixed | `E_TYPE` |
-| `ip` | string | `ipaddress.IPv4Address`, canonical dotted form only (no leading zeros) | Python stdlib | `E_INVALID_ADDRESS` |
-| `ip` | string | inside NETWORK | `/etc/default/phantom-mirage`, re-read on every request with the same strict one KEY=VALUE rules as default-lib.sh | `E_ADDRESS_OUTSIDE_NETWORK` |
-| `ip` | string | not network or broadcast of NETWORK (owner decision) | computed | `E_ADDRESS_RESERVED` |
-| `ip` | string | not bound by a `bind` line in phantom-mirage.conf (outside the include) | parse of main conf | `E_ADDRESS_IN_MAIN_CONF` |
-| `ip` | string | for `add`, no existing override; for others, override exists (or address in NETWORK for `stop`) | decoys.json | `E_EXISTS`, `E_NOT_FOUND` |
-| `personality` | string or null | exact match of a `^Fingerprint (.+)$` line | `/etc/phantom-mirage/columbo-v1.db`, after sha256 check against the pinned value | `E_INVALID_PERSONALITY` |
-| `defaults.*` | string | one of `open`, `closed`, `reset`, `block`, `filtered`; all three keys required | fixed (parse.y actions) | `E_INVALID_STATE` |
-| `ports[].proto` | string | `tcp` or `udp` | fixed | `E_INVALID_PORT` |
-| `ports[].port` | integer | 1 to 65535, JSON integer (not string, not bool) | fixed | `E_INVALID_PORT` |
-| `ports[]` | object | unique (proto, port) | computed | `E_INVALID_PORT` |
-| `ports[].state` | string | same list as defaults | fixed | `E_INVALID_STATE` |
-| `ports[].service` | string | id in the shipped service list, matching proto | `/usr/share/phantom-mirage/decoy-services.json` (proposed, root owned, maps id to exact command string under /usr/share/phantom-mirage/scripts) | `E_INVALID_SERVICE` |
-| `ports` | array | at most 64 items | fixed | `E_TOO_MANY_PORTS` |
-| template name | derived | `pm_d_` or `pm_s_` plus address with dots as underscores; never from input | computed | n/a |
-| overrides total | count | at most the number of addresses in NETWORK; NETWORK itself is limited by pm-start checks | computed | `E_INTERNAL` |
-| `id` | string | `[A-Za-z0-9-]{1,64}` | fixed | `E_TYPE` |
-| request size | bytes | at most 16 KiB | fixed | `E_BAD_JSON` |
-
-No name field for decoys is proposed: the address is the identifier. If the owner wants a display label, it would be stored only in decoys.json, limited to `[A-Za-z0-9 ._-]{1,32}`, and never written to decoys.conf.
-
-The service list must only contain scripts tested on the service (some need perl or tcl, which may not be installed). Whether backdoor emulations (scripts/backdoors) are offered is an open question. `proxy` and `tarpit` are not offered.
+Documentation example addresses (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) are used in this document only. The real helper refuses them as a block with `E_NOT_PRIVATE`.
 
 ## 7. Failure handling and rollback
 
-| Step | Check | On failure | Restore | User sees |
-|---|---|---|---|---|
-| 1 Connect | socket exists, console in group | console gets ECONNREFUSED or EACCES | nothing to restore | "Decoy helper unavailable" |
-| 2 Peer check | `SO_PEERCRED` uid | `E_PEER`, close | none | "Not permitted" (should never happen in normal use) |
-| 3 Lock | non blocking `flock` on `/run/phantom-mirage-decoyd.lock` | `E_BUSY` | none | "Another change is in progress, try again" |
-| 4 Rate limit | at least 10 s since last reload (timestamp in /run) | `E_RATE_LIMIT` | none | "Please wait N seconds" |
-| 5 Parse and validate | section 5 and 6 | `E_*` with field | none | message next to the field |
-| 6 Render | generator builds text from fixed templates | `E_INTERNAL` | none | generic error |
-| 7 Write temp | `decoys.conf.new` opened `O_CREAT|O_EXCL|O_NOFOLLOW` mode 0644 in /etc/phantom-mirage, write, fsync | `E_INTERNAL`, unlink temp | none | generic error |
-| 8 Verify | build a temp main conf identical to phantom-mirage.conf but including `.new`, run `phantom-mirage --verify-config` with the same `-p -a -0 -x -m` files as `pm-start verify` | `E_VERIFY_FAILED`, unlink temps | none, live file untouched | "Change rejected by the sensor's config check" plus first error line |
-| 9 Swap | `link` or copy current to `.prev` (fsync), `rename(.new, decoys.conf)`, fsync directory | `E_INTERNAL` | if rename failed, live file still old | generic error |
-| 10 Reload | record MainPID, `systemctl reload phantom-mirage` | treated as step 11 failure | see 11 | |
-| 11 Health | after 3 s settle: `systemctl is-active` is `active` and MainPID unchanged, and no new "parsing configuration file failed" line in the journal for this unit since step 10 | restore | `rename(.prev, decoys.conf)` (after copying .prev so a copy remains), `systemctl restart phantom-mirage`, wait, check active | "Change failed, previous decoys restored. Sessions were reset." |
-| 12 Restart check | active after restart | `E_ROLLBACK_FAILED`, journal at err level | file is restored; unit down | red banner "Sensor is down. See journal for phantom-mirage." |
-| 13 Commit | write decoys.json via temp plus rename | `E_INTERNAL`; decoys.conf and decoys.json now disagree, next request regenerates from decoys.json and helper logs it | | generic error |
+Decoy changes (section 4.2)
 
-Why restart and not just reload on rollback: a failed parse during SIGHUP calls `exit(EXIT_FAILURE)` in config_read (config.c around line 127 to 144), so the daemon is gone and a reload is not possible. `Restart=on-failure` may already be bringing it back by itself; the helper must cope with both (unit already restarting, or already failed). If `pm-start verify` exits 78, `RestartPreventExitStatus=78` stops automatic restarts, which is why restoring `.prev` before `systemctl restart` matters.
+1. Write `decoys.conf.new` with `O_EXCL|O_NOFOLLOW`, fsync.
+2. Verify: copy the main config to `/etc/phantom-mirage/.pm-decoyd-verify.conf` with its one include line pointing at `.new`, then run `phantom-mirage --verify-config -f <temp> -p columbo-v1.db` with the same data files and interface and block. Failure deletes `.new` and gives `E_VERIFY_FAILED` with the parser's first useful line.
+3. Keep `decoys.conf.prev`, rename `.new` over decoys.conf, fsync the directory.
+4. If the sensor is not active, write the store and stop: the file is used at next start.
+5. Otherwise `systemctl reload phantom-mirage.service`, wait 3 s, and require rc 0, active, and the same MainPID.
+6. On failure, put the old decoys.conf back **before** `systemctl restart`, because the unit has `RestartPreventExitStatus=78` and a restart onto the bad file could stop it for good. Wait up to 20 s for active: `E_RELOAD_FAILED_ROLLED_BACK`, or `E_ROLLBACK_FAILED` if it stays down. The store is only written after a good reload.
 
-Every reload, successful or not, drops live sessions on every decoy. The console states this in the confirm dialog and the result.
+Address block change (section 4.6)
+
+1. All checks and `--verify-config` with the new interface and block run before any file is written.
+2. Keep `.prev` of `/etc/default/phantom-mirage`, decoys.conf, decoys.json and the farpd file if it is rewritten, then replace each. A write error restores all files and gives `E_INTERNAL`.
+3. A stopped sensor is left stopped. The firewall and farpd are restarted only if active.
+4. Otherwise restart the sensor, wait up to 20 s for active and check again after 3 s. Then restart the firewall and farpd if active; failures there are warnings.
+5. On failure restore **every** file first, then restart the sensor and the helper units, giving `E_RESTART_FAILED_ROLLED_BACK` or `E_ROLLBACK_FAILED`.
+
+The file swap is a series of single file renames, not one atomic step across files. A crash part way through could leave a mix; `.prev` copies are there for manual recovery. This has not been tested.
 
 ## 8. Threat model
 
-Assets: integrity and availability of the sensor; the root account on the sensor host; integrity of the audit trail; the believability of the decoys.
-
-Actors: an attacker on the LAN probing decoys; an attacker who has compromised the console process (for example through a web bug); a local unprivileged user on the sensor host; a legitimate admin making mistakes.
-
-| Threat | Mitigation | Residual risk |
+| Threat | Mitigation (PR 256) | Residual risk |
 |---|---|---|
-| Privilege escalation from a compromised console | Console only sends typed JSON; helper rebuilds config from fixed templates; no free text reaches config; helper unit hardened (ProtectSystem=strict, PrivateNetwork, NoNewPrivileges) | A compromised console can still make any allowed change: stop every decoy, set any of the allowed personalities and services, cause reloads. That is the designed capability. Bugs in the helper's Python parsing are root bugs. |
-| Injection into config (newline, quote, `#`, extra tokens) | Strings never spliced except personality and service command, both looked up from root owned lists; control characters and quotes rejected; template names derived from address | A malicious entry in columbo-v1.db or the service list would be emitted; both are root owned and the db is sha256 pinned. |
-| Path traversal in scripts | No paths accepted from the client; service ids map to fixed absolute commands | Scripts themselves run sandboxed (--sandbox-scripts); their own bugs are out of scope. |
-| Symlink and race on config swap | Temp file created `O_EXCL|O_NOFOLLOW` in /etc/phantom-mirage (root only writable); `rename` within the same directory; the helper refuses to run if decoys.conf or the directory is a symlink or not root owned | A root level attacker can do anything anyway. |
-| Socket permissions | Socket 0660 root:phantom-mirage-console created by systemd; `SO_PEERCRED` uid check | Any process running as the console user (including a compromised console) is trusted to the same degree. |
-| Unauthorised admin action | Existing login, session cookie and CSRF token; proposed password re-entry on change (not yet decided) | Without re-entry, a stolen session can make changes until it expires. |
-| Denial of service by repeated reloads | Helper lock, at least 10 s between reloads, console per session rate limit | An attacker in the console can still reload every 10 s, resetting all decoy sessions continuously and noisily. |
-| Replay of a captured request | `id` kept in a bounded in memory and /run list for 10 minutes, `ts` window 60 s, `expect_rev` on edits | Replay is only possible from inside the console user anyway; the protection mainly stops double submits. |
-| Rollback races (two changes, or manual edit during change) | Single flock; `.prev` written only after verify; `expect_rev` checks; helper detects decoys.conf hash differing from what it last wrote and refuses with `E_CONFLICT` until reset | A manual edit to phantom-mirage.conf between verify and reload is not detected. |
-| Bad config takes sensor down | Verify before swap, health check after, restore and restart | If the restored config also fails (for example main conf changed by hand), the sensor stays down: `E_ROLLBACK_FAILED`. |
-| Unknown personality at reload is fatal | Validation against the same db file the service loads | Personalities are loaded once at start and not re-read on HUP (investigation notes). If the db on disk changes without a restart, the list the helper reads and the list in memory differ. |
-| Audit gaps | Console `pmstore.audit` before and after with result; helper logs each request, decision and diff to the journal | Audit in the console state dir can be altered by a compromised console; the journal copy is the stronger one. |
-| Stopped decoy still visible | Documented; UI says ARP still answered; touches still logged | Attackers can tell an address is claimed. |
-| Helper unit too broad | Narrow ReadWritePaths, no network | Exact minimal set (D-Bus access for systemctl, capabilities) not yet confirmed on a real host. |
+| Privilege escalation from a compromised console | Typed JSON only; helper rechecks everything; no free text reaches config; hardened unit | A compromised console can make any allowed change, including moving the address block within the LAN and restarting the sensor. Bugs in the helper's Python parsing are root bugs. |
+| Stolen session | Password re-entry on every change, with back off | A stolen session plus the password still works. |
+| Injection into config | Template names built from the address; personality and actions checked against fixed lists; only `NETWORK=` and `INTERFACE=` lines rewritten with validated values | A malicious entry in the service list or personality file would be used; both are root owned and the db is sha256 pinned. |
+| Symlink and race on swap | `O_EXCL|O_NOFOLLOW`, rename in the same directory, refuses non root owned or symlinked config | `/etc/default` is writable to the helper as a whole directory. |
+| Socket permissions | 0660 root:phantom-mirage-console, `SO_PEERCRED` | Anything running as the console user is trusted the same. |
+| Denial of service by reloads | flock, 10 s gap between reloads | The console can still reload every 10 s or restart the sensor with set_network. |
+| Replay | `ts` window 60 s, `id` kept 600 s on /run, `expect_rev` and `expect` | Mainly stops double submits. |
+| Address block moved onto live hosts | Must be private, at most /24, on the LAN of the interface, no own address, no gateway, no LAN edge | **No probe for other live hosts in the new block.** farpd would answer ARP for them. This is the biggest open risk of set_network. |
+| Bad config takes sensor down | Verify first, health check, restore before restart | If the restored files also fail, the sensor stays down: `E_ROLLBACK_FAILED`. |
+| Manual edit of decoys.conf | Hash check, `E_CONFLICT` until reset_all | reset_all is not in the console UI, so recovery needs the shell. |
+| Audit gaps | Console audit requested, applied or refused, with dropped addresses; helper logs request, decision and diff to syslog | Console audit can be altered by a compromised console; the journal copy is stronger. |
 
-## 9. Test plan
+## 9. Test plan and what has been run
 
-Nothing in this section has been run. None of the tests below exist yet.
+Run offline on PR 256 head 8a4cbe6 (by me, for this update)
 
-Testable offline (CI, no systemd needed)
+- `python3 -m unittest discover -s decoyd/tests`: 56 tests, all pass, 3 skipped. The 3 skipped are `TestRealVerify` (golden output passes, bad personality fails, duplicate bind fails) which need root and the built daemon. CI in PR 256 runs them with `PM_REAL_DAEMON`; I did not see a CI result.
+- `python3 -m unittest discover -s console/tests`: 137 tests pass, including password re-entry, CSRF, set_network, the longer timeout, wrong password back off, and the reserved rows without icons.
+- `ci/test_decoys_include.sh` and `ci/test_decoyd_socket.sh`: pass.
 
-- Unit tests of the helper with a fake socket pair: framing, size limit, timeout, unknown and duplicate fields, version, replay.
-- Validation tables: one row per rule in section 6, including injection strings (newline, quote, `#`, `; rm`), traversal (`../`), out of NETWORK addresses using 198.51.100.0/24 and 203.0.113.0/24, network and broadcast addresses, unknown personality, 65 ports, port 0 and 65536, string ports, booleans.
-- Golden config generation: JSON state in, exact decoys.conf text out, including the stopped template.
-- Verify step with the real built binary (`--verify-config` with the same files as pm-start, in the style of ci/test_decoy_tcp.sh).
-- Rollback logic with a stub `systemctl` on PATH that can simulate reload success, unit death, and restart failure.
-- Console tests (console/tests): new routes, CSRF rejection, rate limit, audit entries, error mapping.
-- Fix and test `parse_decoys` port parsing (see Open questions).
-- shellcheck for maintainer script changes; Python lint for the helper.
+What the offline tests cover: validation tables, envelope and replay, rendering, the decoy change pipeline and its rollbacks, network validation, set_network success and rollback, socket peer checks with a socket pair. All with a fake `systemctl`, fake `ip` output and a fake daemon.
 
-Only on a real systemd host
+Still needed, only on a real systemd host
 
-- Socket activation, socket ownership and mode, `SO_PEERCRED` from the real console user, helper idle exit.
-- Whether the hardened helper unit can call `systemctl reload` and `restart` over D-Bus, and with which capabilities or polkit rule.
-- Real reload under `ExecReload=+/bin/kill -HUP $MAINPID`, and Landlock reading the include file after the privilege drop.
-- Unit health check behaviour while `Restart=on-failure` and `ExecStartPre=pm-start verify` run during rollback.
-- Drop template behaviour: SYN, UDP and ping to a stopped address get no reply while a neighbour answers; ARP still answered by farpd on a real LAN.
-- ci/systemd_unit.sh runs the package under real systemd and may be extended to cover part of this.
-
-Not tested: everything. This is a design only.
+- Socket activation, socket owner and mode, `SO_PEERCRED` from the real console user, idle exit.
+- Whether the hardened unit can call `systemctl reload` and `restart` and open the interface for verify.
+- Real reload and real restart, including `ExecStartPre` checks during rollback.
+- Stopped decoy behaviour on a real LAN: no reply while a neighbour answers, ARP still answered.
+- set_network on a real host: farpd and firewall restart, ARP for the new block, old block released.
+- Package install and upgrade: the include line and the socket enable on a real system. PR 256 adds package content checks to CI; I did not see a result.
 
 ## 10. Build slices
 
-Slice numbers follow the investigation plan (PR 1 to PR 4). A fifth optional slice (per address ARP) is out of scope here.
+| Slice | Delivers | Status |
+|---|---|---|
+| 1 Read only groundwork | Personality list, per decoy detail panel, `parse_decoys` keeps port states | Implemented (PR 256) |
+| 2 Helper and include | pm-decoyd, socket and service units, include script, service list | Implemented (PR 256), tested offline |
+| 3 Stop and start | Stop and Start icons per row; none on network and broadcast rows | Implemented (PR 256), tested offline |
+| 4 Settings panel | Personality, default actions, port table, "Use default template" | Implemented (PR 256), tested offline |
+| 5 Network section | Change address block and interface (set_network) | Implemented (PR 256), tested offline |
+| 6 Delete a decoy | Take an address out of service | **Not started.** Later slice, one change at a time. |
 
-| Slice | Delivers | Tests | Needs security review sign off |
-|---|---|---|---|
-| 1 Read only groundwork | Console route listing valid personalities from columbo-v1.db; per decoy detail panel (template, personality, default actions, all ports with states); fix `parse_decoys` to keep port states | console/tests/test_decoys.py with fixture conf and db | Light: no new privilege |
-| 2 Helper and include, no UI writes | pm-decoyd, pm-decoyd.socket and .service, include line added by debian/mkconf.sh, maintainer script migration adding the include once (idempotent), service list file | Validation tables, golden files, verify with real binary, rollback with stub systemctl | Yes, full: new root component, socket permissions, unit hardening, maintainer script |
-| 3 Stop and start | Console buttons calling `stop` and `start`; UI text that ARP is still answered and that sessions reset | Generator output, CI test that a stopped address drops SYN and ping while a neighbour answers (extend ci/test_decoy_tcp.sh), audit, CSRF, rate limit | Yes: first console write path |
-| 4 Settings panel | Personality select, default actions, port table with state or service, reset to default | End to end in the CI container: set personality and ports, reload, probe sees the states; invalid requests rejected clearly | Yes: service list contents and any password re-entry |
+Every slice still needs security review sign off and a real host test before merge.
 
-## 11. Open questions and decisions awaiting the owner
+## 11. Open questions
 
-Decided: helper is Python, socket activated, typed JSON; stop means drop template with ARP still claimed; every change reloads all decoys; 6 personalities only; fixed service list, no free commands.
+Decided
 
-Proposed, not yet decided
+- Helper in Python, socket activated, typed JSON.
+- Stop means a drop template with ARP still claimed.
+- Every decoy change reloads all decoys; a block change restarts the sensor.
+- Fixed service list with plain actions, no commands.
+- The address block is editable from the console (Network section).
+- Password re-entry on every change (implemented in PR 256).
+- Network and broadcast addresses of the block cannot be decoys and show no Stop or Start (reserved).
 
-1. The address block (NETWORK) is not editable from the console.
-2. Password re-entry is required on change (every change, or first change per session).
-3. Whether the network and broadcast addresses of NETWORK may be overridden.
-4. Which services go in the list, and whether backdoor emulations are offered.
-5. Whether a decoy may have a display label.
+Still open
 
-Differences between the investigation notes and master (9fca4ff)
+1. **Delete a decoy**: what it means (stop and hide, remove from the block, or shrink the block) and when. Not started.
+2. **Name of the `delete` op**: it only resets a decoy to default. Rename it (for example to `reset`) before a real delete exists?
+3. **Live host probe for set_network**: there is no check that the new block is free of real hosts.
+4. **Wide and multiple blocks**: the console allows one private block of /24 or smaller only. Should `ALLOW_WIDE_NETWORK` ever be offered?
+5. **reset_all in the UI**: the only way out of `E_CONFLICT` is reset_all, which the console UI does not offer.
+6. **`/etc/default` write access**: the helper can write the whole directory. Could it be narrowed to the two files?
+7. **Multi file swap**: not atomic across files.
+8. **Display label** for a decoy.
 
-- The notes were read from branch feat/console-theme-toggle, not master. Line numbers below were checked on master.
-- The notes cite the console unit hardening at phantom-mirage-console.service lines 84 to 106; on master the file is 50 lines and the same settings are at lines 9 to 44.
-- The notes cite `decoy_list` at pmstore.py lines 157 to 185; on master it starts at line 155.
-- The notes say `parse_decoys` drops ports in state block, reset or closed. On master the code checks `w[4]` (the port number) against those states and appends `proto/w[3]` (the literal word `port`), so it appears to list every port as `tcp/port` regardless of state. Needs a test in slice 1.
-- The notes say a failed reload leads to `Restart=on-failure` running `pm-start verify`, which fails and leaves the unit down. On master, `RestartPreventExitStatus=78` also applies; whether verify failure exits 78 (stopping restarts) or another code depends on the daemon's exit code for `--verify-config`, not checked. Either way rollback must restore before restarting.
-- The notes describe the verify step running on "a temp copy of the full config". The include line in the main conf uses an absolute path, so verifying a temp decoys file needs a temp main conf with a rewritten include line. That copy must stay identical otherwise; confirm the parser accepts an absolute include path (lex.l include support, depth 10, exists on master).
-- No `pm-decoyd`, socket unit, decoys.conf, decoys.json or service list exists on master; all are proposed.
+Resolved since the first draft
 
-Other open technical questions
-
-- Exact privileges the helper unit needs for systemctl over D-Bus under the proposed hardening.
-- How long the health check should wait after reload, and whether journal scanning is reliable enough.
-- Whether a duplicate `bind` between main conf and decoys.conf is a parse error (notes say "to verify"); the helper refuses such overrides regardless.
-- Whether the helper or the console should hold the rate limit state across helper restarts (proposed: /run file).
+- The `parse_decoys` bug on master (it listed every port as `tcp/port` and compared the port number against state names) is **fixed on PR 256**: it now reads the port from `w[4]` and the state from `w[5]`, and adds a `port_states` list. There is also a separate commit "Decoys page shows tcp/22 instead of tcp/port" on the branch.
+- Verify with a temp main config whose include names the candidate file: implemented as described.

@@ -1,0 +1,27 @@
+flowchart TD
+  A(["set_network passed every check<br/>and --verify-config"]) --> B["Keep .prev of /etc/default/phantom-mirage,<br/>decoys.conf, decoys.json, farpd file if marked"]
+  B --> C{"All files replaced?"}
+  C -- "no (OSError)" --> R0["Restore every file,<br/>E_INTERNAL, nothing changed"]
+  C -- yes --> SA{"Sensor was active?"}
+  SA -- no --> OK0["Restart firewall and farpd if active,<br/>ok, sensor left stopped"]
+  SA -- yes --> D["systemctl restart phantom-mirage"]
+  D --> E{"rc 0, active within 20 s,<br/>still active after 3 s?"}
+  E -- yes --> OK1["Restart firewall and farpd if active<br/>(failure is a warning), ok"]
+  E -- no --> F["Restore EVERY file first<br/>(old block, old decoys, old store)"]
+  F --> G["systemctl restart phantom-mirage"]
+  G --> AUX["Restart firewall and farpd if active"]
+  AUX --> H{"Active within 20 s?"}
+  H -- yes --> N["E_RESTART_FAILED_ROLLED_BACK,<br/>old block serving"]
+  H -- no --> O["E_ROLLBACK_FAILED,<br/>sensor DOWN, see journal"]
+  classDef bad fill:#fde2e2,stroke:#b00
+  classDef good fill:#e3f6e3,stroke:#060
+  classDef warn fill:#fff4d6,stroke:#a60
+  class R0,N warn
+  class O bad
+  class OK0,OK1 good
+  subgraph LEG["Legend"]
+    LG1["Green: new block applied"]:::good
+    LG2["Amber: rolled back, old block in place"]:::warn
+    LG3["Red: sensor down, manual action needed"]:::bad
+    LG4["Every box runs in the root helper behind the socket trust boundary.<br/>Arrows: order of steps, labelled with the outcome."]
+  end
