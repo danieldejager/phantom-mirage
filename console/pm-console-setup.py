@@ -6,6 +6,14 @@
         [--timezone TZ] [--retention DAYS] [--reconfigure] [--dry-run]
   pm-console-setup.py reset-admin
   pm-console-setup.py status
+  pm-console-setup.py restore-time
+
+The sensor clock: setup finds the time service the machine runs (chrony,
+the default on Ubuntu 26.04, or systemd-timesyncd) and points that one at
+a single NTP server on the local network, with no internet fallback. For
+chrony the distribution's internet pool files are set aside (renamed
+*.pm-disabled) and chrony.conf is backed up once as chrony.conf.pm-backup;
+restore-time puts them back.
 
 The admin password is only ever read at a hidden prompt; it is never
 accepted as an option. Test-only: PM_TEST_STDIN=1 reads the answers
@@ -27,6 +35,10 @@ import pmstore  # noqa: E402
 USER = "phantom-mirage-console"
 TIMESYNCD_DROPIN = os.environ.get("PM_TIMESYNCD_DROPIN",
                                   "/etc/systemd/timesyncd.conf.d/phantom-mirage.conf")
+CHRONY_DIR = os.environ.get("PM_CHRONY_DIR", "/etc/chrony")
+MARK = "# written by phantom-mirage-setup"
+DISABLED = ".pm-disabled"
+SRC_LINE = re.compile(r'^\s*(pool|server|peer)\s', re.I)
 NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$')
 USER_RE = re.compile(r'^[a-z_][a-z0-9_.-]{0,31}$')
 TEST = os.environ.get("PM_TEST_STDIN") == "1"
@@ -162,37 +174,164 @@ def ensure_cert(name):
     return fp
 
 
-def apply_time(cfg, dry):
-    """NTP from a local server, or no NTP at all (browser sets the clock):
-    either way no internet time servers (FallbackNTP= is emptied)."""
-    if cfg["time_source"] == "ntp":
-        body = "# written by phantom-mirage-setup\n[Time]\nNTP=%s\nFallbackNTP=\n" % cfg["ntp_server"]
-    else:
-        body = "# written by phantom-mirage-setup (clock set from the admin browser)\n[Time]\nNTP=\nFallbackNTP=\n"
-    if dry:
-        say("dry run: would write %s and run timedatectl set-ntp %s" % (
-            TIMESYNCD_DROPIN, "true" if cfg["time_source"] == "ntp" else "false"))
-        return
-    if os.geteuid() != 0 and "PM_TIMESYNCD_DROPIN" not in os.environ:
-        say("not root: sensor clock settings left unchanged")
-        return
-    os.makedirs(os.path.dirname(TIMESYNCD_DROPIN), exist_ok=True)
-    with open(TIMESYNCD_DROPIN, "w") as f:
+def _run(cmd, timeout=20):
+    try:
+        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout,
+                           universal_newlines=True)
+        return r.returncode, r.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return -1, ""
+
+
+def chrony_unit():
+    for u in ("chrony.service", "chronyd.service"):
+        if _run(["systemctl", "cat", u])[0] == 0:
+            return u
+    return "chrony.service"
+
+
+def time_service():
+    """Which time service this machine actually runs: 'chrony',
+    'timesyncd' or 'none'. An active unit wins; otherwise an installed one."""
+    forced = os.environ.get("PM_TIME_SERVICE")
+    if forced in ("chrony", "timesyncd", "none"):
+        return forced
+    for u, name in (("chrony.service", "chrony"), ("chronyd.service", "chrony"),
+                    ("systemd-timesyncd.service", "timesyncd")):
+        if _run(["systemctl", "is-active", u])[1] == "active":
+            return name
+    if os.path.isfile(os.path.join(CHRONY_DIR, "chrony.conf")):
+        return "chrony"
+    if any(os.path.exists(p) for p in ("/usr/lib/systemd/systemd-timesyncd", "/lib/systemd/systemd-timesyncd")):
+        return "timesyncd"
+    return "none"
+
+
+def _write(path, body):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
         f.write(body)
-    if os.geteuid() != 0:
-        return
-    for cmd in (["timedatectl", "set-ntp", "true" if cfg["time_source"] == "ntp" else "false"],
-                ["systemctl", "try-restart", "systemd-timesyncd"]):
+    os.chmod(tmp, 0o644)
+    os.rename(tmp, path)
+
+
+def chrony_files(cfg):
+    """Configure chrony: comment out pool/server/peer lines in chrony.conf
+    (backup kept once), make sure it reads sources.d, set aside every other
+    *.sources file there (the Ubuntu internet NTS pools), and write ours.
+    Returns the list of things changed. Idempotent."""
+    conf = os.path.join(CHRONY_DIR, "chrony.conf")
+    sdir = os.path.join(CHRONY_DIR, "sources.d")
+    done = []
+    text = open(conf).read() if os.path.isfile(conf) else ""
+    out, changed, has_dir = [], False, False
+    for line in text.splitlines(True):
+        if SRC_LINE.match(line):
+            out.append("#pm-disabled " + line)
+            changed = True
+        else:
+            if re.match(r'^\s*sourcedir\s+%s/?\s*$' % re.escape(sdir), line):
+                has_dir = True
+            out.append(line)
+    if not has_dir:
+        out.append("%s\nsourcedir %s\n" % (MARK, sdir))
+        changed = True
+    if changed:
+        if text and not os.path.exists(conf + ".pm-backup"):
+            _write(conf + ".pm-backup", text)
+        _write(conf, "".join(out))
+        done.append("chrony.conf: internet pool/server lines commented out (backup chrony.conf.pm-backup)")
+    os.makedirs(sdir, exist_ok=True)
+    for n in sorted(os.listdir(sdir)):
+        if n.endswith(".sources") and n != "phantom-mirage.sources":
+            os.rename(os.path.join(sdir, n), os.path.join(sdir, n + DISABLED))
+            done.append("set aside %s (now %s%s)" % (n, n, DISABLED))
+    ours = os.path.join(sdir, "phantom-mirage.sources")
+    if cfg["time_source"] == "ntp":
+        _write(ours, "%s\nserver %s iburst\n" % (MARK, cfg["ntp_server"]))
+    elif os.path.exists(ours):
+        os.unlink(ours)
+    return done
+
+
+def apply_time(cfg, dry):
+    """NTP from one local server, or no NTP at all (browser sets the clock).
+    Configures whichever time service runs here; never an internet server."""
+    svc = time_service()
+    ntp = cfg["time_source"] == "ntp"
+    what = ("server %s" % cfg["ntp_server"]) if ntp else "no servers (clock set from the admin browser)"
+    if dry:
+        say("dry run: time service %s; would configure %s with no internet fallback" % (svc, what))
+        return svc
+    if svc == "none":
+        say("time: no time service found (neither chrony nor systemd-timesyncd); sensor clock left unchanged. "
+            "Install chrony and run setup again for NTP")
+        return svc
+    test = "PM_TIMESYNCD_DROPIN" in os.environ or "PM_CHRONY_DIR" in os.environ
+    if os.geteuid() != 0 and not test:
+        say("not root: sensor clock settings left unchanged")
+        return svc
+    if svc == "chrony":
+        for d in chrony_files(cfg):
+            say("time: " + d)
+        if os.geteuid() == 0:
+            u = chrony_unit()
+            rc, _ = _run(["systemctl", "restart", u], 30)
+            if rc != 0:
+                say("time: warning: systemctl restart %s failed" % u)
+        say("time: chrony configured with %s; no internet fallback" % what)
+        if os.geteuid() == 0 and ntp:
+            rc, out = _run(["chronyc", "-n", "sources"])
+            say("time: chrony sources now: " + (" | ".join(out.splitlines()[-3:]) if rc == 0 and out else "not readable yet"))
+            say("time: undo the pool changes with: sudo /usr/bin/python3 -I %s restore-time" % os.path.abspath(__file__))
+    else:
+        if ntp:
+            body = "%s\n[Time]\nNTP=%s\nFallbackNTP=\n" % (MARK, cfg["ntp_server"])
+        else:
+            body = "%s (clock set from the admin browser)\n[Time]\nNTP=\nFallbackNTP=\n" % MARK
+        _write(TIMESYNCD_DROPIN, body)
+        if os.geteuid() == 0:
+            for cmd in (["timedatectl", "set-ntp", "true" if ntp else "false"],
+                        ["systemctl", "try-restart", "systemd-timesyncd"]):
+                _run(cmd)
+        say("time: systemd-timesyncd configured with %s; no internet fallback" % what)
+        if os.geteuid() == 0 and ntp:
+            rc, out = _run(["timedatectl", "show-timesync", "-p", "ServerAddress", "--value"])
+            say("time: timesyncd server now: " + (out or "not contacted yet"))
+    if cfg["timezone"] and os.geteuid() == 0:
+        _run(["timedatectl", "set-timezone", cfg["timezone"]])
+    return svc
+
+
+def restore_time(_):
+    """Put back what setup set aside for chrony and remove our time files."""
+    sdir = os.path.join(CHRONY_DIR, "sources.d")
+    conf = os.path.join(CHRONY_DIR, "chrony.conf")
+    n = 0
+    if os.path.isdir(sdir):
+        for f in sorted(os.listdir(sdir)):
+            if f.endswith(DISABLED):
+                os.rename(os.path.join(sdir, f), os.path.join(sdir, f[:-len(DISABLED)]))
+                n += 1
         try:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
-        except (OSError, subprocess.SubprocessError):
+            os.unlink(os.path.join(sdir, "phantom-mirage.sources"))
+            n += 1
+        except FileNotFoundError:
             pass
-    if cfg["timezone"]:
-        try:
-            subprocess.run(["timedatectl", "set-timezone", cfg["timezone"]],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
-        except (OSError, subprocess.SubprocessError):
-            pass
+    if os.path.exists(conf + ".pm-backup"):
+        os.rename(conf + ".pm-backup", conf)
+        n += 1
+    try:
+        os.unlink(TIMESYNCD_DROPIN)
+        n += 1
+    except FileNotFoundError:
+        pass
+    if os.geteuid() == 0:
+        _run(["systemctl", "try-restart", chrony_unit()], 30)
+        _run(["systemctl", "try-restart", "systemd-timesyncd"])
+    say("time: %s restored" % ("distribution time settings" if n else "nothing to restore;"))
+    return 0
 
 
 def parse(argv):
@@ -335,10 +474,11 @@ def status(_):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2 or sys.argv[1] not in ("first-run", "reset-admin", "status"):
-        die("usage: pm-console-setup.py first-run|reset-admin|status [options]", 2)
+    if len(sys.argv) < 2 or sys.argv[1] not in ("first-run", "reset-admin", "status", "restore-time"):
+        die("usage: pm-console-setup.py first-run|reset-admin|status|restore-time [options]", 2)
     try:
-        sys.exit({"first-run": first_run, "reset-admin": reset_admin, "status": status}[sys.argv[1]](sys.argv[2:]))
+        sys.exit({"first-run": first_run, "reset-admin": reset_admin, "status": status,
+                  "restore-time": restore_time}[sys.argv[1]](sys.argv[2:]))
     except (KeyboardInterrupt, EOFError):
         print()
         die("aborted")
