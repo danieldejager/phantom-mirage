@@ -163,6 +163,7 @@ jobs:
           ci/test_check_attestations.sh
           python3 ci/test_scripts.py
           ci/test_check_default.sh
+          PM_REAL_DAEMON=$PWD/phantom-mirage python3 -W ignore -m unittest -v decoyd.tests.test_decoyd.TestRealVerify
           ci/test_pm_start.sh
           SH=dash ci/test_pm_start.sh
           sh -n release/install.sh release/make-run.sh release/get-mirage.sh debian/scripts/phantom-mirage-setup debian/scripts/phantom-mirage-uninstall
@@ -201,13 +202,17 @@ jobs:
           shellcheck --version | head -2
           # SC1007 (a= b=), SC1090/SC2010/SC2034: intentional patterns
           shellcheck -s sh -S warning -e SC1007,SC1090,SC2010,SC2034 \
-            release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh ci/test_install_rollback.sh console/pm-firewall ci/test_decoy_tcp.sh debian/mkconf.sh install-from-source.sh ci/test_install_from_source.sh ci/test_setup_confirm.sh
+            release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh ci/test_install_rollback.sh console/pm-firewall ci/test_decoy_tcp.sh debian/mkconf.sh install-from-source.sh ci/test_install_from_source.sh ci/test_setup_confirm.sh ci/test_decoys_include.sh
       - name: Default personality file pinned sha256 + parse check (#150)
         run: |
           (cd fingerprints && sha256sum -c columbo-v1.db.sha256)
           grep -qx '38f8d4cbde86b925a35d6157477913f148e7894c189fdfa1deeedbba9a94775f  columbo-v1.db' fingerprints/columbo-v1.db.sha256
           python3 -m venv /tmp/fpv && /tmp/fpv/bin/pip install -q pytest
           /tmp/fpv/bin/python -m pytest -q tools/fingerprint-lab/tests/test_columbo_db.py
+      - name: Decoy helper tests (pm-decoyd, include script)
+        run: |
+          python3 -W ignore -m unittest discover -v -s decoyd/tests
+          sh ci/test_decoys_include.sh && dash ci/test_decoys_include.sh
       - name: Web console unit + server tests (#118)
         run: python3 -W ignore -m unittest discover -v -s console/tests
       - name: ci/test_get_mirage.sh + test_make_run.sh + test_install_rollback.sh (sh and dash)
@@ -622,10 +627,16 @@ jobs:
           test -x /usr/lib/phantom-mirage/pm-start && test -f /usr/lib/phantom-mirage/default-lib.sh
           test -x /usr/sbin/phantom-mirage-setup && test -x /usr/sbin/phantom-mirage-uninstall
           # web console (#118): shipped, not enabled, own user, firewall rules
-          for f in pm-console.py pm-console-setup.py pmauth.py pmstore.py branding.py branding.conf static/index.html static/console.js static/theme.js static/mirage-wordmark.svg static/phantom-mirage-mark-dark.png static/console.css static/phantom-mirage-mark.svg static/phantom-mirage-logo-light.png static/phantom-mirage-logo-dark.png static/fonts/Aldrich-Regular.woff2 static/fonts/Aldrich-OFL.txt; do
+          for f in pm-console.py decoyclient.py pm-console-setup.py pmauth.py pmstore.py branding.py branding.conf static/index.html static/console.js static/theme.js static/mirage-wordmark.svg static/phantom-mirage-mark-dark.png static/console.css static/phantom-mirage-mark.svg static/phantom-mirage-logo-light.png static/phantom-mirage-logo-dark.png static/fonts/Aldrich-Regular.woff2 static/fonts/Aldrich-OFL.txt; do
             test -f /usr/lib/phantom-mirage/console/$f
           done
           test -x /usr/lib/phantom-mirage/pm-firewall
+          # decoy helper: shipped, socket not enabled until setup, include in place
+          test -f /usr/lib/phantom-mirage/pm-decoyd && test -x /usr/lib/phantom-mirage/pm-decoys-include
+          test -f /usr/share/phantom-mirage/decoy-services.json
+          test -f /usr/lib/systemd/system/pm-decoyd.socket && test -f /usr/lib/systemd/system/pm-decoyd.service
+          grep -qx 'include /etc/phantom-mirage/decoys.conf' /etc/phantom-mirage/phantom-mirage.conf
+          test -f /etc/phantom-mirage/decoys.conf
           getent passwd phantom-mirage-console
           test "$(stat -c '%U:%G %a' /var/lib/phantom-mirage/console)" = "root:phantom-mirage-console 770"
           PM_CONSOLE_STATE=/nonexistent PM_DEFAULT=/dev/null /usr/lib/phantom-mirage/pm-firewall print | tee fw.txt

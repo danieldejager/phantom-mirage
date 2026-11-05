@@ -13,7 +13,7 @@ if [ "$1" != "upgrade" ]; then
 	fi
 	# console (#118): stop it and remove its nftables table
 	if [ -d /run/systemd/system ]; then
-		systemctl stop phantom-mirage-console.service phantom-mirage-firewall.service >/dev/null 2>&1 || true
+		systemctl stop pm-decoyd.socket pm-decoyd.service phantom-mirage-console.service phantom-mirage-firewall.service >/dev/null 2>&1 || true
 	fi
 	if [ -x /usr/lib/phantom-mirage/pm-firewall ]; then
 		/usr/lib/phantom-mirage/pm-firewall remove || true

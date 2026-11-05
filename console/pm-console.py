@@ -18,6 +18,7 @@ import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import branding  # noqa: E402
+import decoyclient  # noqa: E402
 import pmauth  # noqa: E402
 import pmstore  # noqa: E402
 
@@ -162,6 +163,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send_json(200, self.status())
         if path == "/api/decoys":
             return self.send_json(200, pmstore.decoy_list(dict(a.alerts.last_touch)))
+        if path in ("/api/decoyd/list", "/api/decoyd/options"):
+            r = decoyclient.call(path.rsplit("/", 1)[1], {}, s["user"])
+            return self.send_json(200 if r["ok"] else self.decoyd_status(r), r)
         if path == "/api/personalities":
             return self.send_json(200, {"personalities": pmstore.personalities()})
         if path == "/api/alerts":
@@ -319,6 +323,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             pmstore.save_config(c)
             pmstore.audit(user, "settings", "; ".join(changes))
             return self.send_json(200, {"ok": True})
+        if path == "/api/decoyd/change":
+            return self.decoyd_change(user, data)
         if path == "/api/password":
             adm = pmstore.load_admin() or {}
             cur, new = data.get("current", ""), data.get("new", "")
@@ -333,6 +339,53 @@ class Handler(http.server.BaseHTTPRequestHandler):
             pmstore.audit(user, "password-change", "all sessions signed out")
             return self.send_json(200, {"ok": True})
         return self.err(404, "not found")
+
+    @staticmethod
+    def decoyd_status(r):
+        code = (r.get("error") or {}).get("code", "")
+        if code in ("E_UNAVAILABLE", "E_TIMEOUT", "E_BAD_REPLY"):
+            return 503
+        if code in ("E_BUSY", "E_RATE_LIMIT"):
+            return 429
+        if code in ("E_CONFLICT", "E_EXISTS", "E_NOT_FOUND", "E_NOT_RUNNING", "E_NOT_STOPPED"):
+            return 409
+        if code in ("E_RELOAD_FAILED_ROLLED_BACK", "E_ROLLBACK_FAILED", "E_INTERNAL", "E_PEER"):
+            return 500
+        return 400
+
+    def decoyd_change(self, user, data):
+        """Per decoy change: the admin re-enters the password every time.
+        The address block (NETWORK) is not editable here: no op touches it."""
+        a = self.app
+        op, args, pw = data.get("op"), data.get("args"), data.get("password")
+        if op not in decoyclient.CHANGE_OPS or not isinstance(args, dict) or set(data) - {"op", "args", "password"}:
+            return self.err(400, "bad request")
+        src = self.source()
+        key = "decoy-reauth:" + user
+        until = a.lockout.locked_until(key, src)
+        if until:
+            pmstore.audit(user, "decoy-" + op, "password re-entry backing off", ok=False)
+            return self.err(423, "too many wrong passwords; try again in %d s" % max(1, int(until - time.time())))
+        adm = pmstore.load_admin() or {}
+        if not (isinstance(pw, str) and pw and pmauth.verify_password(pw, adm.get("hash", ""))):
+            a.lockout.failure(key, src)
+            pmstore.audit(user, "decoy-" + op, "wrong password", ok=False)
+            return self.err(403, "password is wrong")
+        a.lockout.success(key, src)
+        ip = args.get("ip")
+        if ip is None and isinstance(args.get("decoy"), dict):
+            ip = args["decoy"].get("ip")
+        target = re.sub(r'[^0-9.]', "", str(ip))[:15] if ip is not None else "all"
+        pmstore.audit(user, "decoy-" + op, "requested %s" % target)
+        r = decoyclient.call(op, args, user)
+        if r["ok"]:
+            pmstore.audit(user, "decoy-" + op, "%s applied%s" % (
+                target, ", sensor reloaded" if r.get("reloaded") else ", sensor not running"))
+            return self.send_json(200, r)
+        e = r.get("error") or {}
+        pmstore.audit(user, "decoy-" + op, "%s refused %s%s" % (
+            target, e.get("code"), ", rolled back" if r.get("rolled_back") else ""), ok=False)
+        return self.send_json(self.decoyd_status(r), r)
 
     def login(self, data, tok):
         a = self.app

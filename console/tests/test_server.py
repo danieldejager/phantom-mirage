@@ -307,5 +307,129 @@ class Server(unittest.TestCase):
             "fonts/Aldrich-Regular.woff2", "fonts/Aldrich-OFL.txt"]))
 
 
+class FakeHelper:
+    """A unix socket standing in for pm-decoyd: records requests, replies
+    with self.reply (or the id echoed back with ok)."""
+
+    def __init__(self, path):
+        import socket as so
+        self.path, self.reqs, self.reply = path, [], None
+        self.ls = so.socket(so.AF_UNIX, so.SOCK_STREAM)
+        self.ls.bind(path)
+        self.ls.listen(4)
+        self.ls.settimeout(0.2)
+        self.stop = False
+        self.t = threading.Thread(target=self.run, daemon=True)
+        self.t.start()
+
+    def run(self):
+        import socket as so
+        while not self.stop:
+            try:
+                c, _ = self.ls.accept()
+            except so.timeout:
+                continue
+            with c:
+                buf = b""
+                while not buf.endswith(b"\n"):
+                    ch = c.recv(65536)
+                    if not ch:
+                        break
+                    buf += ch
+                q = json.loads(buf)
+                self.reqs.append(q)
+                r = dict(self.reply or {"ok": True, "result": {"echo": q["op"]},
+                                        "reloaded": True, "rolled_back": False})
+                r.update(v=1, id=q["id"])
+                c.sendall((json.dumps(r) + "\n").encode())
+
+    def close(self):
+        self.stop = True
+        self.t.join(2)
+        self.ls.close()
+
+
+class DecoydApi(unittest.TestCase):
+    def setUp(self):
+        pmc.Handler.app.lockout.reset()
+        pmc.Handler.app.lockout._attempts = {}
+        self.sock = os.path.join(TMP, "decoyd.sock")
+        os.environ["PM_DECOYD_SOCK"] = self.sock
+        self.h = FakeHelper(self.sock)
+        self.c = Client()
+        st, j = self.c.login()
+        self.assertEqual(st, 200)
+        self.csrf = j["csrf"]
+
+    def tearDown(self):
+        self.h.close()
+        os.unlink(self.sock)
+        os.environ.pop("PM_DECOYD_SOCK", None)
+
+    def change(self, body, csrf=True):
+        return self.c.req("POST", "/api/decoyd/change", body, self.csrf if csrf else None)
+
+    def audit(self):
+        return [a for a in pmstore.read_audit()[::-1] if a["action"].startswith("decoy-")]
+
+    def test_reads(self):
+        st, j = self.c.req("GET", "/api/decoyd/options")
+        self.assertEqual((st, j["result"]["echo"]), (200, "options"))
+        st, j = self.c.req("GET", "/api/decoyd/list")
+        self.assertEqual((st, j["result"]["echo"]), (200, "list"))
+        q = self.h.reqs[-1]
+        self.assertEqual((q["v"], q["actor"], q["args"]), (1, "admin", {}))
+        self.assertEqual(Client().req("GET", "/api/decoyd/list")[0], 401)
+
+    def test_change_needs_password_csrf_and_known_op(self):
+        args = {"ip": "10.9.0.9"}
+        self.assertEqual(self.change({"op": "stop", "args": args, "password": PW}, csrf=False)[0], 403)
+        self.assertEqual(self.change({"op": "stop", "args": args})[0], 403)
+        self.assertEqual(self.change({"op": "stop", "args": args, "password": "nope"})[0], 403)
+        self.assertEqual(self.change({"op": "list", "args": {}, "password": PW})[0], 400)
+        self.assertEqual(self.change({"op": "set_network", "args": {}, "password": PW})[0], 400)
+        self.assertEqual(self.change({"op": "stop", "args": args, "password": PW, "network": "1.2.3.0/24"})[0], 400)
+        self.assertEqual(self.h.reqs, [])
+        st, j = self.change({"op": "stop", "args": args, "password": PW})
+        self.assertEqual(st, 200)
+        self.assertTrue(j["ok"])
+        q = self.h.reqs[-1]
+        self.assertEqual((q["op"], q["args"]), ("stop", args))
+        self.assertNotIn("password", json.dumps(q))
+        a = self.audit()
+        self.assertEqual([x["ok"] for x in a[-3:]], [False, True, True])
+        self.assertIn("requested 10.9.0.9", a[-2]["detail"])
+        self.assertIn("sensor reloaded", a[-1]["detail"])
+        self.assertNotIn(PW, json.dumps(pmstore.read_audit()))
+
+    def test_wrong_password_backs_off(self):
+        codes = [self.change({"op": "stop", "args": {"ip": "10.9.0.9"}, "password": "bad"})[0]
+                 for _ in range(8)]
+        self.assertIn(423, codes)
+        self.assertEqual(self.change({"op": "stop", "args": {"ip": "10.9.0.9"}, "password": PW})[0], 423)
+        self.assertEqual(self.h.reqs, [])
+
+    def test_helper_errors_mapped(self):
+        for code, want in (("E_INVALID_PERSONALITY", 400), ("E_CONFLICT", 409), ("E_RATE_LIMIT", 429),
+                           ("E_RELOAD_FAILED_ROLLED_BACK", 500)):
+            with self.subTest(code=code):
+                self.h.reply = {"ok": False, "reloaded": code.startswith("E_RELOAD"),
+                                "rolled_back": code.startswith("E_RELOAD"),
+                                "error": {"code": code, "field": None, "message": "x"}}
+                st, j = self.change({"op": "add", "args": {"decoy": {"ip": "10.9.0.9"}}, "password": PW})
+                self.assertEqual(st, want)
+                self.assertEqual(j["error"]["code"], code)
+        self.assertIn("rolled back", self.audit()[-1]["detail"])
+
+    def test_helper_down(self):
+        self.h.close()
+        os.unlink(self.sock)
+        st, j = self.c.req("GET", "/api/decoyd/list")
+        self.assertEqual((st, j["error"]["code"]), (503, "E_UNAVAILABLE"))
+        st, j = self.change({"op": "reset_all", "args": {"confirm": "reset-all"}, "password": PW})
+        self.assertEqual((st, j["error"]["code"]), (503, "E_UNAVAILABLE"))
+        self.h = FakeHelper(self.sock)
+
+
 if __name__ == "__main__":
     unittest.main()

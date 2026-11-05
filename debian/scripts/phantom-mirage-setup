@@ -181,6 +181,8 @@ console_start() {
 	systemctl restart phantom-mirage-firewall
 	pm_enable phantom-mirage-console
 	systemctl restart phantom-mirage-console
+	# per decoy settings helper: socket only, the helper starts on demand
+	systemctl enable --now pm-decoyd.socket || say "warning: could not enable pm-decoyd.socket (per decoy settings stay read only)"
 	_port=$(sed -n 's/.*"port":[[:space:]]*\([0-9][0-9]*\).*/\1/p' /var/lib/phantom-mirage/console/console.json 2>/dev/null | head -n 1)
 	_port=${_port:-8443}
 	say "console: https://127.0.0.1:$_port on this sensor only (firewalled on every other interface)."

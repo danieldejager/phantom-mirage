@@ -64,6 +64,11 @@ override_dh_auto_install:
 	install -D -m 0644 debian/brand/logo-24bit.ans $(D)/usr/lib/phantom-mirage/brand/logo-24bit.ans
 	install -D -m 0644 debian/brand/logo-256.ans $(D)/usr/lib/phantom-mirage/brand/logo-256.ans
 	install -D -m 0755 console/pm-firewall $(D)/usr/lib/phantom-mirage/pm-firewall
+	# per decoy settings: root helper behind a unix socket, fixed service list
+	install -m 0644 console/decoyclient.py $(D)/usr/lib/phantom-mirage/console/
+	install -D -m 0755 decoyd/pm-decoyd.py $(D)/usr/lib/phantom-mirage/pm-decoyd
+	install -D -m 0755 debian/scripts/pm-decoys-include $(D)/usr/lib/phantom-mirage/pm-decoys-include
+	install -D -m 0644 decoyd/decoy-services.json $(D)/usr/share/phantom-mirage/decoy-services.json
 
 override_dh_installdocs:
 	dh_installdocs -pphantom-mirage
@@ -88,3 +93,5 @@ override_dh_installsystemd:
 	# console + its firewall (#118): enabled by phantom-mirage-setup
 	dh_installsystemd -pphantom-mirage --name=phantom-mirage-firewall --no-enable --no-start --no-stop-on-upgrade
 	dh_installsystemd -pphantom-mirage --name=phantom-mirage-console --no-enable --no-start --no-stop-on-upgrade
+	# per decoy settings helper (socket activated): enabled by phantom-mirage-setup
+	dh_installsystemd -pphantom-mirage --name=pm-decoyd --no-enable --no-start --no-stop-on-upgrade

@@ -1,0 +1,15 @@
+[Unit]
+Description=Phantom Mirage per decoy settings helper socket
+Documentation=file:///usr/share/doc/phantom-mirage/README.md
+
+[Socket]
+# Only the console user (group phantom-mirage-console) can connect; the
+# helper also checks SO_PEERCRED and refuses every other uid.
+ListenStream=/run/phantom-mirage-decoyd.sock
+SocketUser=root
+SocketGroup=phantom-mirage-console
+SocketMode=0660
+Accept=no
+
+[Install]
+WantedBy=sockets.target

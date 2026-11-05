@@ -1,0 +1,40 @@
+[Unit]
+Description=Phantom Mirage per decoy settings helper (socket activated)
+Documentation=file:///usr/share/doc/phantom-mirage/README.md
+Requires=pm-decoyd.socket
+After=pm-decoyd.socket
+
+[Service]
+Type=simple
+# Root: it writes /etc/phantom-mirage/decoys.conf, runs
+# phantom-mirage --verify-config and reloads phantom-mirage.service.
+# It exits by itself after 30 s without a connection.
+ExecStart=/usr/bin/python3 -I /usr/lib/phantom-mirage/pm-decoyd
+RuntimeDirectory=phantom-mirage-decoyd
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+# CAP_NET_RAW only: --verify-config opens the sensor INTERFACE for real
+# (eth_open), which fails without it. Same reason there is no
+# PrivateNetwork=: the interface must be visible.
+CapabilityBoundingSet=CAP_NET_RAW
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/etc/phantom-mirage /var/lib/phantom-mirage
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+IPAddressDeny=any
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_PACKET AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077

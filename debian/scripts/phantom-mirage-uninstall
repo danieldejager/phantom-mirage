@@ -52,6 +52,10 @@ main() {
 	note() { removed="$removed
   $*"; }
 
+	if command -v systemctl >/dev/null 2>&1 && systemctl cat pm-decoyd.socket >/dev/null 2>&1; then
+		run systemctl disable --now pm-decoyd.socket pm-decoyd.service || true
+		note "socket pm-decoyd (stopped, disabled)"
+	fi
 	for svc in phantom-mirage-console phantom-mirage-firewall phantom-mirage honeyd; do
 		if command -v systemctl >/dev/null 2>&1 && systemctl cat "$svc.service" >/dev/null 2>&1; then
 			run systemctl disable --now "$svc.service" || run systemctl stop "$svc.service" || true
@@ -92,6 +96,7 @@ main() {
 		/etc/systemd/system/multi-user.target.wants/phantom-mirage.service \
 		/etc/systemd/system/multi-user.target.wants/phantom-mirage-console.service \
 		/etc/systemd/system/multi-user.target.wants/phantom-mirage-firewall.service \
+		/etc/systemd/system/sockets.target.wants/pm-decoyd.socket \
 		/etc/systemd/timesyncd.conf.d/phantom-mirage.conf $KEEPDIR; do
 		[ -e "$d" ] || [ -L "$d" ] || continue
 		run rm -rf -- "$d"
