@@ -125,7 +125,8 @@ class Server(unittest.TestCase):
         self.assertEqual(st, 421)
 
     def test_api_needs_session(self):
-        for p in ("/api/status", "/api/alerts", "/api/audit", "/api/settings", "/api/decoys"):
+        for p in ("/api/status", "/api/alerts", "/api/audit", "/api/settings", "/api/decoys",
+                  "/api/personalities"):
             self.assertEqual(Client().req("GET", p)[0], 401, p)
 
     def test_login_needs_pre_token(self):
@@ -208,6 +209,24 @@ class Server(unittest.TestCase):
         _, d = c.req("GET", "/api/decoys")
         self.assertEqual(len(d["decoys"]), 8)
         self.assertTrue(any(x["last"] for x in d["decoys"] if x["ip"] == "10.9.0.9"))
+
+    def test_decoy_detail_and_personalities(self):
+        c = Client()
+        c.login()
+        _, d = c.req("GET", "/api/decoys")
+        x = [r for r in d["decoys"] if r["ip"] == "10.9.0.12"][0]
+        self.assertEqual(x["port_states"], [{"proto": "tcp", "port": 22, "state": "open"}])
+        self.assertIn("default", x)
+        db = os.path.join(TMP, "fp.db")
+        with open(db, "w") as f:
+            f.write("Fingerprint ubuntu2404\nFingerprint ws2022-fwoff\n")
+        old, pmstore.FPDB = pmstore.FPDB, db
+        try:
+            st, j = c.req("GET", "/api/personalities")
+        finally:
+            pmstore.FPDB = old
+        self.assertEqual(st, 200)
+        self.assertEqual(j["personalities"], ["ubuntu2404", "ws2022-fwoff"])
 
     def test_failed_login_keyed_by_local_uid(self):
         self.assertEqual(Client().login(pw="wrong-password-1")[0], 401)

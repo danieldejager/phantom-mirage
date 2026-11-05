@@ -122,9 +122,21 @@ ${card("Last activity", when(s.last_activity))}${card("Sensor clock", esc(new Da
 function Decoys() {
   const d = data.decoys;
   return `<h2>Decoys</h2><div class="row"><span class="note">Block ${esc(d.network || "(not set)")} on ${esc(d.interface || "?")} · from /etc/phantom-mirage/phantom-mirage.conf</span></div>${d.error ? `<p class="bad">${esc(d.error)}</p>` : ""}
-<div class="tw"><table><tr><th>Address</th><th>Template</th><th>Personality</th><th>Open ports</th><th>Last touched</th></tr>
-${d.decoys.map(x => `<tr><td>${esc(x.ip)}</td><td>${esc(x.template)}</td><td>${esc(x.personality)}</td><td class="wr">${esc(x.ports.join(", ") || "none")}</td><td>${when(x.last)}</td></tr>`).join("") || '<tr><td colspan="5" class="note">No decoys configured</td></tr>'}</table></div>
+<div class="tw"><table><tr><th></th><th>Address</th><th>Template</th><th>Personality</th><th>Open ports</th><th>Last touched</th></tr>
+${d.decoys.map((x, i) => `<tr><td><button class="gear" data-act="decoy" data-id="${i}" title="Decoy details for ${esc(x.ip)}" aria-label="Decoy details for ${esc(x.ip)}">\u2699</button></td><td>${esc(x.ip)}</td><td>${esc(x.template)}</td><td>${esc(x.personality)}</td><td class="wr">${esc(x.ports.join(", ") || "none")}</td><td>${when(x.last)}</td></tr>`).join("") || '<tr><td colspan="6" class="note">No decoys configured</td></tr>'}</table></div>
 <p class="note">Editing decoys from the console is not in this version; edit the config on the sensor and run <code>sudo systemctl reload phantom-mirage</code>.</p>`;
+}
+function decoyPanel(x, pers) {
+  const ps = (x.port_states || []).slice().sort((a, b) => a.proto.localeCompare(b.proto) || a.port - b.port);
+  const df = x.default || {};
+  return `<h3>Decoy ${esc(x.ip)}</h3><table class="kv">
+<tr><th>Address</th><td>${esc(x.ip)}</td></tr><tr><th>Template</th><td>${esc(x.template)}</td></tr>
+<tr><th>Personality</th><td>${esc(x.personality || "(daemon default stack)")}</td></tr>
+<tr><th>Default actions</th><td>${["tcp", "udp", "icmp"].map(p => `${p} ${esc(df[p] || "(not set)")}`).join(", ")}</td></tr>
+<tr><th>Last touched</th><td>${when(x.last)}</td></tr></table>
+<div class="k u-mt18">Ports</div><div class="tw"><table><tr><th>Protocol</th><th>Port</th><th>State</th></tr>${ps.map(p => `<tr><td>${esc(p.proto)}</td><td>${esc(p.port)}</td><td>${esc(p.state)}</td></tr>`).join("") || '<tr><td colspan="3" class="note">No ports listed; the default actions apply</td></tr>'}</table></div>
+<div class="k u-mt18">Personalities available on this sensor</div><p class="note">${pers.length ? pers.map(esc).join(", ") : "none found in /etc/phantom-mirage/columbo-v1.db"}</p>
+<p class="note">Read only in this version.</p><div class="row"><button data-act="mclose">Close</button></div>`;
 }
 function Alerts() {
   const A = data.alerts, muted = A.muted || [];
@@ -160,7 +172,7 @@ function Settings() {
 }
 
 /* ---- actions (event delegation: no inline handlers, strict CSP) ---- */
-function modalOpen(h) { $("mbox").innerHTML = h; $("modal").classList.add("open"); }
+function modalOpen(h, wide) { $("mbox").innerHTML = h; $("mbox").classList.toggle("mwide", !!wide); $("modal").classList.add("open"); }
 function mclose() { $("modal").classList.remove("open"); }
 async function act(fn) { try { await fn(); } catch (e) { if (e.message !== "signed out") modalOpen(`<h3>Error</h3><p class="bad">${esc(e.message)}</p><div class="row"><button data-act="mclose">OK</button></div>`); } }
 document.addEventListener("click", e => {
@@ -178,6 +190,7 @@ document.addEventListener("click", e => {
     case "mute": act(async () => { await api("/api/mute", {src}); go("Alerts"); }); break;
     case "unmute": act(async () => { await api("/api/unmute", {src}); go("Alerts"); }); break;
     case "mclose": mclose(); break;
+    case "decoy": act(async () => { const x = data.decoys.decoys[+id]; if (!x) return; const p = await api("/api/personalities"); modalOpen(decoyPanel(x, p.personalities || []), true); }); break;
     case "pause": paused = !paused; go("Activity"); break;
     case "csv": csv(); break;
     case "savesettings": act(async () => { $("serr").textContent = ""; try { await api("/api/settings", {alert_retention_days: +$("sret").value, timezone: $("stz").value.trim()}); go("Settings"); } catch (er) { $("serr").textContent = er.message; } }); break;

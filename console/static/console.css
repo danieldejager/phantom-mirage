@@ -91,3 +91,7 @@ td.wr{white-space:normal;max-width:420px;word-break:break-word}
 .mwm{display:inline-block;height:14px;aspect-ratio:7.54;background:currentColor;color:var(--t);-webkit-mask:url(/static/mirage-wordmark.svg) center/contain no-repeat;mask:url(/static/mirage-wordmark.svg) center/contain no-repeat}.swm{height:28px;margin:0 0 18px}.nbrand .mwm{margin:4px 0}
 /* P mark on a solid black tile in both themes, sized to the header and the splash. */
 .ptile{display:inline-flex;background:#000;border-radius:9px;padding:4px}.ptile img{display:block}.slogo .ptile{border-radius:18px;padding:10px}
+/* decoy detail panel (gear per row) */
+.gear{padding:2px 8px;font-size:16px;line-height:1}
+.modal>div.mwide{width:560px;max-height:88vh;overflow:auto}
+table.kv th{text-align:left;width:34%;font-weight:normal;color:var(--tm)}

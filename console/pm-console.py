@@ -162,6 +162,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send_json(200, self.status())
         if path == "/api/decoys":
             return self.send_json(200, pmstore.decoy_list(dict(a.alerts.last_touch)))
+        if path == "/api/personalities":
+            return self.send_json(200, {"personalities": pmstore.personalities()})
         if path == "/api/alerts":
             return self.send_json(200, {"alerts": a.alerts.snapshot(),
                                         "muted": a.cfg.get("muted", [])})

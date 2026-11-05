@@ -19,6 +19,8 @@ STATE_DIR = os.environ.get("PM_CONSOLE_STATE", "/var/lib/phantom-mirage/console"
 SENSOR_CONF = os.environ.get("PM_SENSOR_CONF", "/etc/phantom-mirage/phantom-mirage.conf")
 SENSOR_DEFAULT = os.environ.get("PM_DEFAULT", "/etc/default/phantom-mirage")
 EVENT_LOG = os.environ.get("PM_EVENT_LOG", "/var/log/phantom-mirage/events.jsonl")
+# the pinned personality file the service loads with -p (pm-start, #150)
+FPDB = os.environ.get("PM_FPDB", "/etc/phantom-mirage/columbo-v1.db")
 
 GROUP_WINDOW = 600          # same source within 10 minutes -> one alert
 MAX_ALERTS = 5000
@@ -121,6 +123,24 @@ def read_default(p=None):
     return vals
 
 
+PORT_STATES = ("open", "closed", "reset", "block", "filtered")
+
+
+def personalities(db=None):
+    """Personality names the service can use: the Fingerprint lines of the
+    pinned personality file. Read only; a missing file gives []."""
+    out = []
+    try:
+        with open(db or FPDB, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                m = re.match(r'^Fingerprint ([A-Za-z0-9._+-]{1,64})\s*$', line)
+                if m and m.group(1) not in out:
+                    out.append(m.group(1))
+    except OSError:
+        return []
+    return out
+
+
 def parse_decoys(conf=None):
     """Templates and bindings from the honeyd-style config."""
     tmpl, binds = {}, []
@@ -149,6 +169,11 @@ def parse_decoys(conf=None):
             state = w[5] if len(w) >= 6 else ""
             if state not in ("block", "reset", "closed"):
                 t["ports"].append("%s/%s" % (w[2], w[4]))
+            # every port with its state, for the read-only detail panel
+            if w[2] in ("tcp", "udp") and w[4].isdigit():
+                kind = state if state in PORT_STATES else ("script" if state else "open")
+                t.setdefault("port_states", []).append(
+                    {"proto": w[2], "port": int(w[4]), "state": kind})
         elif len(w) >= 3 and w[0] == "bind":
             binds.append({"ip": w[1], "template": w[2]})
     return {"templates": tmpl, "binds": binds}
@@ -164,6 +189,8 @@ def decoy_list(last_touch):
         rows.append({"ip": b["ip"], "template": b["template"],
                      "personality": t.get("personality", ""),
                      "ports": t.get("ports", []),
+                     "port_states": t.get("port_states", []),
+                     "default": t.get("default", {}),
                      "last": last_touch.get(b["ip"])})
     if net and "default" in d.get("templates", {}):
         t = d["templates"]["default"]
@@ -177,7 +204,9 @@ def decoy_list(last_touch):
                         continue
                     rows.append({"ip": s, "template": "default",
                                  "personality": t.get("personality", ""),
-                                 "ports": t.get("ports", []), "last": last_touch.get(s)})
+                                 "ports": t.get("ports", []),
+                                 "port_states": t.get("port_states", []),
+                                 "default": t.get("default", {}), "last": last_touch.get(s)})
         except ValueError:
             pass
     return {"network": net, "interface": dflt.get("INTERFACE", ""), "decoys": rows,

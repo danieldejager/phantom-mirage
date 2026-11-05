@@ -52,5 +52,55 @@ class TestParseDecoys(unittest.TestCase):
         self.assertEqual(t["ports"], ["udp/53"])
 
 
+FPDB = """# comment
+Fingerprint ubuntu2404
+Class Linux | Linux | 6.X | general purpose
+Fingerprint ws2022-fwoff
+Fingerprint ws2019-fwoff
+Fingerprint ws2025-fwoff
+Fingerprint win11-fwon
+Fingerprint win11-fwoff
+Fingerprint ubuntu2404
+Fingerprint bad name with spaces
+Fingerprint evil;rm
+"""
+
+
+class TestPortStates(unittest.TestCase):
+    def test_port_states_keep_every_state(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".conf", delete=False) as f:
+            f.write(CONF)
+        self.addCleanup(os.unlink, f.name)
+        ps = pmstore.parse_decoys(f.name)["templates"]["linux-srv"]["port_states"]
+        got = {(p["proto"], p["port"]): p["state"] for p in ps}
+        self.assertEqual(got, {("tcp", 22): "open", ("tcp", 80): "script", ("udp", 161): "open",
+                               ("udp", 53): "filtered", ("tcp", 443): "open", ("tcp", 23): "block",
+                               ("tcp", 25): "reset", ("udp", 69): "closed"})
+
+    def test_script_command_never_exposed(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".conf", delete=False) as f:
+            f.write(CONF)
+        self.addCleanup(os.unlink, f.name)
+        ps = pmstore.parse_decoys(f.name)["templates"]["linux-srv"]["port_states"]
+        self.assertNotIn("web.sh", repr(ps))
+
+
+class TestPersonalities(unittest.TestCase):
+    def test_fingerprint_lines(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".db", delete=False) as f:
+            f.write(FPDB)
+        self.addCleanup(os.unlink, f.name)
+        self.assertEqual(pmstore.personalities(f.name),
+                         ["ubuntu2404", "ws2022-fwoff", "ws2019-fwoff", "ws2025-fwoff",
+                          "win11-fwon", "win11-fwoff"])
+
+    def test_missing_file(self):
+        self.assertEqual(pmstore.personalities("/nonexistent/columbo-v1.db"), [])
+
+    def test_shipped_pinned_db(self):
+        db = os.path.join(HERE, "..", "..", "fingerprints", "columbo-v1.db")
+        self.assertEqual(len(pmstore.personalities(db)), 6)
+
+
 if __name__ == "__main__":
     unittest.main()
