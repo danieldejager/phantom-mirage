@@ -95,6 +95,7 @@ async function load(p) {
   if (p === "Alerts" || p === "Dashboard") data.alerts = await api("/api/alerts");
   if (p === "Activity" && !paused) data.activity = (await api("/api/activity")).events;
   if (p === "Settings") await zonesLoad();
+  if (p === "Settings") data.ti = await api("/api/decoyd/timeinfo").then(j => j.result, e => { if (e.message === "signed out") throw e; return {error: e.message}; });
   if (p === "Settings") { data.settings = await api("/api/settings"); data.audit = (await api("/api/audit")).audit; data.alerts = await api("/api/alerts"); }
   if (!data.status) data.status = await api("/api/status");
   tzSet(data.status.timezone);
@@ -662,9 +663,81 @@ function Settings() {
   const c = data.settings;
   return `<h2>Settings</h2><div class="u-wide cards">
 <div class="card"><div class="k">Retention and display</div><p>Alerts kept for <input id="sret" type="number" min="1" max="3650" value="${esc(c.alert_retention_days)}" class="u-w90"> days</p><p><label for="stz">Time zone</label> ${tzSelect(c.timezone)}</p><p class="note">Times across the console use this zone.</p><button class="pri" data-act="savesettings">Save</button><div class="err" id="serr"></div></div>
-<div class="card"><div class="k">Time source</div><p>${c.time_source === "ntp" ? "NTP server on the local network: <code>" + esc(c.ntp_server) + "</code>" : "Sensor clock set from the admin's browser at each sign-in"}</p><p class="note">Warns when the sensor clock is more than ${esc(c.drift_warn_seconds)} s off. Change it on the sensor: <code>sudo phantom-mirage-setup --reconfigure-console</code>.</p></div>
+${timeCard(c)}
 <div class="card"><div class="k">Service</div><p class="note">Console on https://127.0.0.1:${esc(c.port)} (sensor ${esc(c.sensor_name)}). Reach it with <code>ssh -L ${esc(c.port)}:127.0.0.1:${esc(c.port)} user@sensor</code>. Uninstall on the sensor: <code>sudo phantom-mirage-uninstall</code> (asks first; wipes all console data).</p></div></div>
 <h2 class="u-mt18">Audit log</h2><div class="tw"><table><tr><th>Time</th><th>Who</th><th>Action</th><th>Detail</th><th>Result</th></tr>${data.audit.map(a => `<tr><td>${tm(a.ts)}</td><td>${esc(a.actor)}</td><td>${esc(a.action)}</td><td class="wr">${esc(a.detail)}</td><td>${a.ok ? '<span class="ok">ok</span>' : '<span class="bad">refused</span>'}</td></tr>`).join("")}</table></div>`;
+}
+
+/* ---- Time: the NTP servers of chrony or systemd-timesyncd. The helper
+   checks the servers again, restarts only the time service, waits for it
+   to reach one and rolls back if it does not (unless kept anyway). ---- */
+function offs(v) { if (typeof v !== "number") return "unknown"; const a = Math.abs(v); return (v < 0 ? "-" : "+") + (a < 0.001 ? (a * 1e6).toFixed(0) + " \u00b5s" : a < 1 ? (a * 1e3).toFixed(1) + " ms" : a.toFixed(2) + " s"); }
+function timeCard(c) {
+  const t = data.ti || {}, ntp = c.time_source === "ntp";
+  const can = ntp && !t.error && t.service && !t.ready;
+  const st = t.error ? "" : !t.service ? "" : !t.active ? '<span class="bad">not running</span>' : t.synced ? '<span class="ok">synchronised</span>' : '<span class="bad">not synchronised</span>';
+  const lc = t.last_change, lct = lc ? {applied: "applied", applied_unverified: "applied, server not reached yet", rolled_back: "rolled back", rollback_failed: "rollback failed", interrupted: "interrupted, undone"}[lc.result] || lc.result : "";
+  return `<div class="card" id="timecard"><div class="k">Time</div>
+<p>${ntp ? "Source: NTP on the local network" : "Source: this browser at each sign-in"}${t.service ? ` (<code>${esc(t.unit)}</code>)` : ""}</p>
+${t.error ? `<p class="note" id="tunavail">Time status unavailable: ${esc(t.error)}</p>` : !t.service ? `<p class="note bad" id="tunavail">${esc(t.ready || "no time service found")}</p>` : `<table class="kv" id="tinfo"><tr><th>Servers</th><td id="tsrv">${(t.servers || []).map(x => "<code>" + esc(x) + "</code>").join(" ") || "none"}</td></tr><tr><th>Status</th><td id="tsync">${st}</td></tr><tr><th>Offset</th><td id="toff">${esc(offs(t.offset_s))}</td></tr><tr><th>Stratum</th><td>${esc(t.stratum == null ? "unknown" : t.stratum)}</td></tr><tr><th>Reference</th><td>${esc(t.reference || "none")}</td></tr>${lc ? `<tr><th>Last change</th><td id="tlast">${esc(lct)}, ${esc(when(new Date(lc.time * 1000).toISOString()))}</td></tr>` : ""}</table>`}
+${t.ready && t.service ? `<p class="note bad">${esc(t.ready)}. Run <code>sudo phantom-mirage-setup --reconfigure-console</code> and choose local NTP.</p>` : ""}
+<p class="note">Warns when the sensor clock is more than ${esc(c.drift_warn_seconds)} s off.${ntp ? "" : " To use an NTP server instead, run <code>sudo phantom-mirage-setup --reconfigure-console</code> on the sensor."}</p>
+${can ? '<button data-act="time" id="timechange">Change time servers</button>' : ""}<div id="tmsg" role="status"></div></div>`;
+}
+function timeDialog() {
+  const t = data.ti || {}, sv = t.servers || [];
+  return `<h3>Change time servers</h3>
+<p class="note">Now: <b>${esc(sv.join(", ") || "none")}</b> via ${esc(t.unit)}. Use NTP servers on your network (IPv4 address or host name), 1 to ${esc(t.max_servers || 3)}. No internet pools are added.</p>
+${[0, 1, 2].map(i => `<label class="k" for="tsv${i}">Server ${i + 1}${i ? " (optional)" : ""}</label><p><input id="tsv${i}" class="u-w100" autocomplete="off" spellcheck="false" maxlength="253" value="${esc(sv[i] || "")}"></p>`).join("")}
+<div class="note" id="thint" role="status"></div>
+<p><label><input type="checkbox" id="tkeep"> Keep the new servers even if none answers within 20 s</label></p>
+<div class="warnbox">This restarts <b>${esc(t.unit)}</b> only (not the sensor). If it does not reach one of the new servers within 20 s, the previous servers are put back, unless you tick the box above.</div>
+<p><input id="dpw" type="password" autocomplete="current-password" placeholder="Your console password" class="u-w100"></p>
+<div class="err" id="derr" role="alert"></div><div class="row"><button class="pri" data-act="dotime" id="dotime">Apply time servers</button><button data-act="mclose">Cancel</button></div>`;
+}
+function timeVals() { return [0, 1, 2].map(i => $("tsv" + i).value.trim().toLowerCase()).filter(Boolean); }
+function timeHint() {
+  const v = timeVals(), ni = data.ni || {}, blk = cidr((ni.network || "").split(" ")[0] || "");
+  if (!v.length) return "Enter at least one server.";
+  for (const x of v) {
+    if (/^[0-9.]+$/.test(x)) { const a = ip4(x); if (a === null) return x + " is not a valid IPv4 address."; if (blk && inC(a, blk)) return x + " is inside the decoy block."; }
+    else if (!/^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/.test(x)) return x + " is not an IPv4 address or host name.";
+  }
+  if (new Set(v).size !== v.length) return "A server is listed twice.";
+  if (v.join(" ") === (data.ti.servers || []).join(" ")) return "Those are the servers in use now.";
+  return "";
+}
+function timeCheck() { const h = $("thint"); if (!h) return ""; const m = timeHint(); h.textContent = m; h.classList.toggle("bad", !!m); return m; }
+async function timePoll() {
+  /* the service was restarted: show the sync state as it settles */
+  for (let i = 0; i < 10; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    if (cur !== "Settings" || $("modal").classList.contains("open")) return;
+    try { data.ti = (await api("/api/decoyd/timeinfo")).result; } catch (e) { return; }
+    if (cur === "Settings" && $("timecard")) $("timecard").outerHTML = timeCard(data.settings);
+    if (data.ti.synced) return;
+  }
+}
+async function timeApply() {
+  const v = timeVals(), pw = $("dpw").value;
+  $("derr").textContent = "";
+  const m = timeCheck();
+  if (m) { $("derr").textContent = m; return; }
+  if (!pw) { $("derr").textContent = "Enter your password to apply the change."; return; }
+  $("dotime").disabled = true; $("dotime").textContent = "Restarting " + data.ti.unit + " and waiting for a server...";
+  try {
+    const j = await api("/api/decoyd/change", {op: "set_time", password: pw, args: {servers: v, expect: data.ti.servers || [], keep: $("tkeep").checked}});
+    const r = j.result || {};
+    modalOpen(`<h3>Time servers changed</h3><p class="ok" id="tok">Now ${esc(r.servers.join(", "))}. ${esc(r.unit)} was restarted${r.reached ? " and reached a server." : "."}</p>${(r.warnings || []).length ? `<p class="bad" id="twarn">${r.warnings.map(esc).join("; ")}</p>` : ""}<div class="row"><button data-act="mclose">OK</button></div>`);
+    await go("Settings"); timePoll();
+  } catch (e) {
+    if (e.message === "signed out" || !$("derr")) return;
+    $("dpw").value = ""; $("dotime").disabled = false; $("dotime").textContent = "Apply time servers";
+    $("derr").textContent = e.message;
+    if (e.code === "E_CONFLICT" || e.code === "E_TIME_UNREACHABLE_ROLLED_BACK" || e.code === "E_RESTART_FAILED_ROLLED_BACK") {
+      data.ti = await api("/api/decoyd/timeinfo").then(j => j.result, () => data.ti);
+    }
+  }
 }
 
 /* ---- actions (event delegation: no inline handlers, strict CSP) ---- */
@@ -697,6 +770,8 @@ document.addEventListener("click", e => {
     case "dochange": { const h = hstate(b.dataset.ip) || {}; const args = {ip: b.dataset.ip}; if (h.rev) args.expect_rev = h.rev; change(b.dataset.op, args); break; }
     case "net": modalOpen(netDialog(), true); netCheck(); setTimeout(() => $("nnet") && $("nnet").focus(), 0); break;
     case "donet": netApply(); break;
+    case "time": act(async () => { if (!data.ni) data.ni = await api("/api/decoyd/netinfo").then(j => j.result, () => ({})); modalOpen(timeDialog(), true); timeCheck(); setTimeout(() => $("tsv0") && $("tsv0").focus(), 0); }); break;
+    case "dotime": timeApply(); break;
     case "pause": paused = !paused; go("Activity"); break;
     case "winclear": F.from = F.to = 0; $("fwinrow").innerHTML = ""; rt(); $("fsrc").focus(); break;
     case "fclear": clearTimeout(fT); F = {src: "", decoy: "", proto: "", event: "", from: 0, to: 0}; render(); break;
@@ -712,6 +787,7 @@ document.addEventListener("keydown", e => {
 document.addEventListener("input", e => {
   if (e.target.id === "fsrc") { clearTimeout(fT); const v = e.target.value; fT = setTimeout(() => { F.src = v; rt(); }, 200); }
   if (e.target.id === "nnet") netCheck();
+  if (/^tsv\d$/.test(e.target.id)) timeCheck();
 });
 document.addEventListener("change", e => {
   if (e.target.id === "nif") netCheck();

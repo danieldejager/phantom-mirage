@@ -8,7 +8,9 @@ After=pm-decoyd.socket
 Type=simple
 # Root: it writes /etc/phantom-mirage/decoys.conf (and for an address
 # block change the NETWORK and INTERFACE lines of /etc/default files), runs
-# phantom-mirage --verify-config and reloads phantom-mirage.service.
+# phantom-mirage --verify-config and reloads phantom-mirage.service. For a
+# time source change it writes its chrony or timesyncd server file and
+# restarts only that time service.
 # It exits by itself after 30 s without a connection.
 ExecStart=/usr/bin/python3 -I /usr/lib/phantom-mirage/pm-decoyd
 RuntimeDirectory=phantom-mirage-decoyd
@@ -23,7 +25,13 @@ ProtectSystem=strict
 # /etc/default: the address block change (set_network) rewrites
 # /etc/default/phantom-mirage and, when phantom-mirage-setup wrote it,
 # /etc/default/farpd, with a temp file and rename in that directory.
+# The time source change (set_time) writes only its own server file, with a
+# temp file and rename in its directory: /etc/chrony/sources.d for chrony,
+# /etc/systemd/timesyncd.conf.d for systemd-timesyncd (setup creates the
+# one in use; "-" skips a directory that is not there). /run/chrony is for
+# chronyc's reply socket next to chronyd's; timedatectl uses D-Bus (AF_UNIX).
 ReadWritePaths=/etc/phantom-mirage /var/lib/phantom-mirage /etc/default
+ReadWritePaths=-/etc/chrony/sources.d -/etc/systemd/timesyncd.conf.d -/run/chrony
 ProtectHome=yes
 PrivateTmp=yes
 ProtectKernelModules=yes

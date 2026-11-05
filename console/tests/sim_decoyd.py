@@ -40,6 +40,11 @@ class SimHelper:
         self.store = D.empty_store()
         self.reqs, self.force = [], None      # force: an error code to return once
         self.reloaded = True
+        # what timeinfo reports; set_time to a server in unreachable fails
+        self.time = {"service": "chrony", "unit": "chrony.service", "active": True,
+                     "servers": ["192.168.1.5"], "synced": True, "reference": "192.168.1.5",
+                     "stratum": 3, "offset_s": -0.000412, "sources": [], "ready": None, "max_servers": 3}
+        self.unreachable = set()
         with open(conf_out, "w") as f:
             f.write(D.render(self.store, self.svcs))
         self.ls = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -65,6 +70,32 @@ class SimHelper:
                                    for n, x in sorted(self.info["ifaces"].items()) if not x["lo"] and x["addrs"]],
                     "gateways": sorted({str(g) for g in self.info["gateways"]}),
                     "min_prefix": D.MIN_PREFIX, "last_change": getattr(self, "last_change", None)}
+        if op == "timeinfo":
+            t = dict(self.time)
+            t["last_change"] = getattr(self, "time_change", None)
+            return t
+        if op == "set_time":
+            D._keys(args, "args", ("servers", "expect"), ("keep",))
+            servers = D.check_servers(args["servers"], self.nets)
+            if args["expect"] != self.time["servers"]:
+                raise D.Err("E_CONFLICT", "args.expect", "the time servers changed since you loaded them")
+            if servers == self.time["servers"]:
+                raise D.Err("E_UNCHANGED", "args.servers", "those are already the time servers")
+            reached = not any(s in self.unreachable for s in servers)
+            if not reached and not args.get("keep"):
+                self.time_change = {"id": "", "result": "rolled_back", "servers": self.time["servers"],
+                                    "previous": self.time["servers"], "time": time.time()}
+                e = D.Err("E_TIME_UNREACHABLE_ROLLED_BACK", None, "%s could not reach %s within 20 s; "
+                          "the previous servers are back" % (self.time["unit"], " ".join(servers)))
+                raise e
+            prev = self.time["servers"]
+            self.time.update(servers=servers, synced=reached, reference=servers[0] if reached else None)
+            self.time_change = {"id": "", "result": "applied" if reached else "applied_unverified",
+                                "servers": servers, "previous": prev, "time": time.time()}
+            res = {"service": self.time["service"], "unit": self.time["unit"], "servers": servers, "reached": reached}
+            if not reached:
+                res["warnings"] = ["%s has not reached the new servers yet; kept as asked" % self.time["unit"]]
+            return res
         if op == "set_network":
             D._keys(args, "args", ("network", "interface", "expect"))
             D._keys(args["expect"], "args.expect", ("network", "interface"))
@@ -114,7 +145,7 @@ class SimHelper:
                 try:
                     r["result"] = self.handle(q)
                     r["ok"] = True
-                    r["reloaded"] = q["op"] not in ("list", "options", "netinfo") and self.reloaded
+                    r["reloaded"] = q["op"] not in ("list", "options", "netinfo", "timeinfo") and self.reloaded
                 except D.Err as e:
                     r["error"] = {"code": e.code, "field": e.field, "message": e.message}
                 c.sendall((json.dumps(r) + "\n").encode())

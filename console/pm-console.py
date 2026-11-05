@@ -204,7 +204,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send_json(200, self.status())
         if path == "/api/decoys":
             return self.send_json(200, pmstore.decoy_list(dict(a.alerts.last_touch)))
-        if path in ("/api/decoyd/list", "/api/decoyd/options", "/api/decoyd/netinfo"):
+        if path in ("/api/decoyd/list", "/api/decoyd/options", "/api/decoyd/netinfo", "/api/decoyd/timeinfo"):
             r = decoyclient.call(path.rsplit("/", 1)[1], {}, s["user"])
             return self.send_json(200 if r["ok"] else self.decoyd_status(r), r)
         if path == "/api/personalities":
@@ -408,22 +408,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return 503
         if code == "E_BUSY":
             return 429
-        if code in ("E_CONFLICT", "E_EXISTS", "E_NOT_FOUND", "E_NOT_RUNNING", "E_NOT_STOPPED", "E_UNCHANGED"):
+        if code in ("E_CONFLICT", "E_EXISTS", "E_NOT_FOUND", "E_NOT_RUNNING", "E_NOT_STOPPED", "E_UNCHANGED",
+                    "E_SETUP_NEEDED", "E_NO_TIME_SERVICE"):
             return 409
-        if code in ("E_RELOAD_FAILED_ROLLED_BACK", "E_RESTART_FAILED_ROLLED_BACK", "E_ROLLBACK_FAILED", "E_INTERNAL", "E_PEER"):
+        if code in ("E_RELOAD_FAILED_ROLLED_BACK", "E_RESTART_FAILED_ROLLED_BACK", "E_ROLLBACK_FAILED",
+                    "E_TIME_UNREACHABLE_ROLLED_BACK", "E_INTERNAL", "E_PEER"):
             return 500
         return 400
 
     def decoyd_change(self, user, data):
         """Per decoy change: the admin re-enters the password every time.
         set_network changes the address block and interface; the helper
-        validates it again and restarts the whole sensor."""
+        validates it again and restarts the whole sensor. set_time changes
+        the NTP servers; the helper restarts only the time service."""
         a = self.app
         op, args, pw = data.get("op"), data.get("args"), data.get("password")
         if op not in decoyclient.CHANGE_OPS or not isinstance(args, dict) or set(data) - {"op", "args", "password"}:
             return self.err(400, "bad request")
         ip = args.get("ip")
-        if op == "set_network":
+        if op == "set_time" and pmstore.load_config().get("time_source") != "ntp":
+            return self.send_json(409, {"ok": False, "error": {
+                "code": "E_BROWSER_TIME", "field": None,
+                "message": "the sensor clock is set from the browser; choose local NTP with "
+                           "sudo phantom-mirage-setup --reconfigure-console first"}})
+        if op in ("set_network", "set_time"):
             ip = None
         elif ip is None and isinstance(args.get("decoy"), dict):
             ip = args["decoy"].get("ip")
@@ -447,7 +455,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             pmstore.audit(user, "decoy-" + op, "wrong password", ok=False)
             return self.err(403, "password is wrong")
         a.lockout.success(key, src)
-        if op == "set_network":
+        if op == "set_time":
+            sv = args.get("servers")
+            target = "time servers %s" % (" ".join(re.sub(r'[^a-z0-9.-]', "", str(x).lower())[:64]
+                                                   for x in (sv if isinstance(sv, list) else [])[:3]) or "-")
+        elif op == "set_network":
             target = "%s on %s" % (re.sub(r'[^0-9./]', "", str(args.get("network")))[:18],
                                    re.sub(r'[^A-Za-z0-9_.-]', "", str(args.get("interface")))[:15])
         else:
@@ -459,6 +471,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if op == "set_network":
                 d = (r.get("result") or {}).get("dropped") or []
                 extra = ", dropped settings for %s" % (" ".join(d)[:400] or "none")
+            if op == "set_time":
+                res = r.get("result") or {}
+                c = pmstore.load_config()
+                c["ntp_server"] = " ".join(res.get("servers") or [])[:300]
+                pmstore.save_config(c)
+                pmstore.audit(user, "decoy-" + op, "%s applied, %s restarted, %s" % (
+                    target, res.get("unit"), "server reached" if res.get("reached") else "not reached yet, kept anyway"))
+                return self.send_json(200, r)
             pmstore.audit(user, "decoy-" + op, "%s applied%s%s" % (
                 target, ", sensor reloaded" if r.get("reloaded") else ", sensor not running", extra))
             return self.send_json(200, r)
