@@ -171,11 +171,17 @@ class TestLoginPage(unittest.TestCase):
     def test_splash_content(self):
         t = login_page()
         self.assertNotIn("{{", t)
-        self.assertIn('<div class="slogo"><span class="ptile"><img src="/static/phantom-mirage-mark-dark.png" width="80" height="80"', t)
-        self.assertIn('<span class="mwm swm" role="img" aria-label="Mirage"></span>', t)
-        self.assertIn('<h1 class="sname">Mirage I</h1>', t)
-        self.assertIn('<p class="slegal"><span class="ptw sptw" role="img" aria-label="Phantom Technologies"></span></p>', t)
-        self.assertIn("\u00a9 2026 Phantom Technologies. All rights reserved.", t)
+        login = t[t.index('<div id="login">'):t.index("<header>")]
+        brand = login[:login.index('<div class="card">')]
+        self.assertIn('<div class="slogo"><span class="ptile"><img src="/static/phantom-mirage-mark-dark.png" width="80" height="80" alt=""></span></div>', brand)
+        self.assertLess(brand.index("slogo"), brand.index("mwm swm"))
+        self.assertIn('<span class="mwm swm" role="img" aria-label="Mirage"></span>', brand)
+        self.assertIn('<h1 class="sname">Mirage I</h1>', brand)
+        self.assertNotIn("ptw", brand)
+        self.assertNotIn('class="slegal"', brand)
+        self.assertNotIn("Phantom Technologies", brand)
+        self.assertIn("\u00a9 2026 Phantom Technologies. All rights reserved.", login)
+        self.assertIn("sudo phantom-mirage-setup --reset-admin", login)
         self.assertIn("<title>Mirage I console</title>", t)
 
     def test_no_inline_script_or_style(self):
@@ -363,8 +369,83 @@ class TestNoCompanySuffix(unittest.TestCase):
             self.assertNotIn(self.SUFFIX.lower(), s.lower())
 
 
-if __name__ == "__main__":
-    unittest.main()
+def _subpath_boxes(d):
+    boxes = []
+    for part in re.findall(r"M[^Z]*Z", d):
+        nums = [float(n) for n in re.findall(r"[-+]?\d*\.?\d+", part)]
+        xs, ys = nums[0::2], nums[1::2]
+        boxes.append((min(xs), min(ys), max(xs), max(ys)))
+    return boxes
+
+
+def _clusters(d, pad=1.0):
+    """Group overlapping subpaths into letters, left to right."""
+    groups = []
+    for b in sorted(_subpath_boxes(d), key=lambda b: b[0]):
+        if groups and b[0] <= groups[-1][2] + pad:
+            g = groups[-1]
+            groups[-1] = (min(g[0], b[0]), min(g[1], b[1]), max(g[2], b[2]), max(g[3], b[3]))
+        else:
+            groups.append(b)
+    return groups
+
+
+def _shoelace(poly):
+    a = 0.0
+    for i, (x, y) in enumerate(poly):
+        x2, y2 = poly[(i + 1) % len(poly)]
+        a += x * y2 - x2 * y
+    return a / 2.0
+
+
+def _polys(d):
+    """Subpath point lists from an M/L/Z path."""
+    polys = []
+    for part in re.findall(r"M[^Z]*Z", d):
+        nums = [float(n) for n in re.findall(r"[-+]?\d*\.?\d+", part)]
+        polys.append(list(zip(nums[0::2], nums[1::2])))
+    return polys
+
+
+def _assert_open_triangular_a(d, box):
+    """PHANTOM's A matches the MIRAGE A: two strokes, joined at the top, open at the bottom, no bar."""
+    x0, y0, x1, y1 = box
+    legs = []
+    for poly in _polys(d):
+        xs = [p[0] for p in poly]
+        ys = [p[1] for p in poly]
+        if min(xs) >= x0 - 0.5 and max(xs) <= x1 + 0.5 and min(ys) >= y0 - 0.5 and max(ys) <= y1 + 0.5:
+            legs.append(poly)
+    if len(legs) != 2:
+        raise AssertionError("open A should be two strokes, got %d" % len(legs))
+    if _shoelace(legs[0]) * _shoelace(legs[1]) <= 0:
+        raise AssertionError("open A strokes must both be solid, not a cut-out hole")
+
+    def xs_at(poly, y):
+        hit = [p[0] for p in poly if abs(p[1] - y) < 0.2]
+        if len(hit) < 2:
+            raise AssertionError("A stroke is not cut flat at y=%s" % y)
+        return min(hit), max(hit)
+
+    tops = [xs_at(p, y0) for p in legs]
+    bots = [xs_at(p, y1) for p in legs]
+    tops.sort()
+    bots.sort()
+    # apex is one joined flat, not two separated peaks and not a closed delta
+    if tops[0][1] < tops[1][0] - 0.5:
+        raise AssertionError("A apex is split")
+    gap = bots[1][0] - bots[0][1]
+    if gap < 0.35 * (x1 - x0):
+        raise AssertionError("A bottom is not open (gap %s)" % gap)
+    # no third shape, so there is no crossbar and no base between the feet
+    if len(legs[0]) != 4 or len(legs[1]) != 4:
+        raise AssertionError("A strokes are not simple quads")
+
+
+def _gap_ratio(groups):
+    widths = sorted(g[2] - g[0] for g in groups)
+    gaps = sorted(groups[i + 1][0] - groups[i][2] for i in range(len(groups) - 1))
+    return gaps[len(gaps) // 2] / widths[len(widths) // 2]
 
 
 class TestWordmark(unittest.TestCase):
@@ -376,8 +457,17 @@ class TestWordmark(unittest.TestCase):
         self.assertNotIn(">Phantom Technologies<", head)
         self.assertNotIn('class="wm"', head)
         self.assertNotIn("Mirage", head)
+        self.assertNotIn("tabindex", head)
+        self.assertNotIn("<button", head)
         self.assertIn('<div class="nbrand brand"><span class="mwm" role="img" aria-label="Mirage"></span></div>', t)
-        self.assertIn('<p class="slegal"><span class="ptw sptw" role="img" aria-label="Phantom Technologies"></span></p>', t)
+        login = t[t.index('<div id="login">'):t.index("<header>")]
+        brand = login[:login.index('<div class="card">')]
+        self.assertIn('<div class="slogo"><span class="ptile"><img src="/static/phantom-mirage-mark-dark.png" width="80" height="80" alt=""></span></div>', brand)
+        self.assertLess(brand.index("slogo"), brand.index("mwm swm"))
+        self.assertIn('<span class="mwm swm" role="img" aria-label="Mirage"></span>', brand)
+        self.assertEqual(brand.count("ptile"), 1)
+        self.assertNotIn("ptw", brand)
+        self.assertNotIn('class="slegal"', brand)
 
     def test_sidebar_wordmark_centred(self):
         css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
@@ -389,15 +479,58 @@ class TestWordmark(unittest.TestCase):
         self.assertIn('fill="currentColor"', svg)
         self.assertIn('aria-label="Phantom Technologies"', svg)
         self.assertIn("<title>Phantom Technologies</title>", svg)
-        self.assertIn("DejaVu Sans Bold", svg)   # bold caps outlines, nothing loaded at runtime
-        self.assertNotRegex(svg, r'(?i)<script|<text|<image|href=|\bon[a-z]+=|font')
+        self.assertIn("Original squared lettering", svg)   # filled paths, nothing loaded at runtime
+        self.assertIn("open triangular A", svg)
+        self.assertNotIn("hollow triangular", svg)
+        self.assertNotIn("DejaVu", svg)
+        self.assertNotRegex(svg, r'(?i)<script|<text|<image|href=|\bon[a-z]+=|font|gradient|filter=')
         w, h = map(float, re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg).groups())
-        self.assertAlmostEqual(w / h, 20.65, delta=0.05)   # matches .ptw aspect-ratio
         css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
+        ratio = float(re.search(r"\.ptw\{[^}]*aspect-ratio:([\d.]+)", css).group(1))
+        self.assertAlmostEqual(w / h, ratio, delta=0.01)
+        self.assertGreater(w / h, 3.2)    # wide and low, not the old single-line strip
+        self.assertLess(w / h, 6.0)
+        phantom = re.search(r'id="phantom" d="([^"]*)"', svg).group(1)
+        tech = re.search(r'id="technologies" d="([^"]*)"', svg).group(1)
+        pg, tg = _clusters(phantom), _clusters(tech)
+        self.assertEqual(len(pg), 7)      # PHANTOM
+        self.assertEqual(len(tg), 12)     # TECHNOLOGIES
+        _assert_open_triangular_a(phantom, pg[2])
+        self.assertLess(max(g[3] for g in pg), min(g[1] for g in tg))   # second line sits below
+        ph, th = max(g[3] for g in pg) - min(g[1] for g in pg), max(g[3] for g in tg) - min(g[1] for g in tg)
+        self.assertLess(th, ph * 0.7)
+        self.assertGreater(th, ph * 0.4)
+        pw = max(g[2] for g in pg) - min(g[0] for g in pg)
+        tw = max(g[2] for g in tg) - min(g[0] for g in tg)
+        self.assertAlmostEqual(pw, tw, delta=pw * 0.04)   # tracked line matches the width
+        self.assertGreater(_gap_ratio(tg), _gap_ratio(pg) + 0.25)   # TECHNOLOGIES is letter-spaced
+        rule = re.search(r"(?<![\w.-])\.ptw\{[^}]*\}", css).group(0)
+        self.assertIn("color:var(--t)", rule)
+        self.assertNotIn("gradient", rule)
+        self.assertIn(".ptw{display:inline-block;height:34px;", css)
+        self.assertNotIn(".sptw{", css)
+        self.assertIn(".swm{height:22px;", css)
+        self.assertNotIn(".hlegal{display:none}", css)
+        self.assertIn("@media(max-width:380px){.hlegal.ptw{height:26px}}", css)
         self.assertIn("mask:url(/static/phantom-technologies-wordmark.svg)", css)
         self.assertIn("phantom-technologies-wordmark.svg", pmc.STATIC_FILES)
         self.assertIn("docs/assets/phantom-technologies-wordmark.svg", open(os.path.join(REPO, "debian", "rules"), encoding="utf-8").read())
         self.assertIn("static/phantom-technologies-wordmark.svg", open(os.path.join(REPO, ".github", "workflows", "build.yml")).read())
+
+    def test_wordmark_matches_generator(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "make_wordmark", os.path.join(REPO, "docs", "brand", "source", "make_wordmark.py"))
+        gen = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gen)
+        width, polys = gen.letter_a()
+        self.assertGreater(width, 110.0)  # MIRAGE A is wider than the old squared A
+        self.assertEqual(len(polys), 2)
+        self.assertGreater(gen._area(polys[0]) * gen._area(polys[1]), 0)
+        phantom, tech, _pw, _ph, _tracking = gen.build()
+        svg = open(os.path.join(REPO, "docs", "assets", "phantom-technologies-wordmark.svg"), encoding="utf-8").read()
+        self.assertIn(gen.path_d(phantom), svg)
+        self.assertIn(gen.path_d(tech), svg)
 
     def test_svg_asset(self):
         svg = open(os.path.join(REPO, "docs", "assets", "mirage-wordmark.svg"), encoding="utf-8").read()
@@ -417,3 +550,7 @@ class TestWordmark(unittest.TestCase):
         rules = open(os.path.join(REPO, "debian", "rules"), encoding="utf-8").read()
         self.assertIn("docs/assets/phantom-mirage-mark-dark.png", rules)
         self.assertIn("static/phantom-mirage-mark-dark.png", open(os.path.join(REPO, ".github", "workflows", "build.yml")).read())
+
+
+if __name__ == "__main__":
+    unittest.main()
