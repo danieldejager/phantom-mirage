@@ -363,8 +363,31 @@ class TestNoCompanySuffix(unittest.TestCase):
             self.assertNotIn(self.SUFFIX.lower(), s.lower())
 
 
-if __name__ == "__main__":
-    unittest.main()
+def _subpath_boxes(d):
+    boxes = []
+    for part in re.findall(r"M[^Z]*Z", d):
+        nums = [float(n) for n in re.findall(r"[-+]?\d*\.?\d+", part)]
+        xs, ys = nums[0::2], nums[1::2]
+        boxes.append((min(xs), min(ys), max(xs), max(ys)))
+    return boxes
+
+
+def _clusters(d, pad=1.0):
+    """Group overlapping subpaths into letters, left to right."""
+    groups = []
+    for b in sorted(_subpath_boxes(d), key=lambda b: b[0]):
+        if groups and b[0] <= groups[-1][2] + pad:
+            g = groups[-1]
+            groups[-1] = (min(g[0], b[0]), min(g[1], b[1]), max(g[2], b[2]), max(g[3], b[3]))
+        else:
+            groups.append(b)
+    return groups
+
+
+def _gap_ratio(groups):
+    widths = sorted(g[2] - g[0] for g in groups)
+    gaps = sorted(groups[i + 1][0] - groups[i][2] for i in range(len(groups) - 1))
+    return gaps[len(gaps) // 2] / widths[len(widths) // 2]
 
 
 class TestWordmark(unittest.TestCase):
@@ -376,6 +399,8 @@ class TestWordmark(unittest.TestCase):
         self.assertNotIn(">Phantom Technologies<", head)
         self.assertNotIn('class="wm"', head)
         self.assertNotIn("Mirage", head)
+        self.assertNotIn("tabindex", head)
+        self.assertNotIn("<button", head)
         self.assertIn('<div class="nbrand brand"><span class="mwm" role="img" aria-label="Mirage"></span></div>', t)
         self.assertIn('<p class="slegal"><span class="ptw sptw" role="img" aria-label="Phantom Technologies"></span></p>', t)
 
@@ -389,11 +414,35 @@ class TestWordmark(unittest.TestCase):
         self.assertIn('fill="currentColor"', svg)
         self.assertIn('aria-label="Phantom Technologies"', svg)
         self.assertIn("<title>Phantom Technologies</title>", svg)
-        self.assertIn("DejaVu Sans Bold", svg)   # bold caps outlines, nothing loaded at runtime
-        self.assertNotRegex(svg, r'(?i)<script|<text|<image|href=|\bon[a-z]+=|font')
+        self.assertIn("Original squared lettering", svg)   # filled paths, nothing loaded at runtime
+        self.assertNotIn("DejaVu", svg)
+        self.assertNotRegex(svg, r'(?i)<script|<text|<image|href=|\bon[a-z]+=|font|gradient|filter=')
         w, h = map(float, re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg).groups())
-        self.assertAlmostEqual(w / h, 20.65, delta=0.05)   # matches .ptw aspect-ratio
         css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
+        ratio = float(re.search(r"\.ptw\{[^}]*aspect-ratio:([\d.]+)", css).group(1))
+        self.assertAlmostEqual(w / h, ratio, delta=0.01)
+        self.assertGreater(w / h, 3.2)    # wide and low, not the old single-line strip
+        self.assertLess(w / h, 6.0)
+        phantom = re.search(r'id="phantom" d="([^"]*)"', svg).group(1)
+        tech = re.search(r'id="technologies" d="([^"]*)"', svg).group(1)
+        pg, tg = _clusters(phantom), _clusters(tech)
+        self.assertEqual(len(pg), 7)      # PHANTOM
+        self.assertEqual(len(tg), 12)     # TECHNOLOGIES
+        self.assertLess(max(g[3] for g in pg), min(g[1] for g in tg))   # second line sits below
+        ph, th = max(g[3] for g in pg) - min(g[1] for g in pg), max(g[3] for g in tg) - min(g[1] for g in tg)
+        self.assertLess(th, ph * 0.7)
+        self.assertGreater(th, ph * 0.4)
+        pw = max(g[2] for g in pg) - min(g[0] for g in pg)
+        tw = max(g[2] for g in tg) - min(g[0] for g in tg)
+        self.assertAlmostEqual(pw, tw, delta=pw * 0.04)   # tracked line matches the width
+        self.assertGreater(_gap_ratio(tg), _gap_ratio(pg) + 0.25)   # TECHNOLOGIES is letter-spaced
+        rule = re.search(r"(?<![\w.-])\.ptw\{[^}]*\}", css).group(0)
+        self.assertIn("color:var(--t)", rule)
+        self.assertNotIn("gradient", rule)
+        self.assertIn(".ptw{display:inline-block;height:34px;", css)
+        self.assertIn(".sptw{height:48px;", css)
+        self.assertNotIn(".hlegal{display:none}", css)
+        self.assertIn("@media(max-width:380px){.hlegal.ptw{height:26px}}", css)
         self.assertIn("mask:url(/static/phantom-technologies-wordmark.svg)", css)
         self.assertIn("phantom-technologies-wordmark.svg", pmc.STATIC_FILES)
         self.assertIn("docs/assets/phantom-technologies-wordmark.svg", open(os.path.join(REPO, "debian", "rules"), encoding="utf-8").read())
@@ -417,3 +466,7 @@ class TestWordmark(unittest.TestCase):
         rules = open(os.path.join(REPO, "debian", "rules"), encoding="utf-8").read()
         self.assertIn("docs/assets/phantom-mirage-mark-dark.png", rules)
         self.assertIn("static/phantom-mirage-mark-dark.png", open(os.path.join(REPO, ".github", "workflows", "build.yml")).read())
+
+
+if __name__ == "__main__":
+    unittest.main()
