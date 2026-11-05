@@ -514,5 +514,68 @@ class DecoyStopStart(unittest.TestCase):
         self.assertNotIn("Editing decoys from the console is not in this version", js)
 
 
+class DecoySettings(DecoyStopStart):
+    """The gear settings panel's save path: add, edit, delete."""
+
+    def decoy(self, **kw):
+        d = {"ip": "10.9.0.11", "personality": "linux-6",
+             "defaults": {"tcp": "block", "udp": "closed", "icmp": "open"},
+             "ports": [{"proto": "tcp", "port": 22, "service": "ssh"},
+                       {"proto": "tcp", "port": 80, "state": "reset"}]}
+        d.update(kw)
+        return d
+
+    def test_add_edit_delete(self):
+        st, j = self.c.req("GET", "/api/decoyd/options")
+        self.assertIn("linux-6", j["result"]["personalities"])
+        self.assertIn("ssh", [v["id"] for v in j["result"]["services"]])
+        st, j = self.change("add", {"decoy": self.decoy()})
+        self.assertEqual(st, 200, j)
+        r = self.row("10.9.0.11")
+        self.assertEqual((r["template"], r["personality"]), ("pm_d_10_9_0_11", "linux-6"))
+        self.assertEqual(r["ports"], ["tcp/22"])
+        self.assertEqual(r["default"], {"tcp": "block", "udp": "closed", "icmp": "open"})
+        h = self.hrow("10.9.0.11")
+        self.assertEqual((h["source"], h["rev"], h["personality"]), ("override", 1, "linux-6"))
+        st, j = self.change("add", {"decoy": self.decoy()})
+        self.assertEqual((st, j["error"]["code"]), (409, "E_EXISTS"))
+        st, j = self.change("edit", {"decoy": self.decoy(personality=None), "expect_rev": 0})
+        self.assertEqual((st, j["error"]["code"]), (409, "E_CONFLICT"))
+        st, j = self.change("edit", {"decoy": self.decoy(personality=None, ports=[]), "expect_rev": 1})
+        self.assertEqual(st, 200, j)
+        r = self.row("10.9.0.11")
+        self.assertEqual((r["personality"], r["ports"]), ("", []))
+        st, j = self.change("stop", {"ip": "10.9.0.11", "expect_rev": 2})
+        self.assertEqual(st, 200)
+        st, j = self.change("start", {"ip": "10.9.0.11", "expect_rev": 3})
+        self.assertEqual(self.row("10.9.0.11")["template"], "pm_d_10_9_0_11")
+        st, j = self.change("delete", {"ip": "10.9.0.11", "expect_rev": 4})
+        self.assertEqual(st, 200, j)
+        self.assertEqual(self.row("10.9.0.11")["template"], "default")
+
+    def test_bad_settings_refused(self):
+        for d, code in ((self.decoy(personality="nope"), "E_INVALID_PERSONALITY"),
+                        (self.decoy(ports=[{"proto": "tcp", "port": 22, "service": "rootshell"}]), "E_INVALID_SERVICE"),
+                        (self.decoy(ports=[{"proto": "udp", "port": 22, "service": "ssh"}]), "E_INVALID_SERVICE"),
+                        (self.decoy(ports=[{"proto": "tcp", "port": 22, "state": "proxy 1.2.3.4:22"}]), "E_INVALID_STATE"),
+                        (self.decoy(defaults={"tcp": "open", "udp": "open"}), "E_MISSING_FIELD"),
+                        (self.decoy(ip="10.9.0.14"), "E_ADDRESS_IN_MAIN_CONF"),
+                        (self.decoy(network="0.0.0.0/0"), "E_UNKNOWN_FIELD")):
+            with self.subTest(code=code):
+                st, j = self.change("add", {"decoy": d})
+                self.assertEqual((st, j["error"]["code"]), (400, code), j)
+        with open(self.conf) as f:
+            self.assertNotIn("bind", f.read())
+
+    def test_ui_settings_panel(self):
+        with open(os.path.join(os.path.dirname(pmstore.__file__), "static", "console.js")) as f:
+            js = f.read()
+        for want in ('id="epers"', 'data-ed="def"', 'data-ed="svc"', 'data-ed="st"', 'data-act="edsave"',
+                     'data-act="edreset"', "/api/decoyd/options", "max_ports", "fixed list of named services",
+                     "is listed twice", "args.expect_rev = e.rev", "E_VERIFY_FAILED:", 'id="dro"'):
+            self.assertIn(want, js)
+        self.assertNotIn("innerHTML = e", js)
+
+
 if __name__ == "__main__":
     unittest.main()

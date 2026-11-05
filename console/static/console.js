@@ -148,6 +148,94 @@ ${dd.error ? `<p class="note u-mb12" id="dunavail">Stop, Start and decoy setting
 ${d.decoys.map((x, i) => `<tr><td><button class="gear" data-act="decoy" data-id="${i}" title="Decoy settings for ${esc(x.ip)}" aria-label="Decoy settings for ${esc(x.ip)}">\u2699</button></td><td>${esc(x.ip)}</td><td>${stateCell(x.ip)}</td><td>${esc(x.template)}</td><td>${esc(x.personality)}</td><td class="wr">${esc(x.ports.join(", ") || "none")}</td><td>${when(x.last)}</td><td>${ssButton(x.ip)}</td></tr>`).join("") || '<tr><td colspan="8" class="note">No decoys configured</td></tr>'}</table></div>
 <p class="note">Changes are checked by the sensor before they apply and need your password each time. The address block is set on the sensor with <code>sudo phantom-mirage-setup</code> and cannot be changed here.</p>`;
 }
+/* ---- decoy settings panel (gear): personality, default actions and
+   ports from the helper's fixed list of named services ---- */
+let ED = null;
+async function openDecoy(i) {
+  const x = data.decoys.decoys[i];
+  if (!x) return;
+  const h = hstate(x.ip), p = await api("/api/personalities");
+  let opt = null, why = "";
+  if (!h) why = (data.dd && data.dd.error) || "the decoy helper did not answer";
+  else if (h.source === "main_conf") why = "this address is bound in /etc/phantom-mirage/phantom-mirage.conf; change it there";
+  else {
+    try { opt = (await api("/api/decoyd/options")).result; } catch (e) { if (e.message === "signed out") throw e; why = e.message; }
+  }
+  if (!opt) { modalOpen(decoyPanel(x, p.personalities || [], why), true); return; }
+  ED = edInit(x, h, opt);
+  modalOpen(editPanel(), true);
+  edPorts();
+}
+function edInit(x, h, opt) {
+  const svcBy = (proto, port) => opt.services.find(v => v.proto === proto && v.port === port);
+  const e = {ip: x.ip, opt, h, rev: h.rev || 0, op: h.source === "override" ? "edit" : "add", dropped: 0, stopped: h.state === "stopped"};
+  const own = h.source === "override" && h.defaults;
+  e.pers = own ? h.personality : (opt.personalities.includes(x.personality) ? x.personality : null);
+  const df = own ? h.defaults : (x.default || {});
+  e.def = {};
+  for (const k of ["tcp", "udp", "icmp"]) e.def[k] = opt.states.includes(df[k]) ? df[k] : (k === "tcp" ? "reset" : "closed");
+  const src = own ? h.ports.map(q => ({proto: q.proto, port: q.port, state: q.state || "open"})) : (x.port_states || []);
+  e.ports = [];
+  for (const q of src) {
+    if (!opt.states.includes(q.state)) { e.dropped++; continue; }
+    const v = svcBy(q.proto, q.port);
+    if (v) e.ports.push({sid: v.id, proto: v.proto, port: v.port, state: q.state});
+    else if (own) e.ports.push({sid: "", proto: q.proto, port: q.port, state: q.state});
+    else e.dropped++;
+  }
+  return e;
+}
+const sel = (attrs, opts, cur) => `<select ${attrs}>${opts.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+function editPanel() {
+  const e = ED, o = e.opt, st = o.states.map(v => [v, v]);
+  return `<h3>Decoy ${esc(e.ip)} settings</h3>
+<p class="note">${e.stopped ? '<span class="bad">Stopped.</span> Saved settings apply when you start it. ' : ""}${e.op === "add" ? "Uses the default template now; saving gives it its own settings." : "Has its own settings."} The address block is set on the sensor and cannot be changed here.</p>
+<table class="kv"><tr><th>Address</th><td>${esc(e.ip)}</td></tr>
+<tr><th><label for="epers">Personality</label></th><td>${sel('id="epers"', [["", "(daemon default stack)"], ...o.personalities.map(v => [v, v])], e.pers || "")}</td></tr>
+<tr><th>Default actions</th><td>${["tcp", "udp", "icmp"].map(k => `<label>${k} ${sel(`data-ed="def" data-k="${k}"`, st, e.def[k])}</label>`).join(" ")}</td></tr></table>
+<div class="k u-mt18">Ports <span class="note" id="ecount"></span></div><div class="tw"><table id="eports"></table></div>
+<div class="row u-mt10"><button data-act="edadd" id="eadd">Add port</button></div>
+<p class="note">Ports come from a fixed list of named services. Open answers like that service; closed, reset, block and filtered set how the port refuses.${e.dropped ? ` ${e.dropped} port(s) of the current template are scripts or not in the list and are not copied.` : ""}</p>
+<p><input id="dpw" type="password" autocomplete="current-password" placeholder="Your console password" class="u-w100"></p>
+<div class="err" id="derr" role="alert"></div>
+<div class="row"><button class="pri" data-act="edsave">Save settings</button>${e.op === "edit" ? '<button data-act="edreset">Use default template</button>' : ""}${ssButton(e.ip)}<button data-act="mclose">Close</button></div>`;
+}
+function edPorts() {
+  const e = ED, o = e.opt, t = $("eports");
+  if (!t) return;
+  const svc = o.services.map(v => [v.id, `${v.label} (${v.proto}/${v.port})`]);
+  t.innerHTML = "<tr><th>Service</th><th>State</th><th></th></tr>" + (e.ports.map((q, i) => `<tr><td>${q.sid ? sel(`data-ed="svc" data-i="${i}" aria-label="Service"`, svc, q.sid) : `${esc(q.proto)}/${esc(q.port)} <span class="note">(not in the list; kept)</span>`}</td><td>${sel(`data-ed="st" data-i="${i}" aria-label="State"`, o.states.map(v => [v, v]), q.state)}</td><td><button data-act="edrm" data-i="${i}">Remove</button></td></tr>`).join("") || '<tr><td colspan="3" class="note">No ports; the default actions apply</td></tr>');
+  $("ecount").textContent = `${e.ports.length} of at most ${o.max_ports}`;
+  $("eadd").disabled = e.ports.length >= o.max_ports;
+}
+function edCollect() {
+  const e = ED;
+  if (!e || !$("epers")) return;
+  e.pers = $("epers").value || null;
+  document.querySelectorAll('[data-ed="def"]').forEach(x => { e.def[x.dataset.k] = x.value; });
+  document.querySelectorAll('[data-ed="svc"]').forEach(x => { const v = e.opt.services.find(s => s.id === x.value); Object.assign(e.ports[+x.dataset.i], {sid: v.id, proto: v.proto, port: v.port}); });
+  document.querySelectorAll('[data-ed="st"]').forEach(x => { e.ports[+x.dataset.i].state = x.value; });
+}
+function edAdd() {
+  const used = new Set(ED.ports.map(q => q.proto + "/" + q.port));
+  const v = ED.opt.services.find(s => !used.has(s.proto + "/" + s.port));
+  if (!v) return;
+  ED.ports.push({sid: v.id, proto: v.proto, port: v.port, state: "open"});
+  edPorts();
+}
+function edSave() {
+  edCollect();
+  const e = ED, seen = new Set();
+  for (const q of e.ports) {
+    const k = q.proto + "/" + q.port;
+    if (seen.has(k)) { $("derr").textContent = `${k} is listed twice; remove one.`; return; }
+    seen.add(k);
+  }
+  const ports = e.ports.map(q => q.sid && q.state === "open" ? {proto: q.proto, port: q.port, service: q.sid} : {proto: q.proto, port: q.port, state: q.state});
+  const args = {decoy: {ip: e.ip, personality: e.pers, defaults: Object.assign({}, e.def), ports}};
+  if (e.op === "edit") args.expect_rev = e.rev;
+  change(e.op, args);
+}
 function hstate(ip) { const dd = data.dd || {}; return dd.map ? dd.map[ip] : null; }
 function stateCell(ip) {
   const h = hstate(ip);
@@ -184,7 +272,7 @@ async function change(op, args) {
     if (e.code === "E_CONFLICT") { await load("Decoys"); if (cur === "Decoys") render(); }
   }
 }
-function decoyPanel(x, pers) {
+function decoyPanel(x, pers, why) {
   const ps = (x.port_states || []).slice().sort((a, b) => a.proto.localeCompare(b.proto) || a.port - b.port);
   const df = x.default || {};
   return `<h3>Decoy ${esc(x.ip)}</h3><table class="kv">
@@ -194,7 +282,7 @@ function decoyPanel(x, pers) {
 <tr><th>Last touched</th><td>${when(x.last)}</td></tr></table>
 <div class="k u-mt18">Ports</div><div class="tw"><table><tr><th>Protocol</th><th>Port</th><th>State</th></tr>${ps.map(p => `<tr><td>${esc(p.proto)}</td><td>${esc(p.port)}</td><td>${esc(p.state)}</td></tr>`).join("") || '<tr><td colspan="3" class="note">No ports listed; the default actions apply</td></tr>'}</table></div>
 <div class="k u-mt18">Personalities available on this sensor</div><p class="note">${pers.length ? pers.map(esc).join(", ") : "none found in /etc/phantom-mirage/columbo-v1.db"}</p>
-<div class="row">${ssButton(x.ip)}<button data-act="mclose">Close</button></div>`;
+${why ? `<p class="note" id="dro">Read only: ${esc(why)}.</p>` : ""}<div class="row">${ssButton(x.ip)}<button data-act="mclose">Close</button></div>`;
 }
 function Alerts() {
   const A = data.alerts, muted = A.muted || [];
@@ -248,7 +336,11 @@ document.addEventListener("click", e => {
     case "mute": act(async () => { await api("/api/mute", {src}); go("Alerts"); }); break;
     case "unmute": act(async () => { await api("/api/unmute", {src}); go("Alerts"); }); break;
     case "mclose": mclose(); break;
-    case "decoy": act(async () => { const x = data.decoys.decoys[+id]; if (!x) return; const p = await api("/api/personalities"); modalOpen(decoyPanel(x, p.personalities || []), true); }); break;
+    case "decoy": act(() => openDecoy(+id)); break;
+    case "edadd": edCollect(); edAdd(); break;
+    case "edrm": edCollect(); ED.ports.splice(+b.dataset.i, 1); edPorts(); break;
+    case "edsave": edSave(); break;
+    case "edreset": change("delete", {ip: ED.ip, expect_rev: ED.rev}); break;
     case "ss": modalOpen(ssDialog(b.dataset.op, b.dataset.ip)); setTimeout(() => $("dpw") && $("dpw").focus(), 0); break;
     case "dochange": { const h = hstate(b.dataset.ip) || {}; const args = {ip: b.dataset.ip}; if (h.rev) args.expect_rev = h.rev; change(b.dataset.op, args); break; }
     case "pause": paused = !paused; go("Activity"); break;
