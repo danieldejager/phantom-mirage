@@ -27,7 +27,6 @@ const DMSG = {
   E_UNAVAILABLE: "The decoy helper is not running. On the sensor run: sudo systemctl enable --now pm-decoyd.socket",
   E_TIMEOUT: "The decoy helper did not answer in time. Check the sensor with: sudo journalctl -u pm-decoyd",
   E_BUSY: "Another decoy change is being applied. Wait a few seconds and try again.",
-  E_RATE_LIMIT: "Too many decoy changes in a short time. Wait a minute and try again.",
   E_CONFLICT: "This decoy was changed since you opened it. The list has been reloaded; check it and try again.",
   E_NOT_RUNNING: "This decoy is already stopped.",
   E_NOT_STOPPED: "This decoy is not stopped.",
@@ -39,7 +38,7 @@ const DMSG = {
   E_RESTART_FAILED_ROLLED_BACK: "The sensor did not start on the new address block, so the previous block was put back and the sensor restarted on it.",
   E_UNCHANGED: "That is already the address block and interface in use.",
 };
-function dmsg(er) { return (DMSG[er.code] ? DMSG[er.code] + (er.code === "E_VERIFY_FAILED" && er.message ? " " + er.message : "") : (er.message || er.code || "refused")) + (er.code && !DMSG[er.code] && er.field ? " (" + er.field + ")" : ""); }
+function dmsg(er) { if (er.code === "E_CONFLICT" && !er.field && er.message) return er.message; /* hand edited decoys.conf: the helper names the shell command */ return (DMSG[er.code] ? DMSG[er.code] + (er.code === "E_VERIFY_FAILED" && er.message ? " " + er.message : "") : (er.message || er.code || "refused")) + (er.code && !DMSG[er.code] && er.field ? " (" + er.field + ")" : ""); }
 
 /* ---- sign-in ---- */
 async function boot() {
@@ -149,7 +148,7 @@ function Decoys() {
 ${dd.error ? `<p class="note u-mb12" id="dunavail">Stop, Start and decoy settings are unavailable: ${esc(dd.error)}</p>` : ""}
 <div class="tw"><table><tr><th></th><th>Address</th><th>State</th><th>Template</th><th>Personality</th><th>Open ports</th><th>Last touched</th><th></th></tr>
 ${d.decoys.map((x, i) => `<tr${x.reserved ? ' class="resv"' : ""}><td>${x.reserved ? "" : `<button class="gear" data-act="decoy" data-id="${i}" title="Decoy settings for ${esc(x.ip)}" aria-label="Decoy settings for ${esc(x.ip)}">\u2699</button>`}</td><td>${esc(x.ip)}</td><td>${stateCell(x.ip, x.reserved)}</td><td>${esc(x.template)}</td><td>${esc(x.personality)}</td><td class="wr">${esc(x.ports.join(", ") || "none")}</td><td>${when(x.last)}</td><td>${ssButton(x.ip, x.reserved)}</td></tr>`).join("") || '<tr><td colspan="8" class="note">No decoys configured</td></tr>'}</table></div>
-<p class="note">Changes are checked by the sensor before they apply and need your password each time. The address block is changed in Network above.</p>`;
+<p class="note">Changes are checked by the sensor before they apply and need your password each time. The address block is changed in the Network section above. Addresses bound in the main sensor config (phantom-mirage.conf) are changed there, not here.</p>`;
 }
 /* ---- Network: the address block (NETWORK) and interface. The helper
    checks everything again; these checks only give early, plain hints. ---- */
@@ -255,7 +254,7 @@ const sel = (attrs, opts, cur) => `<select ${attrs}>${opts.map(([v, l]) => `<opt
 function editPanel() {
   const e = ED, o = e.opt, st = o.states.map(v => [v, v]);
   return `<h3>Decoy ${esc(e.ip)} settings</h3>
-<p class="note">${e.stopped ? '<span class="bad">Stopped.</span> Saved settings apply when you start it. ' : ""}${e.op === "add" ? "Uses the default template now; saving gives it its own settings." : "Has its own settings."} The address block is set on the sensor and cannot be changed here.</p>
+<p class="note">${e.stopped ? '<span class="bad">Stopped.</span> Saved settings apply when you start it. ' : ""}${e.op === "add" ? "Uses the default template now; saving gives it its own settings." : "Has its own settings."} The address block is changed in the Network section above. Addresses bound in the main sensor config (phantom-mirage.conf) are changed there, not here.</p>
 <table class="kv"><tr><th>Address</th><td>${esc(e.ip)}</td></tr>
 <tr><th><label for="epers">Personality</label></th><td>${sel('id="epers"', [["", "(daemon default stack)"], ...o.personalities.map(v => [v, v])], e.pers || "")}</td></tr>
 <tr><th>Default actions</th><td>${["tcp", "udp", "icmp"].map(k => `<label>${k} ${sel(`data-ed="def" data-k="${k}"`, st, e.def[k])}</label>`).join(" ")}</td></tr></table>
@@ -335,7 +334,7 @@ async function change(op, args) {
   try {
     const j = await api("/api/decoyd/change", {op, args, password: pw});
     $("dpw").value = "";
-    modalOpen(`<h3>Done</h3><p class="ok" id="dok">${esc(args.ip || (args.decoy || {}).ip || "")}: ${esc(op === "stop" ? "stopped" : op === "start" ? "started" : op === "delete" ? "back on the default template" : "settings saved")}. ${j.reloaded ? "The sensor was reloaded." : "The sensor is not running; the change applies when it starts."}</p><div class="row"><button data-act="mclose">OK</button></div>`);
+    modalOpen(`<h3>Done</h3><p class="ok" id="dok">${esc(args.ip || (args.decoy || {}).ip || "")}: ${esc(op === "stop" ? "stopped" : op === "start" ? "started" : op === "reset" ? "back on the default template" : "settings saved")}. ${j.reloaded ? "The sensor was reloaded." : "The sensor is not running; the change applies when it starts."}</p><div class="row"><button data-act="mclose">OK</button></div>`);
     await load("Decoys"); if (cur === "Decoys") render();
   } catch (e) {
     $("dpw").value = "";
@@ -412,7 +411,7 @@ document.addEventListener("click", e => {
     case "edadd": edCollect(); edAdd(); break;
     case "edrm": edCollect(); ED.ports.splice(+b.dataset.i, 1); edPorts(); break;
     case "edsave": edSave(); break;
-    case "edreset": change("delete", {ip: ED.ip, expect_rev: ED.rev}); break;
+    case "edreset": change("reset", {ip: ED.ip, expect_rev: ED.rev}); break;
     case "ss": modalOpen(ssDialog(b.dataset.op, b.dataset.ip)); setTimeout(() => $("dpw") && $("dpw").focus(), 0); break;
     case "dochange": { const h = hstate(b.dataset.ip) || {}; const args = {ip: b.dataset.ip}; if (h.rev) args.expect_rev = h.rev; change(b.dataset.op, args); break; }
     case "net": modalOpen(netDialog(), true); netCheck(); setTimeout(() => $("nnet") && $("nnet").focus(), 0); break;

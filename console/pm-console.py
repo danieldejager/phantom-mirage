@@ -345,7 +345,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         code = (r.get("error") or {}).get("code", "")
         if code in ("E_UNAVAILABLE", "E_TIMEOUT", "E_BAD_REPLY"):
             return 503
-        if code in ("E_BUSY", "E_RATE_LIMIT"):
+        if code == "E_BUSY":
             return 429
         if code in ("E_CONFLICT", "E_EXISTS", "E_NOT_FOUND", "E_NOT_RUNNING", "E_NOT_STOPPED", "E_UNCHANGED"):
             return 409

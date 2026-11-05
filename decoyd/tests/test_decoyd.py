@@ -331,7 +331,7 @@ class TestRender(unittest.TestCase):
         s, _ = a("start", {"ip": "10.9.0.9", "expect_rev": 3})
         self.assertEqual(s["overrides"]["10.9.0.9"]["state"], "running")
         with self.assertRaises(D.Err) as c:
-            a("delete", {"ip": "10.9.0.10"})
+            a("reset", {"ip": "10.9.0.10"})
         self.assertEqual(c.exception.code, "E_NOT_FOUND")
         with self.assertRaises(D.Err) as c:
             a("stop", {"ip": "10.9.0.14"})
@@ -428,8 +428,9 @@ class TestPipeline(Base):
         self.assertTrue(self.req("add", {"decoy": decoy()})["ok"])
         with open(self.p("etc/decoys.conf"), "a") as f:
             f.write("bind 10.9.0.10 default\n")
-        r = self.req("delete", {"ip": "10.9.0.9", "expect_rev": 1})
+        r = self.req("reset", {"ip": "10.9.0.9", "expect_rev": 1})
         self.assertEqual(r["error"]["code"], "E_CONFLICT")
+        self.assertIn("sudo rm /var/lib/phantom-mirage/decoys.json", r["error"]["message"])
         r = self.req("reset_all", {"confirm": "reset-all"})
         self.assertTrue(r["ok"], r)
         self.assertEqual(self.r("etc/decoys.conf"), D.HEADER)
@@ -440,9 +441,14 @@ class TestPipeline(Base):
         t0 = time.monotonic()
         self.assertTrue(self.req("stop", {"ip": "10.9.0.9", "expect_rev": 1})["ok"])
         self.assertGreater(time.monotonic() - t0, 0.4)   # queued, not refused
-        D.T.update(min_interval=5, queue_wait=0.2)
-        r = self.req("start", {"ip": "10.9.0.9", "expect_rev": 2})
-        self.assertEqual(r["error"]["code"], "E_RATE_LIMIT")
+        # a last reload stamp in the future (clock moved back) still waits
+        # at most min_interval, then applies: there is no rate limit refusal
+        self.w("run/last_reload", "%f" % (time.time() + 1000))
+        t0 = time.monotonic()
+        self.assertTrue(self.req("start", {"ip": "10.9.0.9", "expect_rev": 2})["ok"])
+        self.assertLess(time.monotonic() - t0, 2.0)
+        with open(SRC) as f:
+            self.assertNotIn("E_RATE_LIMIT", f.read())
 
     def test_busy(self):
         D.T.update(queue_wait=0.3)
@@ -595,7 +601,7 @@ class TestSetNetwork(Base):
         os.mkdir(self.p("sys"))
         for n in INFO["ifaces"]:
             os.mkdir(self.p("sys/" + n))
-        D.P.update(farpd_default=self.p("etc/farpd"), sysfs_net=self.p("sys"))
+        D.P.update(farpd_default=self.p("etc/farpd"), sysfs_net=self.p("sys"), journal=self.p("etc/netchange.journal"))
         self._hi = D.host_info
         D.host_info = lambda: INFO
         # a stopped override that stays and one that is dropped
@@ -721,12 +727,66 @@ class TestSetNetwork(Base):
         self.assertEqual(self.snapshot(), before)
         self.assertNotIn("restart", self.r("calls"))
 
-    def test_rate_limited(self):
-        D.T.update(min_interval=100, queue_wait=1)
+    def test_queued_behind_interval(self):
+        D.T.update(min_interval=0.6, queue_wait=1)
         self.w("run/last_reload", "0")
         self.assertTrue(self.setnet()["ok"])
+        t0 = time.monotonic()
         r = self.setnet("10.9.0.64/28", "eth1", ("10.9.0.32/28", "eth1"))
-        self.assertEqual(r["error"]["code"], "E_RATE_LIMIT")
+        self.assertTrue(r["ok"], r)
+        self.assertGreater(time.monotonic() - t0, 0.4)
+
+    def test_restart_order_firewall_then_farpd(self):
+        self.assertTrue(self.setnet()["ok"])
+        calls = [l for l in self.r("calls").splitlines() if l.startswith("restart")]
+        self.assertEqual(calls, ["restart phantom-mirage.service", "restart phantom-mirage-firewall.service",
+                                 "restart farpd.service"])
+
+    def test_crash_mid_swap_recovered_on_next_change(self):
+        before = self.snapshot()
+        real, n = D.replace_file, [0]
+        swaps = {self.p("etc/default"), self.p("etc/decoys.conf"), self.p("etc/decoys.json"), self.p("etc/farpd")}
+
+        def crashing(path, data, mode):
+            if path in swaps:
+                n[0] += 1
+                if n[0] == 3:
+                    raise KeyboardInterrupt("simulated crash")
+            return real(path, data, mode)
+        D.replace_file = crashing
+        try:
+            with self.assertRaises(KeyboardInterrupt):
+                self.setnet()
+        finally:
+            D.replace_file = real
+        self.assertNotEqual(self.snapshot(), before)        # mixed files left behind
+        self.assertTrue(os.path.exists(D.P["journal"]))
+        self.w("calls", "")
+        self.h = D.Helper()                                 # a fresh helper process
+        r = self.req("stop", {"ip": "10.9.0.11"})
+        self.assertTrue(r["ok"], r)
+        self.assertFalse(os.path.exists(D.P["journal"]))
+        after = self.snapshot()
+        self.assertEqual(after["default"], before["default"])
+        self.assertEqual(after["farpd"], before["farpd"])
+        self.assertEqual(json.loads(after["decoys.json"])["overrides"].keys(),
+                         set(json.loads(before["decoys.json"])["overrides"]) | {"10.9.0.11"})
+        self.assertEqual(self.r("calls").splitlines()[1], "restart phantom-mirage.service")
+
+    def test_recover_journal_refuses_foreign_paths(self):
+        with open(D.P["journal"], "w") as f:
+            json.dump({"id": "x", "files": [["/etc/passwd", True, 420]]}, f)
+        with self.assertRaises(D.Err):
+            D.recover_journal()
+        self.assertTrue(os.path.exists(D.P["journal"]))
+
+    def test_no_journal_after_success_or_rollback(self):
+        self.assertTrue(self.setnet()["ok"])
+        self.assertFalse(os.path.exists(D.P["journal"]))
+        self.w("restart", "no\n")
+        self.w("run/last_reload", "0")
+        self.setnet("10.9.0.64/28", "eth1", ("10.9.0.32/28", "eth1"))
+        self.assertFalse(os.path.exists(D.P["journal"]))
 
 
 class TestSocket(Base):

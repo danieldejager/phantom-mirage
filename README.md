@@ -138,6 +138,13 @@ starts `pm-decoyd.socket` and restarts the console. If the Decoys page
 says the decoy helper is not running, run
 `sudo systemctl enable --now pm-decoyd.socket` once.
 
+The Decoys page changes per decoy settings and, in its Network section, the
+address block and interface (this restarts the sensor, then the firewall and
+farpd if they are running). Addresses bound in `phantom-mirage.conf` are
+changed there. If `decoys.conf` was edited by hand, the console refuses to
+overwrite it; to drop the hand edits and all console decoy settings run
+`sudo rm /var/lib/phantom-mirage/decoys.json` and try again.
+
 `--source-install` keeps the plain autogen, configure, make and make
 install path instead (binaries and data only, no web console or
 `phantom-mirage-setup`; it asks before `make install`); `--prefix DIR` (default `/usr/local`) and

@@ -12,7 +12,7 @@ import time
 import uuid
 
 DEFAULT_SOCK = "/run/phantom-mirage-decoyd.sock"
-CHANGE_OPS = ("add", "edit", "start", "stop", "delete", "reset_all", "set_network")
+CHANGE_OPS = ("add", "edit", "start", "stop", "reset", "reset_all", "set_network")
 READ_OPS = ("list", "options", "netinfo")
 MAX_REPLY = 1 << 20
 # A change waits for the queue, verify, reload, settle and maybe a

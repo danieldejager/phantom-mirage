@@ -443,7 +443,7 @@ class DecoydApi(unittest.TestCase):
         self.assertEqual(self.h.reqs, [])
 
     def test_helper_errors_mapped(self):
-        for code, want in (("E_INVALID_PERSONALITY", 400), ("E_CONFLICT", 409), ("E_RATE_LIMIT", 429),
+        for code, want in (("E_INVALID_PERSONALITY", 400), ("E_CONFLICT", 409), ("E_BUSY", 429),
                            ("E_RELOAD_FAILED_ROLLED_BACK", 500)):
             with self.subTest(code=code):
                 self.h.reply = {"ok": False, "reloaded": code.startswith("E_RELOAD"),
@@ -548,7 +548,7 @@ class DecoyStopStart(unittest.TestCase):
 
 
 class DecoySettings(DecoyStopStart):
-    """The gear settings panel's save path: add, edit, delete."""
+    """The gear settings panel's save path: add, edit, reset."""
 
     def decoy(self, **kw):
         d = {"ip": "10.9.0.11", "personality": "linux-6",
@@ -558,7 +558,7 @@ class DecoySettings(DecoyStopStart):
         d.update(kw)
         return d
 
-    def test_add_edit_delete(self):
+    def test_add_edit_reset(self):
         st, j = self.c.req("GET", "/api/decoyd/options")
         self.assertIn("linux-6", j["result"]["personalities"])
         self.assertIn("ssh", [v["id"] for v in j["result"]["services"]])
@@ -582,7 +582,7 @@ class DecoySettings(DecoyStopStart):
         self.assertEqual(st, 200)
         st, j = self.change("start", {"ip": "10.9.0.11", "expect_rev": 3})
         self.assertEqual(self.row("10.9.0.11")["template"], "pm_d_10_9_0_11")
-        st, j = self.change("delete", {"ip": "10.9.0.11", "expect_rev": 4})
+        st, j = self.change("reset", {"ip": "10.9.0.11", "expect_rev": 4})
         self.assertEqual(st, 200, j)
         self.assertEqual(self.row("10.9.0.11")["template"], "default")
 
@@ -682,7 +682,7 @@ class DecoyReserved(DecoyStopStart):
 
     def test_direct_call_refused(self):
         for op, args in (("stop", {"ip": "10.9.0.8"}), ("start", {"ip": "10.9.0.15"}),
-                         ("delete", {"ip": "10.9.0.8"}),
+                         ("reset", {"ip": "10.9.0.8"}),
                          ("add", {"decoy": {"ip": "10.9.0.15", "personality": None,
                                             "defaults": {"tcp": "reset", "udp": "closed", "icmp": "open"},
                                             "ports": []}})):
