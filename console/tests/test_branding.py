@@ -388,9 +388,11 @@ class TestWordmark(unittest.TestCase):
         self.assertTrue(svg.startswith('<svg xmlns="http://www.w3.org/2000/svg"'))
         self.assertIn('fill="currentColor"', svg)
         self.assertIn('aria-label="Phantom Technologies"', svg)
+        self.assertIn("<title>Phantom Technologies</title>", svg)
+        self.assertIn("DejaVu Sans Bold", svg)   # bold caps outlines, nothing loaded at runtime
         self.assertNotRegex(svg, r'(?i)<script|<text|<image|href=|\bon[a-z]+=|font')
         w, h = map(float, re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg).groups())
-        self.assertAlmostEqual(w / h, 12.26, delta=0.05)   # matches .ptw aspect-ratio
+        self.assertAlmostEqual(w / h, 20.65, delta=0.05)   # matches .ptw aspect-ratio
         css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
         self.assertIn("mask:url(/static/phantom-technologies-wordmark.svg)", css)
         self.assertIn("phantom-technologies-wordmark.svg", pmc.STATIC_FILES)

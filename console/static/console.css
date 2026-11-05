@@ -107,7 +107,7 @@ button.ssi{padding:4px 8px;line-height:0}button.ssi svg{vertical-align:middle}bu
 #nhint{min-height:1.2em;margin:4px 0}
 /* Phantom Technologies wordmark: vector trace of the project owner's logo image, painted
    with the theme text colour through a mask so it follows light and dark. */
-.ptw{display:inline-block;height:13px;aspect-ratio:12.26;background:currentColor;color:var(--tm);-webkit-mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat;mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat}.sptw{height:16px;display:block;margin:0 auto}
+.ptw{display:inline-block;height:13px;aspect-ratio:20.65;background:currentColor;color:var(--tm);-webkit-mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat;mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat}.sptw{height:14px;display:block;margin:0 auto}
 /* MIRAGE wordmark centred in the sidebar pane */
 .nbrand{justify-content:center}
 
