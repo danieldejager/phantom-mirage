@@ -103,11 +103,10 @@ main() {
 		run mv -f -- /etc/chrony/chrony.conf.pm-backup /etc/chrony/chrony.conf
 		note "/etc/chrony/chrony.conf (restored)"
 	fi
-	for f in /etc/chrony/sources.d/phantom-mirage.sources; do
-		[ -e "$f" ] || continue
-		run rm -f -- "$f"
-		note "$f"
-	done
+	if [ -e /etc/chrony/sources.d/phantom-mirage.sources ]; then
+		run rm -f -- /etc/chrony/sources.d/phantom-mirage.sources
+		note /etc/chrony/sources.d/phantom-mirage.sources
+	fi
 	for d in "$DEFAULT" "$DEFAULT".bak-* "$DEFAULT".new /etc/init.d/phantom-mirage /etc/phantom-mirage /var/lib/phantom-mirage /var/log/phantom-mirage \
 		/etc/systemd/system/multi-user.target.wants/phantom-mirage.service \
 		/etc/systemd/system/multi-user.target.wants/phantom-mirage-console.service \
