@@ -74,7 +74,7 @@ td.wr{white-space:normal;max-width:420px;word-break:break-word}
 @media(prefers-color-scheme:light){:root:not([data-theme=dark]) .slogo .lg-dark{display:none}:root:not([data-theme=dark]) .slogo .lg-light{display:block}}
 .sname{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .slegal,.sfoot,.hlegal,.wm{font-family:Aldrich,system-ui,sans-serif}
-.splash{display:flex;flex-direction:column;align-items:center;text-align:center;padding:24px 12px;margin:auto}
+.splash{display:flex;flex-direction:column;align-items:center;text-align:center;padding:20px 12px 16px;margin:auto}
 .slegal{margin:14px 0 18px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--tm)}
 .sfoot{margin-top:18px;font-size:12px;color:var(--tm)}.sfoot p{margin:2px 0}
 .hlegal{margin-left:4px}.wm{color:var(--t)}
@@ -84,7 +84,7 @@ td.wr{white-space:normal;max-width:420px;word-break:break-word}
 .themetg{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;font-size:12px}.themetg .ti{font-size:14px;line-height:1}.themetg:hover{background:var(--h);filter:brightness(1.1)}.themetg:focus-visible{outline:2px solid var(--a);outline-offset:1px}
 /* MIRAGE wordmark: vector trace of the README logo lettering (triangular A), drawn in the
    current text colour through a same-origin SVG mask so it follows both themes. */
-.mwm{display:inline-block;height:14px;aspect-ratio:7.54;background:currentColor;color:var(--t);-webkit-mask:url(/static/mirage-wordmark.svg) center/contain no-repeat;mask:url(/static/mirage-wordmark.svg) center/contain no-repeat}.swm{height:28px;margin:0 0 18px}.nbrand .mwm{margin:4px 0}
+.mwm{display:inline-block;height:14px;aspect-ratio:7.54;background:currentColor;color:var(--t);-webkit-mask:url(/static/mirage-wordmark.svg) center/contain no-repeat;mask:url(/static/mirage-wordmark.svg) center/contain no-repeat}.swm{height:22px;margin:0 0 14px}.nbrand .mwm{margin:4px 0}
 /* P mark on a solid black tile in both themes, sized to the header and the splash. */
 .ptile{display:inline-flex;background:#000;border-radius:9px;padding:4px}.ptile img{display:block}.slogo .ptile{border-radius:18px;padding:10px}
 /* decoy detail panel (gear per row) */
@@ -104,7 +104,7 @@ button.ssi{padding:4px 8px;line-height:0}button.ssi svg{vertical-align:middle}bu
 /* Phantom Technologies wordmark: original wide squared PHANTOM over a smaller
    tracked TECHNOLOGIES line. A same-origin SVG mask painted with the theme
    text colour, so it is silver-white on carbon and near-black on light. */
-.ptw{display:inline-block;height:34px;aspect-ratio:4.151;background:currentColor;color:var(--t);-webkit-mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat;mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat}.sptw{height:48px;display:block;margin:0 auto}
+.ptw{display:inline-block;height:34px;aspect-ratio:4.151;background:currentColor;color:var(--t);-webkit-mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat;mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat}
 /* MIRAGE wordmark centred in the sidebar pane */
 .nbrand{justify-content:center}
 

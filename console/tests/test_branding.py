@@ -171,11 +171,16 @@ class TestLoginPage(unittest.TestCase):
     def test_splash_content(self):
         t = login_page()
         self.assertNotIn("{{", t)
-        self.assertIn('<div class="slogo"><span class="ptile"><img src="/static/phantom-mirage-mark-dark.png" width="80" height="80"', t)
-        self.assertIn('<span class="mwm swm" role="img" aria-label="Mirage"></span>', t)
-        self.assertIn('<h1 class="sname">Mirage I</h1>', t)
-        self.assertIn('<p class="slegal"><span class="ptw sptw" role="img" aria-label="Phantom Technologies"></span></p>', t)
-        self.assertIn("\u00a9 2026 Phantom Technologies. All rights reserved.", t)
+        login = t[t.index('<div id="login">'):t.index("<header>")]
+        brand = login[:login.index('<div class="card">')]
+        self.assertIn('<span class="mwm swm" role="img" aria-label="Mirage"></span>', brand)
+        self.assertIn('<h1 class="sname">Mirage I</h1>', brand)
+        self.assertNotIn("ptile", brand)
+        self.assertNotIn("ptw", brand)
+        self.assertNotIn("phantom-mirage-mark", brand)
+        self.assertNotIn("Phantom Technologies", brand)
+        self.assertIn("\u00a9 2026 Phantom Technologies. All rights reserved.", login)
+        self.assertIn("sudo phantom-mirage-setup --reset-admin", login)
         self.assertIn("<title>Mirage I console</title>", t)
 
     def test_no_inline_script_or_style(self):
@@ -402,7 +407,12 @@ class TestWordmark(unittest.TestCase):
         self.assertNotIn("tabindex", head)
         self.assertNotIn("<button", head)
         self.assertIn('<div class="nbrand brand"><span class="mwm" role="img" aria-label="Mirage"></span></div>', t)
-        self.assertIn('<p class="slegal"><span class="ptw sptw" role="img" aria-label="Phantom Technologies"></span></p>', t)
+        login = t[t.index('<div id="login">'):t.index("<header>")]
+        brand = login[:login.index('<div class="card">')]
+        self.assertIn('<span class="mwm swm" role="img" aria-label="Mirage"></span>', brand)
+        self.assertNotIn("ptw", brand)
+        self.assertNotIn("ptile", brand)
+        self.assertNotIn('class="slegal"', brand)
 
     def test_sidebar_wordmark_centred(self):
         css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
@@ -440,7 +450,8 @@ class TestWordmark(unittest.TestCase):
         self.assertIn("color:var(--t)", rule)
         self.assertNotIn("gradient", rule)
         self.assertIn(".ptw{display:inline-block;height:34px;", css)
-        self.assertIn(".sptw{height:48px;", css)
+        self.assertNotIn(".sptw{", css)
+        self.assertIn(".swm{height:22px;", css)
         self.assertNotIn(".hlegal{display:none}", css)
         self.assertIn("@media(max-width:380px){.hlegal.ptw{height:26px}}", css)
         self.assertIn("mask:url(/static/phantom-technologies-wordmark.svg)", css)
