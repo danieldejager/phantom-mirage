@@ -39,7 +39,7 @@ flowchart TB
   HLP -- "8 systemctl reload (decoy ops)<br/>restart (set_network)" --> SD
   SD -- "9 HUP or restart" --> PM
   SD -- "set_network: restart if active" --> FARP
-  SD -- "set_network: restart if active" --> FW
+  SD -- "set_network: reload if active" --> FW
   HLP -- "10 JSON reply" --> CON
   classDef priv fill:#fde2e2,stroke:#b00
   classDef low fill:#e2f0fd,stroke:#036

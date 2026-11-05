@@ -3,9 +3,10 @@ flowchart TD
   B -- no --> X1["E_PEER, nothing written"]
   B -- yes --> C{"Envelope, replay,<br/>lock within 25 s?"}
   C -- no --> X2["E_BAD_JSON / E_REPLAY / E_BUSY ...<br/>nothing written"]
-  C -- yes --> W["Wait out the 10 s gap<br/>since the last reload"]
+  C -- yes --> RJ["Recover an interrupted address block<br/>change if netchange.journal exists"]
+  RJ --> W["Queue: wait out the rest of the 10 s gap<br/>since the last reload (at most 10 s)"]
   W --> CF{"decoys.conf hash<br/>matches store?"}
-  CF -- no --> X5["E_CONFLICT, reset all to continue"]
+  CF -- no --> X5["E_CONFLICT (not for reset_all):<br/>message says sudo rm decoys.json"]
   CF -- yes --> D{"Op and field<br/>validation ok?"}
   D -- no --> X3["E_INVALID_* / E_ADDRESS_* / E_CONFLICT,<br/>nothing written"]
   D -- yes --> E["Render decoys.conf.new"]

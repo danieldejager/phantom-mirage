@@ -3,7 +3,9 @@ stateDiagram-v2
   Listening: systemd holds /run/phantom-mirage-decoyd.sock<br/>no helper process running
   Listening --> Starting: console connects
   Starting: systemd starts pm-decoyd.service<br/>passes listening fd (Accept=no)
-  Starting --> Serving
+  Starting --> Recovering
+  Recovering: if netchange.journal exists, put back the .prev files<br/>it lists, record "interrupted", restart the sensor if running
+  Recovering --> Serving
   Serving: helper accepts, one request at a time,<br/>one request per connection, flock serialises changes
   Serving --> Serving: next connection within idle window
   Serving --> Exiting: 30 s with no connection

@@ -1,12 +1,12 @@
 # Decoy management from the console: design
 
-**Status.** Design document, updated to match the code on branch feat/decoy-settings (draft PR 256, head 8a4cbe6, not merged). Where this document says "implemented", it means implemented on that branch only. Nothing here is on master. Each section says what is built, what is tested offline, and what has not been tried on a real systemd host.
+**Status.** Design document, updated to match the code on branch feat/decoy-settings (draft PR 256, head 55c914d, not merged). Where this document says "implemented", it means implemented on that branch only. Nothing here is on master. Each section says what is built, what is tested offline, and what has not been tried on a real systemd host.
 
 Labels used below:
 
 - **Implemented (PR 256)**: the code exists on feat/decoy-settings, draft PR 256, not merged.
-- **Tested offline**: covered by unit or shell tests that run without systemd, using a fake `systemctl`, a fake daemon and temp directories. I ran these tests on PR 256 head 8a4cbe6: decoyd/tests 56 tests pass (3 skipped), console/tests 137 tests pass, ci/test_decoys_include.sh and ci/test_decoyd_socket.sh pass.
-- **Untested on a real host**: nothing in PR 256 has been seen working under real systemd, with a real socket, real reload or restart, or on a real LAN.
+- **Tested offline**: covered by unit or shell tests that run without systemd, using a fake `systemctl`, a fake daemon and temp directories. I ran these tests on PR 256 head 55c914d: decoyd/tests 65 tests pass (3 skipped), console/tests 141 tests pass, ci/test_decoys_include.sh and ci/test_decoyd_socket.sh pass.
+- **Untested on a real host**: not tried under real systemd, with a real socket, real reload or restart, or on a real LAN. The one exception is a single manual test by the project owner, described in section 9; it is not a test matrix.
 - **Not started**: no code yet.
 
 ## In short
@@ -18,7 +18,9 @@ Labels used below:
 - If a change would break the sensor, the helper refuses it, or puts the old files back and restarts the sensor.
 - A decoy change reloads all decoys, so anyone connected to any decoy at that moment is cut off. An address block change restarts the whole sensor.
 - Deleting a decoy is not started. It is a later slice.
-- All of this passes its offline tests. None of it has been tried on a real sensor host yet.
+- An address block change restarts the sensor, then reloads the firewall (it no longer restarts it, which dropped the console) and restarts farpd, each only if running. If the browser loses the connection, the console waits up to 5 minutes and then shows whether the change was applied or rolled back.
+- If decoys.conf was edited by hand, the console refuses to overwrite it and tells you to run `sudo rm /var/lib/phantom-mirage/decoys.json` on the sensor.
+- All of this passes its offline tests. One manual test by the project owner on one test machine changed the address block and the sensor came up. Nothing else has been tried on a real sensor host.
 
 ## 1. Overview (plain words)
 
@@ -39,7 +41,7 @@ Labels used below:
 - You no longer need to edit files on the sensor for these tasks.
 - Every change asks for your password again.
 - A decoy change takes a few seconds and reloads every decoy, cutting any connection open to any decoy at that moment.
-- An address block change restarts the sensor, and restarts farpd and the firewall if they are running. Settings for decoys that fall outside the new block are dropped, and the console tells you which.
+- An address block change restarts the sensor, and then reloads the firewall and restarts farpd if they are running. Settings for decoys that fall outside the new block are dropped, and the console tells you which.
 - A stopped decoy goes quiet, but other machines can still see that something owns the address.
 
 **What does not change.**
@@ -109,7 +111,7 @@ flowchart TB
   HLP -- "8 systemctl reload (decoy ops)<br/>restart (set_network)" --> SD
   SD -- "9 HUP or restart" --> PM
   SD -- "set_network: restart if active" --> FARP
-  SD -- "set_network: restart if active" --> FW
+  SD -- "set_network: reload if active" --> FW
   HLP -- "10 JSON reply" --> CON
   classDef priv fill:#fde2e2,stroke:#b00
   classDef low fill:#e2f0fd,stroke:#036
@@ -139,6 +141,8 @@ Source: [img/src/01-architecture.mmd](img/src/01-architecture.mmd)
 | `/usr/share/phantom-mirage/decoy-services.json` | 25 services, each an id, label, proto, port and a plain action `open`. No scripts. | Implemented (PR 256) |
 | `/var/lib/phantom-mirage/decoys.json` | Helper store: `{v:1, overrides:{ip:{rev, state, decoy}}, conf_sha256}`, root 0600 | Implemented (PR 256) |
 | `/etc/phantom-mirage/decoys.conf` | Generated from the store, root 0644, with `decoys.conf.prev` kept | Implemented (PR 256) |
+| `/var/lib/phantom-mirage/netchange.journal` | Written by set_network after the `.prev` copies and before the first file is replaced; lists each file, whether it existed and its mode; removed when the change ends. If found at helper start or at the start of any change, the listed files are put back from `.prev` (or removed if they did not exist), the outcome `interrupted` is recorded and the sensor restarted if active. Paths outside the four fixed files are refused. Mode 0600. | Implemented (PR 256), tested offline |
+| `/var/lib/phantom-mirage/netchange.last` | Outcome of the last set_network: `id`, `result` (applied, applied_not_running, rolled_back, rollback_failed, interrupted), `network`, `interface`, `previous`, `dropped`, `time`. Returned by netinfo as `last_change`. Not written when a change is refused before any file changes. Mode 0644. | Implemented (PR 256), tested offline |
 
 ### Trust boundaries
 
@@ -153,7 +157,7 @@ Source: [img/src/01-architecture.mmd](img/src/01-architecture.mmd)
 Two things differ from the first draft of this design:
 
 - There is **no** `PrivateNetwork`, and `CAP_NET_RAW` is kept, because `--verify-config` opens the interface. Network access is limited by `IPAddressDeny=any` instead.
-- `/etc/default` is writable as a whole directory, because set_network rewrites `/etc/default/phantom-mirage` and maybe `/etc/default/farpd`.
+- `/etc/default` is writable as a whole directory, because set_network rewrites `/etc/default/phantom-mirage` and maybe `/etc/default/farpd`. This was already in the unit at 8a4cbe6; it is not new in 55c914d.
 
 Whether this unit can really run `systemctl reload` and `restart`, and open the interface for verify, under these settings has **not** been checked on a real host.
 
@@ -165,7 +169,7 @@ The main config keeps its hand written templates and binds and gains one line, `
 - **Stopped:** template `pm_s_<ip>` with `default tcp`, `udp` and `icmp action block` and no personality and no ports.
 - Then `bind <ip> <template>`.
 
-The helper keeps the sha256 of the text it last wrote. If decoys.conf on disk no longer matches, every change except reset_all is refused with `E_CONFLICT` until you reset all overrides.
+The helper keeps the sha256 of the text it last wrote. If decoys.conf on disk no longer matches, every change except reset_all (and set_network too) is refused with `E_CONFLICT`. The message tells you to drop the hand edits and all console decoy settings by running `sudo rm /var/lib/phantom-mirage/decoys.json` on the sensor and trying again. With no store there is no hash to compare, so the next change rewrites decoys.conf. reset_all also clears the conflict but is still not in the console UI.
 
 ## 4. Data flow diagrams
 
@@ -217,9 +221,10 @@ flowchart TD
   B -- no --> X1["E_PEER, nothing written"]
   B -- yes --> C{"Envelope, replay,<br/>lock within 25 s?"}
   C -- no --> X2["E_BAD_JSON / E_REPLAY / E_BUSY ...<br/>nothing written"]
-  C -- yes --> W["Wait out the 10 s gap<br/>since the last reload"]
+  C -- yes --> RJ["Recover an interrupted address block<br/>change if netchange.journal exists"]
+  RJ --> W["Queue: wait out the rest of the 10 s gap<br/>since the last reload (at most 10 s)"]
   W --> CF{"decoys.conf hash<br/>matches store?"}
-  CF -- no --> X5["E_CONFLICT, reset all to continue"]
+  CF -- no --> X5["E_CONFLICT (not for reset_all):<br/>message says sudo rm decoys.json"]
   CF -- yes --> D{"Op and field<br/>validation ok?"}
   D -- no --> X3["E_INVALID_* / E_ADDRESS_* / E_CONFLICT,<br/>nothing written"]
   D -- yes --> E["Render decoys.conf.new"]
@@ -297,7 +302,9 @@ stateDiagram-v2
   Listening: systemd holds /run/phantom-mirage-decoyd.sock<br/>no helper process running
   Listening --> Starting: console connects
   Starting: systemd starts pm-decoyd.service<br/>passes listening fd (Accept=no)
-  Starting --> Serving
+  Starting --> Recovering
+  Recovering: if netchange.journal exists, put back the .prev files<br/>it lists, record "interrupted", restart the sensor if running
+  Recovering --> Serving
   Serving: helper accepts, one request at a time,<br/>one request per connection, flock serialises changes
   Serving --> Serving: next connection within idle window
   Serving --> Exiting: 30 s with no connection
@@ -328,32 +335,43 @@ sequenceDiagram
   actor U as Admin (browser)
   participant C as Console (phantom-mirage-console)
   participant H as pm-decoyd (root, via socket)
-  participant F as Files (/etc/default, /etc/phantom-mirage, decoys.json)
+  participant F as Files (/etc/default, /etc/phantom-mirage, /var/lib/phantom-mirage)
   participant P as phantom-mirage.service
-  participant X as farpd + firewall units
+  participant X as firewall + farpd units
   Note over U,X: Legend: trust boundaries are browser | console (low privilege) | socket + helper (root) | files | sensor units. Solid arrow = request or action, dashed arrow = response. Example block 192.0.2.0/28 is a documentation range. The real helper accepts private ranges only.
   U->>C: Network section: new block, interface, password
-  C->>C: session, CSRF, password check with back off, audit "requested"
+  C->>C: session, CSRF, password check with back off, audit "requested", remember pending change in the browser
   C->>H: set_network {network, interface, expect:{network, interface}} (240 s timeout)
-  H->>H: peer uid, envelope, flock, 10 s gap
+  H->>H: peer uid, envelope, flock (25 s), recover journal if present, queue up to 10 s
   H->>F: read NETWORK and INTERFACE, compare with expect (else E_CONFLICT)
   H->>H: ip -j -4 addr / route: interfaces, LANs, gateways
   H->>H: check block: CIDR, at most /24, private, on LAN of interface,<br/>no own address, no gateway, no LAN network or broadcast
   H->>H: drop overrides outside the new block, render decoys.conf
-  H->>F: rewrite NETWORK= and INTERFACE= lines (farpd file only with setup marker)
   H->>H: --verify-config with new interface and block (else E_VERIFY_FAILED, nothing written)
-  H->>F: keep .prev of every file, replace each file
+  H->>F: keep .prev of every file, write netchange.journal, replace each file
   alt sensor not active
-    H->>X: restart firewall (and farpd if rewritten) only if active
+    H->>F: remove journal, write netchange.last "applied_not_running"
+    H->>X: reload firewall, then restart farpd if rewritten, each only if active
     H-->>C: ok, restarted:false, sensor left stopped
   else sensor active
+    H->>H: daemon-reload only if a unit reports NeedDaemonReload
     H->>P: systemctl restart phantom-mirage
     H->>P: active within 20 s, then active after 3 s settle
-    H->>X: restart firewall (and farpd if rewritten) only if active
+    H->>F: remove journal, write netchange.last "applied"
+    H->>X: reload firewall (never restart, the console Requires it), then restart farpd if rewritten, each only if active
     H-->>C: ok, network, interface, dropped, warnings
   end
-  C->>C: audit "applied, dropped settings for ..."
-  C-->>U: new block shown
+  alt reply arrives
+    C->>C: audit "applied, dropped settings for ..."
+    C-->>U: new block shown
+  else connection lost (no status, 502, 503, 504, E_TIMEOUT, E_UNAVAILABLE)
+    loop every 3 s, at most 5 minutes
+      U->>C: GET /api/decoyd/netinfo
+      C->>H: netinfo
+      H-->>C: last_change from netchange.last
+    end
+    C-->>U: applied, rolled back, rollback failed or interrupted, read from last_change
+  end
 ```
 
 ![06-set-network](img/06-set-network.png)
@@ -367,30 +385,32 @@ Implemented (PR 256). Offline tests check that a failed restart puts every file 
 ```mermaid
 flowchart TD
   A(["set_network passed every check<br/>and --verify-config"]) --> B["Keep .prev of /etc/default/phantom-mirage,<br/>decoys.conf, decoys.json, farpd file if marked"]
-  B --> C{"All files replaced?"}
-  C -- "no (OSError)" --> R0["Restore every file,<br/>E_INTERNAL, nothing changed"]
+  B --> J["Write netchange.journal<br/>(list of files)"]
+  J --> C{"All files replaced?"}
+  C -- "no (OSError)" --> R0["Restore every file, remove journal,<br/>E_INTERNAL, nothing changed"]
   C -- yes --> SA{"Sensor was active?"}
-  SA -- no --> OK0["Restart firewall and farpd if active,<br/>ok, sensor left stopped"]
-  SA -- yes --> D["systemctl restart phantom-mirage"]
+  SA -- no --> OK0["Remove journal, record applied_not_running,<br/>reload firewall then restart farpd if active,<br/>ok, sensor left stopped"]
+  SA -- yes --> DR["daemon-reload if a unit<br/>needs it"]
+  DR --> D["systemctl restart phantom-mirage"]
   D --> E{"rc 0, active within 20 s,<br/>still active after 3 s?"}
-  E -- yes --> OK1["Restart firewall and farpd if active<br/>(failure is a warning), ok"]
-  E -- no --> F["Restore EVERY file first<br/>(old block, old decoys, old store)"]
+  E -- yes --> OK1["Remove journal, record applied,<br/>reload firewall then restart farpd if active<br/>(failure is a warning), ok"]
+  E -- no --> F["Restore EVERY file first<br/>(old block, old decoys, old store),<br/>remove journal"]
   F --> G["systemctl restart phantom-mirage"]
-  G --> AUX["Restart firewall and farpd if active"]
-  AUX --> H{"Active within 20 s?"}
-  H -- yes --> N["E_RESTART_FAILED_ROLLED_BACK,<br/>old block serving"]
-  H -- no --> O["E_ROLLBACK_FAILED,<br/>sensor DOWN, see journal"]
+  G --> H{"Active within 20 s?"}
+  H -- yes --> N["Record rolled_back, reload firewall then<br/>restart farpd if active,<br/>E_RESTART_FAILED_ROLLED_BACK"]
+  H -- no --> O["Record rollback_failed, same aux step,<br/>E_ROLLBACK_FAILED, sensor DOWN"]
+  K(["Helper killed mid swap"]) --> KR["Next helper start or next change:<br/>journal found, put back .prev files,<br/>record interrupted, restart sensor if active"]
   classDef bad fill:#fde2e2,stroke:#b00
   classDef good fill:#e3f6e3,stroke:#060
   classDef warn fill:#fff4d6,stroke:#a60
-  class R0,N warn
+  class R0,N,KR warn
   class O bad
   class OK0,OK1 good
   subgraph LEG["Legend"]
     LG1["Green: new block applied"]:::good
-    LG2["Amber: rolled back, old block in place"]:::warn
+    LG2["Amber: rolled back or recovered, old block in place"]:::warn
     LG3["Red: sensor down, manual action needed"]:::bad
-    LG4["Every box runs in the root helper behind the socket trust boundary.<br/>Arrows: order of steps, labelled with the outcome."]
+    LG4["Every box runs in the root helper behind the socket trust boundary.<br/>Arrows: order of steps, labelled with the outcome.<br/>Outcome records go to netchange.last, read by netinfo as last_change."]
   end
 ```
 
@@ -419,16 +439,16 @@ Reply: `{"v":1, "id", "ok":true|false, "reloaded":bool, "rolled_back":bool, "res
 |---|---|---|---|
 | `list` | none | `network`, and one entry per address with `source` override, default or main_conf | Implemented |
 | `options` | none | personalities, states, services (id, label, proto, port), `max_ports` 64 | Implemented |
-| `netinfo` | none | current network and interface, interfaces with addresses, gateways, `min_prefix` 24 | Implemented |
+| `netinfo` | none | current network and interface, interfaces with addresses, gateways (each listed once, sorted), `last_change` (the outcome record or null), `min_prefix` 24 | Implemented |
 | `add` | `decoy` | `ip`, `state` running, `rev` 1 | Implemented |
 | `edit` | `decoy`, `expect_rev` (required) | new `rev` | Implemented |
 | `stop` | `ip`, `expect_rev` if an override exists | `state` stopped, `arp` "still_answered" | Implemented |
 | `start` | `ip`, `expect_rev` | running; a stop on a default decoy is simply removed | Implemented |
-| `delete` | `ip`, `expect_rev` | removes the override so the address is back on the default template | Implemented as "reset to default" only, see note |
+| `reset` | `ip`, `expect_rev` | removes the override so the address is back on the default template | Implemented (renamed from `delete` in f09ce88) |
 | `reset_all` | `confirm` = "reset-all" | `overrides` 0 | Implemented in the helper; not exposed in the console UI as far as I could see |
 | `set_network` | `network`, `interface`, `expect:{network, interface}` | `network`, `interface`, `dropped`, `farpd`, `restarted`, maybe `warnings` | Implemented |
 
-**Note on `delete`.** The helper op called `delete` removes a decoy's own settings. The console uses it for the "Use default template" button. It does **not** take an address out of service. Deleting a decoy in that sense is not started (section 10). The op name is confusing and is listed as an open question.
+**Note on `reset`.** The op formerly called `delete` is now `reset` in the helper, the client and the console. The console uses it for the "Use default template" button. It does **not** take an address out of service. There is no `delete` op any more; deleting a decoy in that sense is not started (section 10).
 
 A `decoy` object has exactly `ip`, `personality` (a name or null), `defaults` `{tcp, udp, icmp}` and `ports`, a list of `{proto, port, state}` or `{proto, port, service}`.
 
@@ -438,7 +458,7 @@ A `decoy` object has exactly `ip`, `personality` (a name or null), `defaults` `{
 |---|---|---|
 | Transport (client side) | `E_UNAVAILABLE`, `E_TIMEOUT`, `E_BAD_REPLY` | 503 |
 | Envelope | `E_PEER` (500), `E_BAD_JSON`, `E_VERSION`, `E_UNKNOWN_FIELD`, `E_MISSING_FIELD`, `E_TYPE`, `E_REPLAY`, `E_UNKNOWN_OP` | 400 unless shown |
-| Queue | `E_BUSY` (lock not free within 25 s), `E_RATE_LIMIT` | 429 |
+| Queue | `E_BUSY` (lock not free within 25 s) | 429 |
 | Decoy validation | `E_INVALID_ADDRESS`, `E_ADDRESS_OUTSIDE_NETWORK`, `E_ADDRESS_RESERVED`, `E_ADDRESS_IN_MAIN_CONF`, `E_INVALID_PERSONALITY`, `E_INVALID_STATE`, `E_INVALID_PORT`, `E_INVALID_SERVICE`, `E_TOO_MANY_PORTS` | 400 |
 | State | `E_CONFLICT`, `E_EXISTS`, `E_NOT_FOUND`, `E_NOT_RUNNING`, `E_NOT_STOPPED`, `E_UNCHANGED` | 409 |
 | Network validation | `E_INVALID_NETWORK`, `E_NETWORK_TOO_WIDE`, `E_NOT_PRIVATE`, `E_INVALID_INTERFACE`, `E_NOT_ON_LAN`, `E_HOST_ADDRESS`, `E_GATEWAY`, `E_LAN_EDGE` | 400 |
@@ -446,7 +466,7 @@ A `decoy` object has exactly `ip`, `personality` (a name or null), `defaults` `{
 
 The console itself answers 403 for a wrong password, 423 while backing off after wrong passwords, and 400 `E_ADDRESS_RESERVED` for a network or broadcast address.
 
-`E_RATE_LIMIT` is only raised if the wait would exceed 25 s. With a 10 s gap the helper normally just waits, so in practice it should not appear.
+`E_RATE_LIMIT` is removed from the helper, the console status mapping and the UI messages. A change that comes within 10 s of the last reload now waits out the rest of that gap, never more than 10 s even if the clock moved back. This 10 s is on top of the wait for the lock, which can still take up to 25 s and give `E_BUSY`.
 
 ## 6. Validation rules (as coded)
 
@@ -471,7 +491,7 @@ Documentation example addresses (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) 
 
 ## 7. Failure handling and rollback
 
-Decoy changes (section 4.2)
+Decoy changes (section 4.2). Before anything else, a leftover `netchange.journal` is recovered (section 3) and the 10 s queue wait runs.
 
 1. Write `decoys.conf.new` with `O_EXCL|O_NOFOLLOW`, fsync.
 2. Verify: copy the main config to `/etc/phantom-mirage/.pm-decoyd-verify.conf` with its one include line pointing at `.new`, then run `phantom-mirage --verify-config -f <temp> -p columbo-v1.db` with the same data files and interface and block. Failure deletes `.new` and gives `E_VERIFY_FAILED` with the parser's first useful line.
@@ -483,12 +503,15 @@ Decoy changes (section 4.2)
 Address block change (section 4.6)
 
 1. All checks and `--verify-config` with the new interface and block run before any file is written.
-2. Keep `.prev` of `/etc/default/phantom-mirage`, decoys.conf, decoys.json and the farpd file if it is rewritten, then replace each. A write error restores all files and gives `E_INTERNAL`.
-3. A stopped sensor is left stopped. The firewall and farpd are restarted only if active.
-4. Otherwise restart the sensor, wait up to 20 s for active and check again after 3 s. Then restart the firewall and farpd if active; failures there are warnings.
-5. On failure restore **every** file first, then restart the sensor and the helper units, giving `E_RESTART_FAILED_ROLLED_BACK` or `E_ROLLBACK_FAILED`.
+2. Keep `.prev` of `/etc/default/phantom-mirage`, decoys.conf, decoys.json and the farpd file if it is rewritten, write `netchange.journal`, then replace each. A write error restores all files, removes the journal and gives `E_INTERNAL` (no outcome is recorded for this case).
+3. A stopped sensor is left stopped; the outcome `applied_not_running` is recorded.
+4. Otherwise run `systemctl daemon-reload` if the sensor or firewall unit reports `NeedDaemonReload=yes` (the helper never writes unit files; this covers a unit changed on disk without a reload), restart the sensor, wait up to 20 s for active and check again after 3 s. The outcome `applied` is recorded.
+5. On failure restore **every** file first, remove the journal, restart the sensor, wait up to 20 s, and record `rolled_back` or `rollback_failed`, giving `E_RESTART_FAILED_ROLLED_BACK` or `E_ROLLBACK_FAILED`.
+6. In every case above after the swap, the aux step runs: the firewall is **reloaded** (`ExecReload` runs `pm-firewall apply`) and then farpd is restarted if its file was rewritten, each only if it is already active. Failures there are warnings. The firewall is not restarted because `phantom-mirage-console.service` has `Requires=phantom-mirage-firewall.service`, so a restart also restarted the console and cut the request and every session.
 
-The file swap is a series of single file renames, not one atomic step across files. A crash part way through could leave a mix; `.prev` copies are there for manual recovery. This has not been tested.
+The daemon-reload check runs only before the first restart in step 4. It does not run before a decoy reload, before the rollback restart, or for the farpd unit.
+
+The file swap is still a series of single file renames, not one atomic step. A crash part way through is now covered by the journal: the next helper start or change puts the `.prev` set back and records `interrupted`. Journal recovery restarts only the sensor, not the firewall or farpd. This is tested offline only (a simulated crash mid swap).
 
 ## 8. Threat model
 
@@ -499,31 +522,41 @@ The file swap is a series of single file renames, not one atomic step across fil
 | Injection into config | Template names built from the address; personality and actions checked against fixed lists; only `NETWORK=` and `INTERFACE=` lines rewritten with validated values | A malicious entry in the service list or personality file would be used; both are root owned and the db is sha256 pinned. |
 | Symlink and race on swap | `O_EXCL|O_NOFOLLOW`, rename in the same directory, refuses non root owned or symlinked config | `/etc/default` is writable to the helper as a whole directory. |
 | Socket permissions | 0660 root:phantom-mirage-console, `SO_PEERCRED` | Anything running as the console user is trusted the same. |
-| Denial of service by reloads | flock, 10 s gap between reloads | The console can still reload every 10 s or restart the sensor with set_network. |
+| Denial of service by reloads | flock, changes queue behind a 10 s gap between reloads | The console can still reload every 10 s or restart the sensor with set_network. |
 | Replay | `ts` window 60 s, `id` kept 600 s on /run, `expect_rev` and `expect` | Mainly stops double submits. |
 | Address block moved onto live hosts | Must be private, at most /24, on the LAN of the interface, no own address, no gateway, no LAN edge | **No probe for other live hosts in the new block.** farpd would answer ARP for them. This is the biggest open risk of set_network. |
 | Bad config takes sensor down | Verify first, health check, restore before restart | If the restored files also fail, the sensor stays down: `E_ROLLBACK_FAILED`. |
-| Manual edit of decoys.conf | Hash check, `E_CONFLICT` until reset_all | reset_all is not in the console UI, so recovery needs the shell. |
+| Manual edit of decoys.conf | Hash check, `E_CONFLICT`; the message names `sudo rm /var/lib/phantom-mirage/decoys.json` | Recovery needs a shell on the sensor and drops every console decoy setting, not only the hand edits. |
 | Audit gaps | Console audit requested, applied or refused, with dropped addresses; helper logs request, decision and diff to syslog | Console audit can be altered by a compromised console; the journal copy is stronger. |
 
 ## 9. Test plan and what has been run
 
-Run offline on PR 256 head 8a4cbe6 (by me, for this update)
+Run offline on PR 256 head 55c914d (by me, for this update)
 
-- `python3 -m unittest discover -s decoyd/tests`: 56 tests, all pass, 3 skipped. The 3 skipped are `TestRealVerify` (golden output passes, bad personality fails, duplicate bind fails) which need root and the built daemon. CI in PR 256 runs them with `PM_REAL_DAEMON`; I did not see a CI result.
-- `python3 -m unittest discover -s console/tests`: 137 tests pass, including password re-entry, CSRF, set_network, the longer timeout, wrong password back off, and the reserved rows without icons.
+- `python3 -m unittest discover -s decoyd/tests`: 65 tests, all pass, 3 skipped. The 3 skipped are `TestRealVerify` which need root and the built daemon. New tests cover the outcome record and `last_change`, rolled back and failed outcomes, no outcome on refusal, daemon-reload only when stale, gateways listed once, queueing behind the interval, firewall then farpd order, crash mid swap recovered on the next change, journal refusing foreign paths, and no journal left after success or rollback.
+- `python3 -m unittest discover -s console/tests`: 141 tests pass, including the `reset` op, `last_change` after a change, and the UI reading the outcome after a lost connection (simulated).
 - `ci/test_decoys_include.sh` and `ci/test_decoyd_socket.sh`: pass.
+- Forge reports CI green on f09ce88, 4d65ef0 and 55c914d. I did not open the CI runs myself.
 
-What the offline tests cover: validation tables, envelope and replay, rendering, the decoy change pipeline and its rollbacks, network validation, set_network success and rollback, socket peer checks with a socket pair. All with a fake `systemctl`, fake `ip` output and a fake daemon.
+What the offline tests cover: validation tables, envelope and replay, rendering, the decoy change pipeline and its rollbacks, network validation, set_network success, rollback, outcome record and journal recovery, socket peer checks with a socket pair. All with a fake `systemctl`, fake `ip` output and a fake daemon.
+
+One manual test on a real host (reported by the project owner, not repeated by me)
+
+- On one test machine the project owner changed the address block from the console (for example from 192.0.2.0/28 to 192.0.2.16/28; the real addresses are not given here). The change applied and the sensor came up on the new block.
+- During that change the console dropped. That was the firewall restart taking the console with it; the code now reloads the firewall instead. The fixed version has not been retested on a real host as far as I know.
+- This is one manual run of one path. It is not a real systemd test matrix.
 
 Still needed, only on a real systemd host
 
 - Socket activation, socket owner and mode, `SO_PEERCRED` from the real console user, idle exit.
-- Whether the hardened unit can call `systemctl reload` and `restart` and open the interface for verify.
-- Real reload and real restart, including `ExecStartPre` checks during rollback.
+- Whether the hardened unit can call `systemctl reload`, `restart` and `daemon-reload` and open the interface for verify. The one manual run suggests restart works for set_network; nothing else is shown.
+- Real decoy reload and its rollback, and real restart rollback, including `ExecStartPre` checks.
+- Firewall reload keeping the console and its sessions up during set_network (the fix after the manual test).
+- The console's 5 minute wait after a lost connection, against a real restart.
+- Journal recovery after a real crash or kill mid swap.
 - Stopped decoy behaviour on a real LAN: no reply while a neighbour answers, ARP still answered.
-- set_network on a real host: farpd and firewall restart, ARP for the new block, old block released.
-- Package install and upgrade: the include line and the socket enable on a real system. PR 256 adds package content checks to CI; I did not see a result.
+- farpd restart and ARP for the new block, old block released.
+- Package install and upgrade: the include line and the socket enable on a real system.
 
 ## 10. Build slices
 
@@ -532,8 +565,9 @@ Still needed, only on a real systemd host
 | 1 Read only groundwork | Personality list, per decoy detail panel, `parse_decoys` keeps port states | Implemented (PR 256) |
 | 2 Helper and include | pm-decoyd, socket and service units, include script, service list | Implemented (PR 256), tested offline |
 | 3 Stop and start | Stop and Start icons per row; none on network and broadcast rows | Implemented (PR 256), tested offline |
-| 4 Settings panel | Personality, default actions, port table, "Use default template" | Implemented (PR 256), tested offline |
-| 5 Network section | Change address block and interface (set_network) | Implemented (PR 256), tested offline |
+| 4 Settings panel | Personality, default actions, port table, "Use default template" (op `reset`). The panel note now says the address block is changed in the Network section, and that addresses bound in phantom-mirage.conf are changed there. | Implemented (PR 256), tested offline |
+| 5 Network section | Change address block and interface (set_network), outcome after a lost connection | Implemented (PR 256), tested offline, one manual real host run |
+| Console look (55c914d) | Product logo wordmark (vector, follows the theme) in the header and on the sign in page, MIRAGE centred in the sidebar, gateways listed once | Implemented (PR 256), tested offline (branding tests) |
 | 6 Delete a decoy | Take an address out of service | **Not started.** Later slice, one change at a time. |
 
 Every slice still needs security review sign off and a real host test before merge.
@@ -553,15 +587,19 @@ Decided
 Still open
 
 1. **Delete a decoy**: what it means (stop and hide, remove from the block, or shrink the block) and when. Not started.
-2. **Name of the `delete` op**: it only resets a decoy to default. Rename it (for example to `reset`) before a real delete exists?
-3. **Live host probe for set_network**: there is no check that the new block is free of real hosts.
-4. **Wide and multiple blocks**: the console allows one private block of /24 or smaller only. Should `ALLOW_WIDE_NETWORK` ever be offered?
-5. **reset_all in the UI**: the only way out of `E_CONFLICT` is reset_all, which the console UI does not offer.
-6. **`/etc/default` write access**: the helper can write the whole directory. Could it be narrowed to the two files?
-7. **Multi file swap**: not atomic across files.
-8. **Display label** for a decoy.
+2. **Live host probe for set_network**: there is no check that the new block is free of real hosts.
+3. **Wide and multiple blocks**: the console allows one private block of /24 or smaller only. Should `ALLOW_WIDE_NETWORK` ever be offered?
+4. **Recovery from a hand edited decoys.conf**: `sudo rm decoys.json` drops every console setting. Is a gentler path wanted, for example reset_all in the UI?
+5. **`/etc/default` write access**: the helper can write the whole directory. Could it be narrowed to the two files?
+6. **Journal recovery scope**: it restarts the sensor only, not the firewall or farpd, and a write error before the restart records no outcome.
+7. **Display label** for a decoy.
 
 Resolved since the first draft
 
 - The `parse_decoys` bug on master (it listed every port as `tcp/port` and compared the port number against state names) is **fixed on PR 256**: it now reads the port from `w[4]` and the state from `w[5]`, and adds a `port_states` list. There is also a separate commit "Decoys page shows tcp/22 instead of tcp/port" on the branch.
 - Verify with a temp main config whose include names the candidate file: implemented as described.
+- Name of the `delete` op: renamed to `reset` (f09ce88).
+- `E_RATE_LIMIT`: removed; changes queue for at most 10 s behind the last reload.
+- Recovery from `E_CONFLICT` without reset_all in the UI: the message now names `sudo rm /var/lib/phantom-mirage/decoys.json`.
+- Multi file swap not atomic: still not atomic, but a crash mid swap is now recovered from `netchange.journal`.
+- Console lost during an address block change: the firewall is reloaded, not restarted, and the UI reads the outcome from `last_change`.

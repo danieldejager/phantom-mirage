@@ -3,29 +3,40 @@ sequenceDiagram
   actor U as Admin (browser)
   participant C as Console (phantom-mirage-console)
   participant H as pm-decoyd (root, via socket)
-  participant F as Files (/etc/default, /etc/phantom-mirage, decoys.json)
+  participant F as Files (/etc/default, /etc/phantom-mirage, /var/lib/phantom-mirage)
   participant P as phantom-mirage.service
-  participant X as farpd + firewall units
+  participant X as firewall + farpd units
   Note over U,X: Legend: trust boundaries are browser | console (low privilege) | socket + helper (root) | files | sensor units. Solid arrow = request or action, dashed arrow = response. Example block 192.0.2.0/28 is a documentation range. The real helper accepts private ranges only.
   U->>C: Network section: new block, interface, password
-  C->>C: session, CSRF, password check with back off, audit "requested"
+  C->>C: session, CSRF, password check with back off, audit "requested", remember pending change in the browser
   C->>H: set_network {network, interface, expect:{network, interface}} (240 s timeout)
-  H->>H: peer uid, envelope, flock, 10 s gap
+  H->>H: peer uid, envelope, flock (25 s), recover journal if present, queue up to 10 s
   H->>F: read NETWORK and INTERFACE, compare with expect (else E_CONFLICT)
   H->>H: ip -j -4 addr / route: interfaces, LANs, gateways
   H->>H: check block: CIDR, at most /24, private, on LAN of interface,<br/>no own address, no gateway, no LAN network or broadcast
   H->>H: drop overrides outside the new block, render decoys.conf
-  H->>F: rewrite NETWORK= and INTERFACE= lines (farpd file only with setup marker)
   H->>H: --verify-config with new interface and block (else E_VERIFY_FAILED, nothing written)
-  H->>F: keep .prev of every file, replace each file
+  H->>F: keep .prev of every file, write netchange.journal, replace each file
   alt sensor not active
-    H->>X: restart firewall (and farpd if rewritten) only if active
+    H->>F: remove journal, write netchange.last "applied_not_running"
+    H->>X: reload firewall, then restart farpd if rewritten, each only if active
     H-->>C: ok, restarted:false, sensor left stopped
   else sensor active
+    H->>H: daemon-reload only if a unit reports NeedDaemonReload
     H->>P: systemctl restart phantom-mirage
     H->>P: active within 20 s, then active after 3 s settle
-    H->>X: restart firewall (and farpd if rewritten) only if active
+    H->>F: remove journal, write netchange.last "applied"
+    H->>X: reload firewall (never restart, the console Requires it), then restart farpd if rewritten, each only if active
     H-->>C: ok, network, interface, dropped, warnings
   end
-  C->>C: audit "applied, dropped settings for ..."
-  C-->>U: new block shown
+  alt reply arrives
+    C->>C: audit "applied, dropped settings for ..."
+    C-->>U: new block shown
+  else connection lost (no status, 502, 503, 504, E_TIMEOUT, E_UNAVAILABLE)
+    loop every 3 s, at most 5 minutes
+      U->>C: GET /api/decoyd/netinfo
+      C->>H: netinfo
+      H-->>C: last_change from netchange.last
+    end
+    C-->>U: applied, rolled back, rollback failed or interrupted, read from last_change
+  end
