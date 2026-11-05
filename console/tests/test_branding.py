@@ -174,7 +174,7 @@ class TestLoginPage(unittest.TestCase):
         self.assertIn('<div class="slogo"><span class="ptile"><img src="/static/phantom-mirage-mark-dark.png" width="80" height="80"', t)
         self.assertIn('<span class="mwm swm" role="img" aria-label="Mirage"></span>', t)
         self.assertIn('<h1 class="sname">Mirage I</h1>', t)
-        self.assertIn('<p class="slegal">Phantom Technologies</p>', t)
+        self.assertIn('<p class="slegal"><span class="ptw sptw" role="img" aria-label="Phantom Technologies"></span></p>', t)
         self.assertIn("\u00a9 2026 Phantom Technologies. All rights reserved.", t)
         self.assertIn("<title>Mirage I console</title>", t)
 
@@ -200,7 +200,7 @@ class TestLoginPage(unittest.TestCase):
     def test_font_same_origin(self):
         css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
         urls = re.findall(r'url\(\s*["\']?([^"\')]+)', css)
-        self.assertEqual(urls, ["/static/fonts/Aldrich-Regular.woff2"] + ["/static/mirage-wordmark.svg"] * 2)
+        self.assertEqual(urls, ["/static/fonts/Aldrich-Regular.woff2"] + ["/static/mirage-wordmark.svg"] * 2 + ["/static/phantom-technologies-wordmark.svg"] * 2)
         self.assertIn("font-family:Aldrich", css)
         self.assertNotRegex(css, r'(?i)jetbrains|rajdhani')
         with open(os.path.join(STATIC, "fonts", "Aldrich-Regular.woff2"), "rb") as f:
@@ -372,10 +372,30 @@ class TestWordmark(unittest.TestCase):
         t = login_page()
         head = re.search(r'<header>.*?</header>', t, re.S).group(0)
         self.assertIn('<span class="ptile"><img src="/static/phantom-mirage-mark-dark.png" width="34" height="34"', head)
-        self.assertIn('<span class="hlegal note">Phantom Technologies</span>', head)
+        self.assertIn('<span class="hlegal ptw" role="img" aria-label="Phantom Technologies"></span>', head)
+        self.assertNotIn(">Phantom Technologies<", head)
         self.assertNotIn('class="wm"', head)
         self.assertNotIn("Mirage", head)
         self.assertIn('<div class="nbrand brand"><span class="mwm" role="img" aria-label="Mirage"></span></div>', t)
+        self.assertIn('<p class="slegal"><span class="ptw sptw" role="img" aria-label="Phantom Technologies"></span></p>', t)
+
+    def test_sidebar_wordmark_centred(self):
+        css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
+        self.assertIn(".nbrand{justify-content:center}", css)
+
+    def test_company_wordmark_svg(self):
+        svg = open(os.path.join(REPO, "docs", "assets", "phantom-technologies-wordmark.svg"), encoding="utf-8").read()
+        self.assertTrue(svg.startswith('<svg xmlns="http://www.w3.org/2000/svg"'))
+        self.assertIn('fill="currentColor"', svg)
+        self.assertIn('aria-label="Phantom Technologies"', svg)
+        self.assertNotRegex(svg, r'(?i)<script|<text|<image|href=|\bon[a-z]+=|font')
+        w, h = map(float, re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg).groups())
+        self.assertAlmostEqual(w / h, 12.26, delta=0.05)   # matches .ptw aspect-ratio
+        css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
+        self.assertIn("mask:url(/static/phantom-technologies-wordmark.svg)", css)
+        self.assertIn("phantom-technologies-wordmark.svg", pmc.STATIC_FILES)
+        self.assertIn("docs/assets/phantom-technologies-wordmark.svg", open(os.path.join(REPO, "debian", "rules"), encoding="utf-8").read())
+        self.assertIn("static/phantom-technologies-wordmark.svg", open(os.path.join(REPO, ".github", "workflows", "build.yml")).read())
 
     def test_svg_asset(self):
         svg = open(os.path.join(REPO, "docs", "assets", "mirage-wordmark.svg"), encoding="utf-8").read()
