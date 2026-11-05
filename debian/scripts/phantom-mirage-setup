@@ -187,6 +187,7 @@ console_start() {
 	_port=${_port:-8443}
 	say "console: https://127.0.0.1:$_port on this sensor only (firewalled on every other interface)."
 	say "console: from your PC run  ssh -L $_port:127.0.0.1:$_port <user>@<this sensor>  then open https://localhost:$_port"
+	say "console: to remove Phantom Mirage and all console data run  sudo phantom-mirage-uninstall  (asks first)"
 }
 sensor_name() {
 	sed -n 's/.*"sensor_name":[[:space:]]*"\([A-Za-z0-9._-]*\)".*/\1/p' /var/lib/phantom-mirage/console/console.json 2>/dev/null | head -n 1

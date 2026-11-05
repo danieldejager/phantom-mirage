@@ -73,7 +73,11 @@ sudo phantom-mirage-setup --reset-admin          # new admin password (terminal 
 
 Upgrades (package or `install.sh`) keep the console config, admin
 account, certificate and alerts; only `phantom-mirage-uninstall` removes
-them (it asks first; `--yes` skips the question).
+them (it asks first; `--yes` skips the question):
+
+```sh
+sudo phantom-mirage-uninstall
+```
 
 Installation:
 -------------
