@@ -40,7 +40,7 @@ D=@D@
 echo "$*" >> "$D/calls"
 case "$1" in
 is-active) cat "$D/active" ;;
-show) cat "$D/pid" ;;
+show) case "$*" in *NeedDaemonReload*) cat "$D/ndr" 2>/dev/null || echo no ;; *) cat "$D/pid" ;; esac ;;
 reload)
 	case "$(cat "$D/mode")" in
 	ok) exit 0 ;;
@@ -601,7 +601,8 @@ class TestSetNetwork(Base):
         os.mkdir(self.p("sys"))
         for n in INFO["ifaces"]:
             os.mkdir(self.p("sys/" + n))
-        D.P.update(farpd_default=self.p("etc/farpd"), sysfs_net=self.p("sys"), journal=self.p("etc/netchange.journal"))
+        D.P.update(farpd_default=self.p("etc/farpd"), sysfs_net=self.p("sys"), journal=self.p("etc/netchange.journal"),
+                   outcome=self.p("etc/netchange.last"))
         self._hi = D.host_info
         D.host_info = lambda: INFO
         # a stopped override that stays and one that is dropped
@@ -653,7 +654,7 @@ class TestSetNetwork(Base):
         calls = self.r("calls").splitlines()
         self.assertIn("restart phantom-mirage.service", calls)
         i = calls.index("restart phantom-mirage.service")
-        self.assertIn("restart phantom-mirage-firewall.service", calls[i:])
+        self.assertIn("reload phantom-mirage-firewall.service", calls[i:])
         self.assertIn("restart farpd.service", calls[i:])
         # follow up list sees the new block
         self.assertTrue(self.req("list")["ok"])
@@ -696,6 +697,39 @@ class TestSetNetwork(Base):
         self.assertEqual(r["error"]["code"], "E_ROLLBACK_FAILED")
         self.assertEqual(self.snapshot(), before)
 
+    def test_outcome_recorded_and_in_netinfo(self):
+        self.assertIsNone(self.req("netinfo")["result"]["last_change"])
+        r = self.setnet()
+        self.assertTrue(r["ok"], r)
+        lc = self.req("netinfo")["result"]["last_change"]
+        self.assertEqual((lc["result"], lc["network"], lc["interface"]), ("applied", "10.9.0.32/28", "eth1"))
+        self.assertEqual(lc["previous"], {"network": "10.9.0.8/29", "interface": "eth0"})
+        self.assertEqual(lc["dropped"], ["10.9.0.9", "10.9.0.10"])
+
+    def test_outcome_rolled_back_and_failed(self):
+        self.w("restart", "no\n")
+        self.setnet()
+        lc = self.req("netinfo")["result"]["last_change"]
+        self.assertEqual((lc["result"], lc["network"]), ("rollback_failed", "10.9.0.8/29"))
+
+    def test_outcome_not_written_on_refusal(self):
+        self.setnet(net="10.9.0.8/29", iface="eth0")
+        self.assertIsNone(self.req("netinfo")["result"]["last_change"])
+
+    def test_daemon_reload_only_when_stale(self):
+        self.assertTrue(self.setnet()["ok"])
+        self.assertNotIn("daemon-reload", self.r("calls").splitlines())
+        self.w("ndr", "yes\n")
+        self.w("calls", "")
+        self.assertTrue(self.setnet("10.9.0.64/28", "eth1", ("10.9.0.32/28", "eth1"))["ok"])
+        calls = self.r("calls").splitlines()
+        self.assertLess(calls.index("daemon-reload"), calls.index("restart phantom-mirage.service"))
+
+    def test_gateways_deduped(self):
+        info = dict(INFO, gateways=[D.ipaddress.IPv4Address("10.9.0.1")] * 2)
+        D.host_info = lambda: info
+        self.assertEqual(self.req("netinfo")["result"]["gateways"], ["10.9.0.1"])
+
     def test_verify_fails_nothing_written(self):
         before = self.snapshot()
         self.w("verify_rc", "1\n")
@@ -737,9 +771,10 @@ class TestSetNetwork(Base):
         self.assertGreater(time.monotonic() - t0, 0.4)
 
     def test_restart_order_firewall_then_farpd(self):
+        # firewall reloaded, never restarted: a restart would restart the console (Requires=)
         self.assertTrue(self.setnet()["ok"])
-        calls = [l for l in self.r("calls").splitlines() if l.startswith("restart")]
-        self.assertEqual(calls, ["restart phantom-mirage.service", "restart phantom-mirage-firewall.service",
+        calls = [l for l in self.r("calls").splitlines() if l.startswith(("restart", "reload"))]
+        self.assertEqual(calls, ["restart phantom-mirage.service", "reload phantom-mirage-firewall.service",
                                  "restart farpd.service"])
 
     def test_crash_mid_swap_recovered_on_next_change(self):

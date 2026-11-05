@@ -74,7 +74,7 @@ $("lf").addEventListener("submit", async e => {
 function start() {
   $("login").style.display = "none";
   $("hsensor").textContent = "sensor: " + (SESSION.sensor_name || "?") + " · " + (SESSION.user || "");
-  go(cur);
+  go(netPending() ? "Decoys" : cur);
   timer = setInterval(refresh, 5000);
 }
 
@@ -83,6 +83,7 @@ async function load(p) {
   if (p === "Status") data.status = await api("/api/status");
   if (p === "Decoys" || p === "Activity") data.decoys = await api("/api/decoys");
   if (p === "Decoys") data.ni = await api("/api/decoyd/netinfo").then(j => j.result, e => { if (e.message === "signed out") throw e; return {error: e.message}; });
+  if (p === "Decoys") netSettle();
   if (p === "Decoys") data.dd = await api("/api/decoyd/list").then(j => ({map: Object.fromEntries(j.result.decoys.map(x => [x.ip, x]))}), e => { if (e.message === "signed out") throw e; return {error: e.message}; });
   if (p === "Alerts" || p === "Status") data.alerts = await api("/api/alerts");
   if (p === "Activity" && !paused) data.activity = (await api("/api/activity")).events;
@@ -181,17 +182,52 @@ function netDialog() {
   if (ni.interface && !ifs.some(x => x[0] === ni.interface)) ifs.unshift([ni.interface, ni.interface + "  (current, no IPv4 address)"]);
   const n = Object.keys((data.dd || {}).map || {}).filter(ip => ((data.dd.map[ip] || {}).source || "") !== "default").length;
   return `<h3>Change address block</h3>
-<p class="note">Now: <b>${esc(ni.network)}</b> on <b>${esc(ni.interface)}</b>. Gateway: ${esc((ni.gateways || []).join(", ") || "none found")}.</p>
+<p class="note">Now: <b>${esc(ni.network)}</b> on <b>${esc(ni.interface)}</b>. Gateway: ${esc([...new Set(ni.gateways || [])].join(", ") || "none found")}.</p>
 <label class="k" for="nnet">New address block (CIDR, /${esc(ni.min_prefix || 24)} to /32, private range)</label>
 <p><input id="nnet" class="u-w100" autocomplete="off" spellcheck="false" maxlength="18" value="${esc(ni.network)}"></p>
 <label class="k" for="nif">Interface</label>
 <p>${sel('id="nif" class="u-w100"', ifs, ni.interface)}</p>
 <div class="note" id="nhint" role="status"></div>
-<div class="warnbox" id="nwarn"><b>This restarts the whole phantom-mirage service</b>, then farpd and the firewall, and cuts every live connection to every decoy. Decoy settings for addresses outside the new block, or on its network or broadcast address, are dropped; the ones inside are kept.${n ? "" : " No decoy has its own settings now."} If the sensor does not start on the new block, the previous block is put back and the sensor restarted.</div>
+<div class="warnbox" id="nwarn"><b>This restarts the whole phantom-mirage service</b>, then the firewall and farpd, and cuts every live connection to every decoy. Decoy settings for addresses outside the new block, or on its network or broadcast address, are dropped; the ones inside are kept.${n ? "" : " No decoy has its own settings now."} If the sensor does not start on the new block, the previous block is put back and the sensor restarted.</div>
 <p><input id="dpw" type="password" autocomplete="current-password" placeholder="Your console password" class="u-w100"></p>
 <div class="err" id="derr" role="alert"></div><div class="row"><button class="pri" data-act="donet" id="donet">Restart sensor on new block</button><button data-act="mclose">Cancel</button></div>`;
 }
 function netCheck() { const h = $("nhint"); if (!h) return ""; const v = $("nnet").value.trim(), f = $("nif").value; const m = (v === data.ni.network && f === data.ni.interface) ? "That is the block and interface in use now." : netHint(v, f); h.textContent = m; h.classList.toggle("bad", !!m); return m; }
+/* An address block change restarts the sensor. If the request is cut off
+   (browser "NetworkError", console restarted, proxy timeout) the answer is
+   read back from the helper's record of the last change, never guessed. */
+const NPK = "mirage.netpending";
+function netPending() { try { return JSON.parse(localStorage.getItem(NPK) || "null"); } catch (e) { return null; } }
+function netPendSet(v) { try { if (v) localStorage.setItem(NPK, JSON.stringify(v)); else localStorage.removeItem(NPK); } catch (e) { /* ignore */ } }
+function netLost(e) { return !e.status || [0, 502, 503, 504].includes(e.status) || ["E_TIMEOUT", "E_UNAVAILABLE"].includes(e.code); }
+function netSettle() {
+  const pd = netPending(), lc = data.ni && data.ni.last_change;
+  if (!pd || !lc || !(lc.time > pd.since)) return false;
+  netPendSet(null);
+  const ok = lc.result === "applied" || lc.result === "applied_not_running", dr = lc.dropped || [];
+  const txt = {
+    applied: "Now " + lc.network + " on " + lc.interface + ". The sensor was restarted.",
+    applied_not_running: "Now " + lc.network + " on " + lc.interface + ". The sensor is not running; the new block applies when it starts.",
+    rolled_back: "The sensor did not start on " + pd.network + ". The previous block " + lc.network + " on " + lc.interface + " is back and the sensor restarted.",
+    rollback_failed: "The sensor did not start on " + pd.network + " and is down after the previous block " + lc.network + " was put back. On the sensor run: sudo journalctl -u phantom-mirage",
+    interrupted: "The change was interrupted and undone. The block is still " + lc.network + " on " + lc.interface + "."
+  }[lc.result] || ("Result: " + lc.result);
+  setTimeout(() => modalOpen(`<h3>${ok ? "Address block changed" : "Address block not changed"}</h3><p class="${ok ? "ok" : "bad"}" id="nok">${esc(txt)}</p>
+${ok ? `<p id="ndropped">${dr.length ? "Settings dropped for addresses outside the new block: <b>" + dr.map(esc).join(", ") + "</b>." : "No decoy settings were dropped."}</p>` : ""}<div class="row"><button data-act="mclose">OK</button></div>`), 0);
+  return true;
+}
+async function netWait() {
+  const t0 = Date.now();
+  while (Date.now() - t0 < 300000) {
+    await new Promise(r => setTimeout(r, 3000));
+    if (!netPending()) return; /* settled by the page refresh */
+    try {
+      data.ni = (await api("/api/decoyd/netinfo")).result;
+      if (netSettle()) { await load("Decoys"); if (cur === "Decoys") render(); return; }
+    } catch (e) { if (e.message === "signed out") return; /* still restarting */ }
+  }
+  modalOpen(`<h3>No answer from the sensor</h3><p class="bad" id="nok">The sensor has not reported the result after 5 minutes. Reload this page; the result is shown as soon as the sensor answers. On the sensor: sudo journalctl -u pm-decoyd</p><div class="row"><button data-act="mclose">OK</button></div>`);
+}
 async function netApply() {
   const v = $("nnet").value.trim(), f = $("nif").value, pw = $("dpw").value;
   $("derr").textContent = "";
@@ -199,14 +235,21 @@ async function netApply() {
   if (m) { $("derr").textContent = m; return; }
   if (!pw) { $("derr").textContent = "Enter your password to apply the change."; return; }
   $("donet").disabled = true; $("donet").textContent = "Restarting the sensor...";
+  netPendSet({since: (data.ni.last_change && data.ni.last_change.time) || 0, network: v, interface: f});
   try {
     const j = await api("/api/decoyd/change", {op: "set_network", password: pw, args: {network: v, interface: f, expect: {network: data.ni.network, interface: data.ni.interface}}});
+    netPendSet(null);
     const r = j.result || {}, dr = r.dropped || [];
     modalOpen(`<h3>Address block changed</h3><p class="ok" id="nok">Now ${esc(r.network)} on ${esc(r.interface)}. ${j.reloaded ? "The sensor was restarted." : "The sensor is not running; the new block applies when it starts."}</p>
 <p id="ndropped">${dr.length ? "Settings dropped for addresses outside the new block: <b>" + dr.map(esc).join(", ") + "</b>." : "No decoy settings were dropped."}</p>${(r.warnings || []).length ? `<p class="bad">${r.warnings.map(esc).join("; ")}</p>` : ""}<div class="row"><button data-act="mclose">OK</button></div>`);
     await load("Decoys"); if (cur === "Decoys") render();
   } catch (e) {
     if (e.message === "signed out") return;
+    if (netLost(e)) {
+      modalOpen(`<h3>Waiting for the sensor</h3><p id="nwait">The connection dropped while the sensor restarts. Checking whether the new block was applied or rolled back...</p>`);
+      return netWait();
+    }
+    netPendSet(null);
     if (!$("derr")) return;
     $("dpw").value = ""; $("donet").disabled = false; $("donet").textContent = "Restart sensor on new block";
     $("derr").textContent = e.message;

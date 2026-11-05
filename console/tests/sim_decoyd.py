@@ -12,6 +12,7 @@ import ipaddress
 import json
 import os
 import socket
+import time
 import tempfile
 import threading
 
@@ -62,7 +63,8 @@ class SimHelper:
             return {"network": " ".join(map(str, self.nets)), "interface": self.iface,
                     "interfaces": [{"name": n, "addrs": [str(a) for a in x["addrs"]]}
                                    for n, x in sorted(self.info["ifaces"].items()) if not x["lo"] and x["addrs"]],
-                    "gateways": [str(g) for g in self.info["gateways"]], "min_prefix": D.MIN_PREFIX}
+                    "gateways": sorted({str(g) for g in self.info["gateways"]}),
+                    "min_prefix": D.MIN_PREFIX, "last_change": getattr(self, "last_change", None)}
         if op == "set_network":
             D._keys(args, "args", ("network", "interface", "expect"))
             D._keys(args["expect"], "args.expect", ("network", "interface"))
@@ -80,7 +82,10 @@ class SimHelper:
                     f.write(t)
             with open(self.conf_out, "w") as f:
                 f.write(D.render(new, self.svcs))
+            prev = {"network": " ".join(map(str, self.nets)), "interface": self.iface}
             self.store, self.nets, self.iface = new, [net], iface
+            self.last_change = {"id": "", "result": "applied", "network": str(net), "interface": iface,
+                                "previous": prev, "dropped": dropped, "time": time.time()}
             return {"network": str(net), "interface": iface, "dropped": dropped, "farpd": False,
                     "restarted": self.reloaded}
         new, res = D.apply_op(op, args, self.store, self.nets, self.binds, self.pers, self.svcs)

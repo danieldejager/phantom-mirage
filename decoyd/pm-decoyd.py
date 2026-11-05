@@ -66,6 +66,7 @@ P = {
     # it when done; if it is still there the swap was cut off, and the next
     # change (or helper start) puts back the .prev set it lists.
     "journal": "/var/lib/phantom-mirage/netchange.journal",
+    "outcome": "/var/lib/phantom-mirage/netchange.last",
 }
 # phantom-mirage-setup writes /etc/default/farpd with this first line; only
 # then does set_network rewrite it (a hand written farpd config is left alone).
@@ -619,6 +620,18 @@ def systemctl(*args):
         return -1, "timeout"
 
 
+def reload_units_if_stale():
+    """This helper never writes unit files (the block lives in
+    /etc/default/phantom-mirage, read by pm-start, not EnvironmentFile=).
+    But if a unit file changed on disk without a daemon-reload (a manual
+    copy, an interrupted upgrade), restart would use the old definition
+    and systemctl status would warn; reload systemd first."""
+    units = [P["unit"], P["firewall_unit"]]
+    if any(systemctl("show", "-p", "NeedDaemonReload", "--value", u)[1] == "yes" for u in units):
+        log(syslog.LOG_WARNING, "unit files changed on disk without daemon-reload; reloading systemd")
+        systemctl("daemon-reload")
+
+
 def is_active():
     return systemctl("is-active", P["unit"])[1] == "active"
 
@@ -760,7 +773,8 @@ class Helper:
         """Change NETWORK and INTERFACE in /etc/default/phantom-mirage (and
         /etc/default/farpd when phantom-mirage-setup wrote it), drop the
         per decoy settings that fall outside the new block, verify, swap
-        every file, restart the sensor, farpd and the firewall. On any
+        every file, restart the sensor, then the firewall and farpd. The result
+        is kept in P["outcome"] for a console whose request was cut off. On any
         failure every file is put back BEFORE the units restart."""
         lock = self._lock()
         try:
@@ -810,6 +824,7 @@ class Helper:
             if farpd_new is not None:
                 files.append((P["farpd_default"], farpd_old, farpd_new, 0o644))
             was_active = is_active()
+            prev = {"network": " ".join(str(n) for n in old_nets), "interface": old_iface}
             for path, old, data, mode in files:
                 if old is not None:
                     replace_file(path + ".prev", old, mode)
@@ -827,12 +842,15 @@ class Helper:
             replace_file(self._rf("last_reload"), "%f" % time.time(), 0o600)
             if not was_active:
                 clear_journal()
+                record_outcome(rid, "applied_not_running", str(net), iface, prev, dropped)
                 log(syslog.LOG_INFO, "id=%s address block changed, sensor not running, not started" % rid)
                 self._restart_aux(farpd_new is not None)
                 return result, False
+            reload_units_if_stale()
             rc, out = systemctl("restart", P["unit"])
             if rc == 0 and wait_active(T["restart_wait"]) and (time.sleep(T["settle"]) or is_active()):
                 clear_journal()
+                record_outcome(rid, "applied", str(net), iface, prev, dropped)
                 bad = self._restart_aux(farpd_new is not None)
                 if bad:
                     result["warnings"] = bad
@@ -843,6 +861,7 @@ class Helper:
             clear_journal()
             systemctl("restart", P["unit"])
             ok = wait_active(T["restart_wait"])
+            record_outcome(rid, "rolled_back" if ok else "rollback_failed", prev["network"], prev["interface"], prev)
             self._restart_aux(farpd_new is not None)
             if ok:
                 e = Err("E_RESTART_FAILED_ROLLED_BACK", None,
@@ -870,16 +889,22 @@ class Helper:
     def _restart_aux(self, farpd):
         """The firewall first, then farpd (only if we rewrote its file);
         each only when it is already active. Used after a good restart and
-        after a rollback. Failures are warnings: the sensor is up."""
+        after a rollback. Failures are warnings: the sensor is up.
+
+        The firewall is RELOADED, never restarted: the console unit has
+        Requires=phantom-mirage-firewall.service, so a restart would also
+        restart the console, cutting the request that asked for this change
+        and ending every console session. Its ExecReload applies the new
+        rules in one nft transaction."""
         bad = []
-        units = [P["firewall_unit"]] + ([P["farpd_unit"]] if farpd else [])
-        for u in units:
+        units = [(P["firewall_unit"], "reload")] + ([(P["farpd_unit"], "restart")] if farpd else [])
+        for u, how in units:
             if systemctl("is-active", u)[1] != "active":
                 continue
-            rc, out = systemctl("restart", u)
+            rc, out = systemctl(how, u)
             if rc != 0:
-                bad.append("%s did not restart" % u)
-                log(syslog.LOG_ERR, "restart %s failed: %s" % (u, out[:200]))
+                bad.append("%s did not %s" % (u, how))
+                log(syslog.LOG_ERR, "%s %s failed: %s" % (how, u, out[:200]))
         return bad
 
     def _swap_and_reload(self, text, cur, main_text, iface, nets, new, rid):
@@ -927,6 +952,26 @@ class Helper:
 
 # ---- address block ---------------------------------------------------------
 
+def record_outcome(rid, result, network, interface, old, dropped=()):
+    """Keep the result of the last address block change so the console can
+    show it even if the HTTP request that asked for it was cut off."""
+    try:
+        replace_file(P["outcome"], json.dumps({
+            "id": rid, "result": result, "network": network, "interface": interface,
+            "previous": old, "dropped": list(dropped), "time": time.time()}), 0o644)
+    except OSError as e:
+        log(syslog.LOG_ERR, "could not record the change outcome: %s" % e)
+
+
+def last_outcome():
+    try:
+        with open(P["outcome"]) as f:
+            o = json.load(f)
+        return o if isinstance(o, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
 def clear_journal():
     try:
         os.unlink(P["journal"])
@@ -963,6 +1008,9 @@ def recover_journal():
                 pass
     clear_journal()
     log(syslog.LOG_CRIT, "interrupted address block change %s: previous files restored" % j.get("id", "?"))
+    nets, iface = read_default()
+    cur = " ".join(str(n) for n in nets)
+    record_outcome(str(j.get("id", "")), "interrupted", cur, iface, {"network": cur, "interface": iface})
     if is_active():
         systemctl("restart", P["unit"])
     return True
@@ -994,7 +1042,9 @@ def host_info():
     gws = []
     for rt in ipj("route", "show", "default"):
         try:
-            gws.append(ipaddress.IPv4Address(rt["gateway"]))
+            g = ipaddress.IPv4Address(rt["gateway"])
+            if g not in gws:
+                gws.append(g)
         except (KeyError, ValueError, TypeError):
             pass
     return {"ifaces": ifaces, "gateways": gws}
@@ -1079,7 +1129,8 @@ def op_netinfo():
     return {"network": " ".join(str(n) for n in nets), "interface": iface,
             "interfaces": [{"name": n, "addrs": [str(a) for a in x["addrs"]]}
                            for n, x in sorted(info["ifaces"].items()) if not x["lo"] and x["addrs"]],
-            "gateways": [str(g) for g in info["gateways"]],
+            "gateways": sorted({str(g) for g in info["gateways"]}, key=ipaddress.IPv4Address),
+            "last_change": last_outcome(),
             "min_prefix": MIN_PREFIX}
 
 

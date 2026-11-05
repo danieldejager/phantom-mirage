@@ -656,6 +656,19 @@ class DecoyNetwork(DecoyStopStart):
         self.assertEqual(self.change("stop", {"ip": "10.9.0.12"})[1]["error"]["code"], "E_ADDRESS_RESERVED")
         self.assertEqual(self.change("stop", {"ip": "10.9.0.13"})[0], 200)
 
+    def test_last_change_readable_after_change(self):
+        """A browser whose request was cut off reads the outcome back."""
+        self.assertIsNone(self.c.req("GET", "/api/decoyd/netinfo")[1]["result"]["last_change"])
+        self.assertEqual(self.setnet("10.9.0.16/29")[0], 200)
+        lc = self.c.req("GET", "/api/decoyd/netinfo")[1]["result"]["last_change"]
+        self.assertEqual((lc["result"], lc["network"], lc["previous"]["network"]), ("applied", "10.9.0.16/29", "10.9.0.8/29"))
+
+    def test_ui_reads_outcome_after_lost_connection(self):
+        with open(os.path.join(os.path.dirname(__file__), "..", "static", "console.js")) as f:
+            js = f.read()
+        for s in ("function netWait", "last_change", "mirage.netpending", "new Set(ni.gateways"):
+            self.assertIn(s, js)
+
     def test_refusals(self):
         for net, code in (("10.9.0.0/29", "E_HOST_ADDRESS"), ("8.8.8.0/29", "E_NOT_PRIVATE"),
                           ("10.9.1.8/29", "E_NOT_ON_LAN"), ("10.9.0.0/23", "E_NETWORK_TOO_WIDE"),
