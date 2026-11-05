@@ -130,6 +130,14 @@ still stands, the copy is skipped and the script exits with code 3. It is
 safe to run again and keeps existing console and `/etc/phantom-mirage`
 config.
 
+Upgrading a sensor whose web console is already set up (for example with
+`--no-setup`) needs no extra step for per decoy Stop, Start and settings:
+the package adds `include /etc/phantom-mirage/decoys.conf` to the sensor
+config once (backup in `phantom-mirage.conf.pre-decoys.bak`), enables and
+starts `pm-decoyd.socket` and restarts the console. If the Decoys page
+says the decoy helper is not running, run
+`sudo systemctl enable --now pm-decoyd.socket` once.
+
 `--source-install` keeps the plain autogen, configure, make and make
 install path instead (binaries and data only, no web console or
 `phantom-mirage-setup`; it asks before `make install`); `--prefix DIR` (default `/usr/local`) and

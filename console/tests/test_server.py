@@ -431,5 +431,88 @@ class DecoydApi(unittest.TestCase):
         self.h = FakeHelper(self.sock)
 
 
+class DecoyStopStart(unittest.TestCase):
+    """Stop and Start through the console with the helper's own operation
+    and render code behind the socket (sim_decoyd)."""
+
+    def setUp(self):
+        import sim_decoyd
+        pmc.Handler.app.lockout._attempts = {}
+        with open(os.environ["PM_SENSOR_CONF"]) as f:
+            self.main = f.read()
+        with open(os.environ["PM_SENSOR_CONF"], "w") as f:
+            f.write(self.main + "bind 10.9.0.14 default\ninclude /etc/phantom-mirage/decoys.conf\n")
+        self.conf = os.path.join(TMP, "decoys.conf")
+        self.old_conf, pmstore.DECOYS_CONF = pmstore.DECOYS_CONF, self.conf
+        self.sock = os.path.join(TMP, "sim.sock")
+        os.environ["PM_DECOYD_SOCK"] = self.sock
+        self.h = sim_decoyd.SimHelper(self.sock, self.conf, "10.9.0.8/29", binds={"10.9.0.14"})
+        self.c = Client()
+        st, j = self.c.login()
+        self.csrf = j["csrf"]
+
+    def tearDown(self):
+        self.h.close()
+        pmstore.DECOYS_CONF = self.old_conf
+        os.environ.pop("PM_DECOYD_SOCK", None)
+        with open(os.environ["PM_SENSOR_CONF"], "w") as f:
+            f.write(self.main)
+
+    def change(self, op, args, pw=PW):
+        return self.c.req("POST", "/api/decoyd/change", {"op": op, "args": args, "password": pw}, self.csrf)
+
+    def row(self, ip):
+        st, j = self.c.req("GET", "/api/decoys")
+        return [r for r in j["decoys"] if r["ip"] == ip][0]
+
+    def hrow(self, ip):
+        st, j = self.c.req("GET", "/api/decoyd/list")
+        return [r for r in j["result"]["decoys"] if r["ip"] == ip][0]
+
+    def test_stop_then_start_default_decoy(self):
+        self.assertEqual(self.row("10.9.0.10")["template"], "default")
+        self.assertEqual(self.hrow("10.9.0.10")["source"], "default")
+        st, j = self.change("stop", {"ip": "10.9.0.10"})
+        self.assertEqual(st, 200, j)
+        self.assertEqual((j["result"]["state"], j["result"]["arp"]), ("stopped", "still_answered"))
+        r = self.row("10.9.0.10")
+        self.assertEqual(r["template"], "pm_s_10_9_0_10")
+        self.assertEqual(r["ports"], [])
+        self.assertEqual(r["default"], {"tcp": "block", "udp": "block", "icmp": "block"})
+        self.assertEqual(self.row("10.9.0.11")["template"], "default")
+        h = self.hrow("10.9.0.10")
+        self.assertEqual((h["state"], h["rev"]), ("stopped", 1))
+        st, j = self.change("stop", {"ip": "10.9.0.10", "expect_rev": 1})
+        self.assertEqual((st, j["error"]["code"]), (409, "E_NOT_RUNNING"))
+        st, j = self.change("start", {"ip": "10.9.0.10", "expect_rev": 0})
+        self.assertEqual((st, j["error"]["code"]), (409, "E_CONFLICT"))
+        st, j = self.change("start", {"ip": "10.9.0.10", "expect_rev": 1})
+        self.assertEqual(st, 200, j)
+        self.assertEqual(self.row("10.9.0.10")["template"], "default")
+        self.assertEqual(self.hrow("10.9.0.10")["source"], "default")
+        with open(self.conf) as f:
+            self.assertNotIn("bind", f.read())
+
+    def test_refusals(self):
+        self.assertEqual(self.hrow("10.9.0.14")["source"], "main_conf")
+        st, j = self.change("stop", {"ip": "10.9.0.14"})
+        self.assertEqual((st, j["error"]["code"]), (400, "E_ADDRESS_IN_MAIN_CONF"))
+        st, j = self.change("stop", {"ip": "10.9.1.1"})
+        self.assertEqual((st, j["error"]["code"]), (400, "E_ADDRESS_OUTSIDE_NETWORK"))
+        self.h.force = "E_BUSY"
+        st, j = self.change("stop", {"ip": "10.9.0.10"})
+        self.assertEqual((st, j["error"]["code"]), (429, "E_BUSY"))
+        self.assertEqual(self.row("10.9.0.10")["template"], "default")
+
+    def test_ui_stop_start(self):
+        with open(os.path.join(os.path.dirname(pmstore.__file__), "static", "console.js")) as f:
+            js = f.read()
+        for want in ('data-act="ss"', "farpd still answers ARP", "Connections already open to this decoy are cut off",
+                     '"/api/decoyd/change"', "E_BUSY:", "E_UNAVAILABLE:", "E_RELOAD_FAILED_ROLLED_BACK:",
+                     "expect_rev", 'id="dpw"', 'h.source === "main_conf"', 'id="dunavail"'):
+            self.assertIn(want, js)
+        self.assertNotIn("Editing decoys from the console is not in this version", js)
+
+
 if __name__ == "__main__":
     unittest.main()

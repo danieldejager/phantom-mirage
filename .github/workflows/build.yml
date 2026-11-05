@@ -202,7 +202,7 @@ jobs:
           shellcheck --version | head -2
           # SC1007 (a= b=), SC1090/SC2010/SC2034: intentional patterns
           shellcheck -s sh -S warning -e SC1007,SC1090,SC2010,SC2034 \
-            release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh ci/test_install_rollback.sh console/pm-firewall ci/test_decoy_tcp.sh debian/mkconf.sh install-from-source.sh ci/test_install_from_source.sh ci/test_setup_confirm.sh ci/test_decoys_include.sh
+            release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh ci/test_install_rollback.sh console/pm-firewall ci/test_decoy_tcp.sh debian/mkconf.sh install-from-source.sh ci/test_install_from_source.sh ci/test_setup_confirm.sh ci/test_decoys_include.sh ci/test_decoyd_socket.sh
       - name: Default personality file pinned sha256 + parse check (#150)
         run: |
           (cd fingerprints && sha256sum -c columbo-v1.db.sha256)
@@ -213,6 +213,7 @@ jobs:
         run: |
           python3 -W ignore -m unittest discover -v -s decoyd/tests
           sh ci/test_decoys_include.sh && dash ci/test_decoys_include.sh
+          sh ci/test_decoyd_socket.sh && dash ci/test_decoyd_socket.sh
       - name: Web console unit + server tests (#118)
         run: python3 -W ignore -m unittest discover -v -s console/tests
       - name: ci/test_get_mirage.sh + test_make_run.sh + test_install_rollback.sh (sh and dash)
@@ -633,6 +634,7 @@ jobs:
           test -x /usr/lib/phantom-mirage/pm-firewall
           # decoy helper: shipped, socket not enabled until setup, include in place
           test -f /usr/lib/phantom-mirage/pm-decoyd && test -x /usr/lib/phantom-mirage/pm-decoys-include
+          test -x /usr/lib/phantom-mirage/pm-decoyd-socket
           test -f /usr/share/phantom-mirage/decoy-services.json
           test -f /usr/lib/systemd/system/pm-decoyd.socket && test -f /usr/lib/systemd/system/pm-decoyd.service
           grep -qx 'include /etc/phantom-mirage/decoys.conf' /etc/phantom-mirage/phantom-mirage.conf

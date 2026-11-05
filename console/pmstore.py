@@ -17,6 +17,10 @@ from collections import OrderedDict
 
 STATE_DIR = os.environ.get("PM_CONSOLE_STATE", "/var/lib/phantom-mirage/console")
 SENSOR_CONF = os.environ.get("PM_SENSOR_CONF", "/etc/phantom-mirage/phantom-mirage.conf")
+# per decoy settings written by pm-decoyd; the sensor conf includes it by
+# this fixed path, and the console follows only that one include
+DECOYS_INCLUDE = "/etc/phantom-mirage/decoys.conf"
+DECOYS_CONF = os.environ.get("PM_DECOYS_CONF", DECOYS_INCLUDE)
 SENSOR_DEFAULT = os.environ.get("PM_DEFAULT", "/etc/default/phantom-mirage")
 EVENT_LOG = os.environ.get("PM_EVENT_LOG", "/var/log/phantom-mirage/events.jsonl")
 # the pinned personality file the service loads with -p (pm-start, #150)
@@ -149,7 +153,16 @@ def parse_decoys(conf=None):
             text = f.read()
     except OSError:
         return {"templates": {}, "binds": [], "error": "cannot read config"}
-    for raw in text.splitlines():
+    lines = text.splitlines()
+    for raw in list(lines):
+        w = raw.split("#", 1)[0].split()
+        if w == ["include", DECOYS_INCLUDE]:
+            try:
+                with open(DECOYS_CONF) as f:
+                    lines += f.read().splitlines()
+            except OSError:
+                pass
+    for raw in lines:
         line = raw.split("#", 1)[0].strip()
         if not line:
             continue
@@ -209,6 +222,12 @@ def decoy_list(last_touch):
                                  "default": t.get("default", {}), "last": last_touch.get(s)})
         except ValueError:
             pass
+    def order(r):
+        try:
+            return (0, int(ipaddress.ip_address(r["ip"])))
+        except ValueError:
+            return (1, 0)
+    rows.sort(key=order)
     return {"network": net, "interface": dflt.get("INTERFACE", ""), "decoys": rows,
             "error": d.get("error")}
 

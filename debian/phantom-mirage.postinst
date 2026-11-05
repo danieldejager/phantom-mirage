@@ -111,6 +111,11 @@ case "$1" in
 	fi
 	if [ -d /run/systemd/system ]; then
 		systemctl daemon-reload >/dev/null 2>&1 || true
+		# decoy helper: on an upgrade of a sensor whose console is set up,
+		# keep pm-decoyd.socket enabled and listening (no manual step)
+		if [ -x /usr/lib/phantom-mirage/pm-decoyd-socket ]; then
+			/usr/lib/phantom-mirage/pm-decoyd-socket || true
+		fi
 		systemctl try-restart phantom-mirage-firewall.service phantom-mirage-console.service >/dev/null 2>&1 || true
 	fi
 

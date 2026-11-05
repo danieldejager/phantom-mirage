@@ -68,6 +68,7 @@ override_dh_auto_install:
 	install -m 0644 console/decoyclient.py $(D)/usr/lib/phantom-mirage/console/
 	install -D -m 0755 decoyd/pm-decoyd.py $(D)/usr/lib/phantom-mirage/pm-decoyd
 	install -D -m 0755 debian/scripts/pm-decoys-include $(D)/usr/lib/phantom-mirage/pm-decoys-include
+	install -D -m 0755 debian/scripts/pm-decoyd-socket $(D)/usr/lib/phantom-mirage/pm-decoyd-socket
 	install -D -m 0644 decoyd/decoy-services.json $(D)/usr/share/phantom-mirage/decoy-services.json
 
 override_dh_installdocs:

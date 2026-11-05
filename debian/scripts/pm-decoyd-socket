@@ -1,0 +1,25 @@
+#!/bin/sh
+# pm-decoyd-socket: keep the decoy helper socket on across package
+# upgrades. Called by the postinst on configure. When the web console is
+# already set up (its unit is enabled) or the socket was enabled before,
+# enable and (re)start pm-decoyd.socket, and stop a running helper so the
+# next request runs the newly installed code. Idempotent; never fails the
+# install. On a fresh install nothing happens: phantom-mirage-setup
+# enables the socket together with the console.
+set -u
+SYSTEMCTL=${PM_SYSTEMCTL:-systemctl}
+if [ -z "${PM_SYSTEMCTL:-}" ] && [ ! -d /run/systemd/system ]; then
+	exit 0
+fi
+if ! $SYSTEMCTL is-enabled --quiet phantom-mirage-console.service 2>/dev/null &&
+   ! $SYSTEMCTL is-enabled --quiet pm-decoyd.socket 2>/dev/null; then
+	exit 0
+fi
+$SYSTEMCTL enable pm-decoyd.socket >/dev/null 2>&1 || echo "warning: could not enable pm-decoyd.socket" >&2
+$SYSTEMCTL stop pm-decoyd.service >/dev/null 2>&1 || true
+if $SYSTEMCTL restart pm-decoyd.socket >/dev/null 2>&1; then
+	echo "pm-decoyd.socket enabled and listening"
+else
+	echo "warning: could not start pm-decoyd.socket; run: sudo systemctl enable --now pm-decoyd.socket" >&2
+fi
+exit 0

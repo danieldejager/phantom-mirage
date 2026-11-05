@@ -15,9 +15,29 @@ async function api(path, body) {
   let j = {};
   try { j = await r.json(); } catch (e) { /* empty */ }
   if (r.status === 401 && path !== "/api/login") { showLogin("Session ended; please sign in again."); throw new Error("signed out"); }
-  if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+  if (!r.ok) {
+    const er = j.error, e = new Error(er && typeof er === "object" ? dmsg(er) : (er || ("HTTP " + r.status)));
+    e.code = er && typeof er === "object" ? er.code : ""; e.status = r.status; e.field = er && er.field;
+    throw e;
+  }
   return j;
 }
+/* decoy helper (pm-decoyd) error codes, in words an admin can act on */
+const DMSG = {
+  E_UNAVAILABLE: "The decoy helper is not running. On the sensor run: sudo systemctl enable --now pm-decoyd.socket",
+  E_TIMEOUT: "The decoy helper did not answer in time. Check the sensor with: sudo journalctl -u pm-decoyd",
+  E_BUSY: "Another decoy change is being applied. Wait a few seconds and try again.",
+  E_RATE_LIMIT: "Too many decoy changes in a short time. Wait a minute and try again.",
+  E_CONFLICT: "This decoy was changed since you opened it. The list has been reloaded; check it and try again.",
+  E_NOT_RUNNING: "This decoy is already stopped.",
+  E_NOT_STOPPED: "This decoy is not stopped.",
+  E_VERIFY_FAILED: "The sensor refused the new configuration, so nothing was changed.",
+  E_RELOAD_FAILED_ROLLED_BACK: "The sensor did not come back after the change, so the previous configuration was restored.",
+  E_ROLLBACK_FAILED: "The change failed and the previous configuration could not be restored. Check the sensor now: sudo systemctl status phantom-mirage",
+  E_INVALID_PERSONALITY: "That personality is not available on this sensor.",
+  E_TOO_MANY_PORTS: "Too many ports for one decoy.",
+};
+function dmsg(er) { return (DMSG[er.code] ? DMSG[er.code] + (er.code === "E_VERIFY_FAILED" && er.message ? " " + er.message : "") : (er.message || er.code || "refused")) + (er.code && !DMSG[er.code] && er.field ? " (" + er.field + ")" : ""); }
 
 /* ---- sign-in ---- */
 async function boot() {
@@ -61,6 +81,7 @@ function start() {
 async function load(p) {
   if (p === "Status") data.status = await api("/api/status");
   if (p === "Decoys" || p === "Activity") data.decoys = await api("/api/decoys");
+  if (p === "Decoys") data.dd = await api("/api/decoyd/list").then(j => ({map: Object.fromEntries(j.result.decoys.map(x => [x.ip, x]))}), e => { if (e.message === "signed out") throw e; return {error: e.message}; });
   if (p === "Alerts" || p === "Status") data.alerts = await api("/api/alerts");
   if (p === "Activity" && !paused) data.activity = (await api("/api/activity")).events;
   if (p === "Settings") { data.settings = await api("/api/settings"); data.audit = (await api("/api/audit")).audit; data.alerts = await api("/api/alerts"); }
@@ -120,11 +141,48 @@ ${card("Last activity", when(s.last_activity))}${card("Sensor clock", esc(new Da
 <p class="note">Console certificate SHA-256: <code>${esc(s.cert_sha256)}</code> · version ${esc(s.version)}</p>`;
 }
 function Decoys() {
-  const d = data.decoys;
+  const d = data.decoys, dd = data.dd || {};
   return `<h2>Decoys</h2><div class="row"><span class="note">Block ${esc(d.network || "(not set)")} on ${esc(d.interface || "?")} · from /etc/phantom-mirage/phantom-mirage.conf</span></div>${d.error ? `<p class="bad">${esc(d.error)}</p>` : ""}
-<div class="tw"><table><tr><th></th><th>Address</th><th>Template</th><th>Personality</th><th>Open ports</th><th>Last touched</th></tr>
-${d.decoys.map((x, i) => `<tr><td><button class="gear" data-act="decoy" data-id="${i}" title="Decoy details for ${esc(x.ip)}" aria-label="Decoy details for ${esc(x.ip)}">\u2699</button></td><td>${esc(x.ip)}</td><td>${esc(x.template)}</td><td>${esc(x.personality)}</td><td class="wr">${esc(x.ports.join(", ") || "none")}</td><td>${when(x.last)}</td></tr>`).join("") || '<tr><td colspan="6" class="note">No decoys configured</td></tr>'}</table></div>
-<p class="note">Editing decoys from the console is not in this version; edit the config on the sensor and run <code>sudo systemctl reload phantom-mirage</code>.</p>`;
+${dd.error ? `<p class="note u-mb12" id="dunavail">Stop, Start and decoy settings are unavailable: ${esc(dd.error)}</p>` : ""}
+<div class="tw"><table><tr><th></th><th>Address</th><th>State</th><th>Template</th><th>Personality</th><th>Open ports</th><th>Last touched</th><th></th></tr>
+${d.decoys.map((x, i) => `<tr><td><button class="gear" data-act="decoy" data-id="${i}" title="Decoy settings for ${esc(x.ip)}" aria-label="Decoy settings for ${esc(x.ip)}">\u2699</button></td><td>${esc(x.ip)}</td><td>${stateCell(x.ip)}</td><td>${esc(x.template)}</td><td>${esc(x.personality)}</td><td class="wr">${esc(x.ports.join(", ") || "none")}</td><td>${when(x.last)}</td><td>${ssButton(x.ip)}</td></tr>`).join("") || '<tr><td colspan="8" class="note">No decoys configured</td></tr>'}</table></div>
+<p class="note">Changes are checked by the sensor before they apply and need your password each time. The address block is set on the sensor with <code>sudo phantom-mirage-setup</code> and cannot be changed here.</p>`;
+}
+function hstate(ip) { const dd = data.dd || {}; return dd.map ? dd.map[ip] : null; }
+function stateCell(ip) {
+  const h = hstate(ip);
+  if (!h) return '<span class="note">unknown</span>';
+  if (h.source === "main_conf") return '<span class="note">main config</span>';
+  return h.state === "stopped" ? '<span class="bad">stopped</span>' : '<span class="ok">running</span>';
+}
+function ssButton(ip) {
+  const h = hstate(ip);
+  if (!h || h.source === "main_conf") return "";
+  return h.state === "stopped" ? `<button data-act="ss" data-op="start" data-ip="${esc(ip)}">Start</button>` : `<button data-act="ss" data-op="stop" data-ip="${esc(ip)}">Stop</button>`;
+}
+function ssDialog(op, ip) {
+  const warn = op === "stop"
+    ? `<p>Stopping <b>${esc(ip)}</b> makes it drop all TCP, UDP and ICMP traffic. farpd still answers ARP for the address, so it stays claimed on the network and a scan still finds its MAC address. Connections already open to this decoy are cut off. Its own settings are kept and come back when you start it.</p>`
+    : `<p>Starting <b>${esc(ip)}</b> puts back its settings (or the default template) and the sensor answers on it again.</p>`;
+  return `<h3>${op === "stop" ? "Stop" : "Start"} decoy ${esc(ip)}</h3>${warn}
+<p><input id="dpw" type="password" autocomplete="current-password" placeholder="Your console password" class="u-w100"></p>
+<div class="err" id="derr" role="alert"></div><div class="row"><button class="pri" data-act="dochange" data-op="${esc(op)}" data-ip="${esc(ip)}">${op === "stop" ? "Stop decoy" : "Start decoy"}</button><button data-act="mclose">Cancel</button></div>`;
+}
+async function change(op, args) {
+  const pw = $("dpw").value;
+  $("derr").textContent = "";
+  if (!pw) { $("derr").textContent = "Enter your password to apply the change."; return; }
+  try {
+    const j = await api("/api/decoyd/change", {op, args, password: pw});
+    $("dpw").value = "";
+    modalOpen(`<h3>Done</h3><p class="ok" id="dok">${esc(args.ip || (args.decoy || {}).ip || "")}: ${esc(op === "stop" ? "stopped" : op === "start" ? "started" : op === "delete" ? "back on the default template" : "settings saved")}. ${j.reloaded ? "The sensor was reloaded." : "The sensor is not running; the change applies when it starts."}</p><div class="row"><button data-act="mclose">OK</button></div>`);
+    await load("Decoys"); if (cur === "Decoys") render();
+  } catch (e) {
+    $("dpw").value = "";
+    if (e.message === "signed out") return;
+    $("derr").textContent = e.message;
+    if (e.code === "E_CONFLICT") { await load("Decoys"); if (cur === "Decoys") render(); }
+  }
 }
 function decoyPanel(x, pers) {
   const ps = (x.port_states || []).slice().sort((a, b) => a.proto.localeCompare(b.proto) || a.port - b.port);
@@ -136,7 +194,7 @@ function decoyPanel(x, pers) {
 <tr><th>Last touched</th><td>${when(x.last)}</td></tr></table>
 <div class="k u-mt18">Ports</div><div class="tw"><table><tr><th>Protocol</th><th>Port</th><th>State</th></tr>${ps.map(p => `<tr><td>${esc(p.proto)}</td><td>${esc(p.port)}</td><td>${esc(p.state)}</td></tr>`).join("") || '<tr><td colspan="3" class="note">No ports listed; the default actions apply</td></tr>'}</table></div>
 <div class="k u-mt18">Personalities available on this sensor</div><p class="note">${pers.length ? pers.map(esc).join(", ") : "none found in /etc/phantom-mirage/columbo-v1.db"}</p>
-<p class="note">Read only in this version.</p><div class="row"><button data-act="mclose">Close</button></div>`;
+<div class="row">${ssButton(x.ip)}<button data-act="mclose">Close</button></div>`;
 }
 function Alerts() {
   const A = data.alerts, muted = A.muted || [];
@@ -191,6 +249,8 @@ document.addEventListener("click", e => {
     case "unmute": act(async () => { await api("/api/unmute", {src}); go("Alerts"); }); break;
     case "mclose": mclose(); break;
     case "decoy": act(async () => { const x = data.decoys.decoys[+id]; if (!x) return; const p = await api("/api/personalities"); modalOpen(decoyPanel(x, p.personalities || []), true); }); break;
+    case "ss": modalOpen(ssDialog(b.dataset.op, b.dataset.ip)); setTimeout(() => $("dpw") && $("dpw").focus(), 0); break;
+    case "dochange": { const h = hstate(b.dataset.ip) || {}; const args = {ip: b.dataset.ip}; if (h.rev) args.expect_rev = h.rev; change(b.dataset.op, args); break; }
     case "pause": paused = !paused; go("Activity"); break;
     case "csv": csv(); break;
     case "savesettings": act(async () => { $("serr").textContent = ""; try { await api("/api/settings", {alert_retention_days: +$("sret").value, timezone: $("stz").value.trim()}); go("Settings"); } catch (er) { $("serr").textContent = er.message; } }); break;
