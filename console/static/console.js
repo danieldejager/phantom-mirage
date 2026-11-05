@@ -6,7 +6,7 @@ const $ = id => document.getElementById(id);
 const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"})[c]);
 let CSRF = "", SESSION = {}, cur = "Status", timer = null, paused = false;
 let data = {status: null, decoys: null, alerts: null, activity: [], audit: [], settings: null};
-let F = {src: "", decoy: "", proto: ""};
+let F = {src: "", decoy: "", proto: "", event: ""};
 
 async function api(path, body) {
   const o = {method: body ? "POST" : "GET", credentials: "same-origin", cache: "no-store", headers: {}};
@@ -408,26 +408,30 @@ function Alerts() {
 <div class="tw"><table><tr><th>Severity</th><th>Decoys</th><th>Source</th><th>First seen</th><th>Last seen</th><th>Count</th><th>Status</th><th></th></tr>${A.alerts.map(a => `<tr><td><span class="sev sev-${esc(a.severity)}">${esc(a.severity)}</span> <span class="note">${esc(a.why)}</span></td><td class="wr">${esc(a.decoys.join(", "))}</td><td>${esc(a.src)}${muted.includes(a.src) ? ' <span class="note">(muted)</span>' : ""}</td><td>${tm(a.first)}</td><td>${tm(a.last)}</td><td>${a.count}</td><td>${esc(a.status)}${a.note ? `<div class="note">${esc(a.note)}</div>` : ""}</td>
 <td>${a.status === "Open" ? `<button data-act="ack" data-id="${a.id}">Acknowledge</button> ` : ""}${a.status !== "Closed" ? `<button data-act="close" data-id="${a.id}">Close</button> ` : `<button data-act="reopen" data-id="${a.id}">Reopen</button> `}${muted.includes(a.src) ? "" : `<button data-act="mute" data-src="${esc(a.src)}">Mute source</button>`}</td></tr>`).join("") || '<tr><td colspan="8" class="note">No alerts</td></tr>'}</table></div>`;
 }
-function rows() { return data.activity.filter(e => (!F.src || String(e.src).includes(F.src.trim())) && (!F.decoy || e.decoy === F.decoy) && (!F.proto || e.proto === F.proto)); }
+function rows() { return data.activity.filter(e => (!F.src || String(e.src).includes(F.src.trim())) && (!F.decoy || e.decoy === F.decoy) && (!F.proto || e.proto === F.proto) && (!F.event || e.event === F.event)); }
 function Activity() {
-  const ds = [...new Set(data.activity.map(e => e.decoy))].sort();
-  return `<h2>Activity <span class="note" id="alive">${paused ? "paused" : "● live"}</span></h2><div class="row"><input id="fsrc" type="search" placeholder="Source IP" aria-label="Filter by source IP" aria-controls="ft" value="${esc(F.src)}"><select id="fdec" aria-label="Filter by decoy">${decOpts(ds)}</select><select id="fpro" aria-label="Filter by protocol"><option value="">All protocols</option>${["TCP", "UDP", "ICMP"].map(p => `<option ${F.proto === p ? "selected" : ""}>${p}</option>`).join("")}</select><button data-act="pause">${paused ? "Resume" : "Pause"}</button><button class="pri" data-act="csv">Export CSV</button></div><p class="note" id="fcount" role="status" aria-live="polite"></p><div class="tw"><table id="ft"></table></div><p class="note">Inbound events on the decoys from /var/log/phantom-mirage/events.jsonl (newest first).</p>`;
+  const ds = present("decoy", F.decoy);
+  return `<h2>Activity <span class="note" id="alive">${paused ? "paused" : "● live"}</span></h2><div class="row"><input id="fsrc" type="search" placeholder="Source IP" aria-label="Filter by source IP" aria-controls="ft" value="${esc(F.src)}"><select id="fdec" aria-label="Filter by decoy">${decOpts(ds)}</select><select id="fpro" aria-label="Filter by protocol"><option value="">All protocols</option>${["TCP", "UDP", "ICMP"].map(p => `<option ${F.proto === p ? "selected" : ""}>${p}</option>`).join("")}</select><select id="fev" aria-label="Filter by event">${evOpts(present("event", F.event))}</select><button data-act="pause">${paused ? "Resume" : "Pause"}</button><button class="pri" data-act="csv">Export CSV</button></div><p class="note" id="fcount" role="status" aria-live="polite"></p><div class="tw"><table id="ft"></table></div><p class="note">Inbound events on the decoys from /var/log/phantom-mirage/events.jsonl (newest first).</p>`;
 }
 function decOpts(ds) { return `<option value="">All decoys</option>` + ds.map(d => `<option ${F.decoy === d ? "selected" : ""}>${esc(d)}</option>`).join(""); }
+function evOpts(es) { return `<option value="">All events</option>` + es.map(v => `<option ${F.event === v ? "selected" : ""}>${esc(v)}</option>`).join(""); }
+/* values present in the loaded events, plus the current choice so it is never dropped */
+function present(k, keep) { return [...new Set(data.activity.map(e => e[k]).filter(v => v).concat(keep ? [keep] : []))].sort(); }
 /* Live refresh on Activity: new rows, decoy list and live label only; the
    filter controls are never re-rendered while the owner uses them. */
 function actUpdate() {
   $("alive").textContent = paused ? "paused" : "● live";
-  const sel = $("fdec"), ds = [...new Set(data.activity.map(e => e.decoy).concat(F.decoy ? [F.decoy] : []))].sort();
-  const have = [...sel.options].slice(1).map(o => o.value).join(",");
-  if (have !== ds.join(",") && document.activeElement !== sel) sel.innerHTML = decOpts(ds);
+  for (const [id, list, opts] of [["fdec", present("decoy", F.decoy), decOpts], ["fev", present("event", F.event), evOpts]]) {
+    const sel = $(id), have = [...sel.options].slice(1).map(o => o.value).join("\n");
+    if (have !== list.join("\n") && document.activeElement !== sel) sel.innerHTML = opts(list);
+  }
   rt();
 }
 const ACT_MAX = 200;
 function rt() {
   const t = $("ft");
   if (!t) return;
-  const r = rows(), all = data.activity.length, filt = F.src || F.decoy || F.proto;
+  const r = rows(), all = data.activity.length, filt = F.src || F.decoy || F.proto || F.event;
   const c = $("fcount");
   if (c) c.textContent = (filt ? r.length + " of " + all + " events match" : all + " events") + (r.length > ACT_MAX ? "; showing the newest " + ACT_MAX + " (Export CSV has all " + r.length + ")" : "") + ".";
   t.innerHTML = "<tr><th>Time</th><th>Source</th><th>Decoy</th><th>Port</th><th>Protocol</th><th>Event</th><th>Source OS</th></tr>" + (r.length ? "" : `<tr><td colspan="7" class="note" id="fempty">${all ? "No events match the filter." : "No events yet."}</td></tr>`) + r.slice(0, ACT_MAX).map(e => `<tr><td>${tm(e.ts)}</td><td>${esc(e.src)}</td><td>${esc(e.decoy)}</td><td>${esc(e.port == null ? "" : e.port)}</td><td>${esc(e.proto)}</td><td>${esc(e.event)}${e.reply ? " (reply, no alert)" : ""}</td><td>${esc(e.os)}</td></tr>`).join("");
@@ -495,6 +499,7 @@ document.addEventListener("change", e => {
   if (e.target.id === "nif") netCheck();
   if (e.target.id === "fdec") { F.decoy = e.target.value; rt(); }
   if (e.target.id === "fpro") { F.proto = e.target.value; rt(); }
+  if (e.target.id === "fev") { F.event = e.target.value; rt(); }
 });
 document.addEventListener("submit", e => {
   if (e.target.id !== "pwf") return;

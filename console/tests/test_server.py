@@ -540,6 +540,16 @@ class DecoyStopStart(unittest.TestCase):
         for s in ('id="fcount"', 'id="fempty"', "No events match the filter."):
             self.assertIn(s, js)
 
+    def test_activity_event_filter(self):
+        with open(os.path.join(os.path.dirname(__file__), "..", "static", "console.js")) as f:
+            js = f.read()
+        self.assertIn('<select id="fev" aria-label="Filter by event">', js)
+        self.assertIn("(!F.event || e.event === F.event)", js)
+        self.assertIn('if (e.target.id === "fev") { F.event = e.target.value; rt(); }', js)
+        upd = js[js.index("function actUpdate"):js.index("const ACT_MAX")]
+        self.assertIn('"fev", present("event", F.event)', upd)   # rebuilt live, choice kept
+        self.assertNotIn("fsrc", upd)
+
     def test_refusals(self):
         self.assertEqual(self.hrow("10.9.0.14")["source"], "main_conf")
         st, j = self.change("stop", {"ip": "10.9.0.14"})
