@@ -248,10 +248,10 @@ class Server(unittest.TestCase):
         # theme.js runs from <head>, before the stylesheet, so there is no flash
         self.assertLess(head.index('<script src="/static/theme.js"></script>'), head.index("/static/console.css"))
         self.assertNotRegex(page, r'<script(?![^>]*\bsrc=)')
-        for v in ("light", "dark", "auto"):
-            self.assertIn('data-theme-pick="%s"' % v, page)
-        self.assertIn('role="radiogroup" aria-label="Colour theme"', page)
-        self.assertIn('aria-checked="true" data-theme-pick="auto"', page)   # default Auto
+        # one toggle button in the header and one on the sign-in splash, no radio group
+        self.assertEqual(page.count('class="themetg" data-theme-toggle aria-pressed="false" aria-label="Dark theme"'), 2)
+        self.assertNotIn("data-theme-pick", page)
+        self.assertNotIn('role="radiogroup"', page)
         st, r, js = self.raw("/static/theme.js")
         self.assertEqual(st, 200)
         self.assertEqual(r.getheader("Content-Type"), "text/javascript; charset=utf-8")
@@ -259,12 +259,22 @@ class Server(unittest.TestCase):
         js = js.decode()
         self.assertIn("localStorage", js)
         self.assertNotIn("cookie", js.lower())
+        # toggle logic: same key, OS preference until a choice is stored, then explicit light/dark
+        self.assertIn('KEY = "pm_theme"', js)
+        self.assertIn("prefers-color-scheme: light", js)
+        self.assertIn("[data-theme-toggle]", js)
+        self.assertIn('aria-pressed', js)
+        self.assertIn('current() === "dark" ? "light" : "dark"', js)
+        self.assertIn("localStorage.setItem(KEY, mem)", js)
+        self.assertNotIn("removeItem", js)
         st, r, css = self.raw("/static/console.css")
         self.assertEqual(st, 200)
         css = css.decode()
         self.assertIn(":root[data-theme=light]{", css)
         self.assertIn("@media(prefers-color-scheme:light){:root:not([data-theme=dark]){", css)
-        self.assertIn(".theme button[aria-checked=true]", css)
+        self.assertIn(".themetg{", css)
+        self.assertIn("--b1:#6C56E0;", css)       # dark primary button: white text 5.2:1
+        self.assertNotIn("#A58BFF;", css)
 
     def test_static_only_exact_names(self):
         for p in ("/static/fonts/../pmauth.py", "/static/fonts/", "/static/fonts", "/static/fonts/x.woff2",
