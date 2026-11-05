@@ -7,7 +7,7 @@ sequenceDiagram
   participant F as /etc/phantom-mirage files
   participant P as phantom-mirage.service
   Note over U,P: Legend: trust boundaries are browser | console (low privilege) | socket + helper (root) | config files | sensor. Solid arrow = request or action, dashed arrow = response.
-  U->>C: POST /api/decoyd/change {op, args, password}<br/>op = add, edit, stop, start, delete (reset to default)
+  U->>C: POST /api/decoyd/change {op, args, password}<br/>op = add, edit, stop, start, reset
   C->>C: session, CSRF, refuse network or broadcast row, password check with back off, audit "requested"
   C->>S: connect /run/phantom-mirage-decoyd.sock
   S->>H: start helper, socket on fd 3

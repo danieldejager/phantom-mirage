@@ -1,13 +1,13 @@
 # Decoy management from the console: design
 
-**Status.** Design document, updated to match the code on branch feat/decoy-settings (draft PR 256, head 55c914d, not merged). Where this document says "implemented", it means implemented on that branch only. Nothing here is on master. Each section says what is built, what is tested offline, and what has not been tried on a real systemd host.
+**Status.** Design document, updated to match the code on branch feat/decoy-settings (draft PR 256, head 4f4fa81, not merged; stacked on draft PR 255). Where this document says "implemented", it means implemented on that branch only. Nothing here is on master. Each section says what is built, what is tested offline, and what has not been tried on a real systemd host.
 
 Labels used below:
 
 - **Implemented (PR 256)**: the code exists on feat/decoy-settings, draft PR 256, not merged.
-- **Tested offline**: covered by unit or shell tests that run without systemd, using a fake `systemctl`, a fake daemon and temp directories. I ran these tests on PR 256 head 55c914d: decoyd/tests 65 tests pass (3 skipped), console/tests 141 tests pass, ci/test_decoys_include.sh and ci/test_decoyd_socket.sh pass.
+- **Tested offline**: covered by unit or shell tests that run without systemd, using a fake `systemctl`, a fake daemon and temp directories. I ran these tests on PR 256 head 4f4fa81: decoyd/tests 65 tests pass (3 skipped), console/tests 163 tests pass, ci/test_decoys_include.sh and ci/test_decoyd_socket.sh pass.
 - **Untested on a real host**: not tried under real systemd, with a real socket, real reload or restart, or on a real LAN. The one exception is a single manual test by the project owner, described in section 9; it is not a test matrix.
-- **Not started**: no code yet.
+- **Not started**: no code yet. NTP setup from the console is not started and is on hold.
 
 ## In short
 
@@ -20,6 +20,7 @@ Labels used below:
 - Deleting a decoy is not started. It is a later slice.
 - An address block change restarts the sensor, then reloads the firewall (it no longer restarts it, which dropped the console) and restarts farpd, each only if running. If the browser loses the connection, the console waits up to 5 minutes and then shows whether the change was applied or rolled back.
 - If decoys.conf was edited by hand, the console refuses to overwrite it and tells you to run `sudo rm /var/lib/phantom-mirage/decoys.json` on the sensor.
+- On the same branch the console also gained a Dashboard with charts and drill down into Activity, an event type filter on Activity that stays usable while live, a profile menu (theme, change password, sign out), a time zone drop down backed by `/api/timezones`, and cache safe static assets so an upgrade cannot pair new HTML with stale JS. Theme choice stays in the browser only. NTP setup from the console is not built and is on hold.
 - All of this passes its offline tests. One manual test by the project owner on one test machine changed the address block and the sensor came up. Nothing else has been tried on a real sensor host.
 
 ## 1. Overview (plain words)
@@ -34,7 +35,10 @@ Labels used below:
 - set what the decoy does with any other port (open, closed, reset, block, filtered);
 - stop a decoy so it no longer answers, and start it again;
 - put a decoy back on the shared default ("Use default template");
-- change the address block and interface in the Network section.
+- change the address block and interface in the Network section;
+- open the Dashboard (charts of the last hour, with drill down into Activity, Alerts or Decoys);
+- filter Activity by source, decoy, protocol, event type and a time window;
+- change the display time zone in Settings, change the console password from the profile menu, switch light and dark theme, and sign out.
 
 **What changes for you.**
 
@@ -133,7 +137,7 @@ Source: [img/src/01-architecture.mmd](img/src/01-architecture.mmd)
 
 | Component | What it is | Status |
 |---|---|---|
-| `pm-console.py` + `decoyclient.py` | Console web server (user phantom-mirage-console). Routes `GET /api/decoyd/list`, `/api/decoyd/options`, `/api/decoyd/netinfo` and `POST /api/decoyd/change`. Client sends one JSON line per connection, timeout 90 s, 240 s for set_network. | Implemented (PR 256), tested offline |
+| `pm-console.py` + `decoyclient.py` | Console web server (user phantom-mirage-console). Decoy routes `GET /api/decoyd/list`, `/api/decoyd/options`, `/api/decoyd/netinfo` and `POST /api/decoyd/change` (client timeout 90 s, 240 s for set_network). Also `GET /api/timezones`, `POST /api/settings` (timezone), `POST /api/password`, Dashboard and Activity UI. Every POST needs `X-CSRF-Token`. | Implemented (PR 256), tested offline |
 | `pm-decoyd.socket` | `ListenStream=/run/phantom-mirage-decoyd.sock`, `SocketUser=root`, `SocketGroup=phantom-mirage-console`, `SocketMode=0660`, `Accept=no` | Implemented (PR 256), untested on a real host |
 | `pm-decoyd.service` | Runs `/usr/bin/python3 -I /usr/lib/phantom-mirage/pm-decoyd` as root. Refuses to start unless systemd passed exactly one socket (fd 3). Exits after 30 s with no connection. | Implemented (PR 256), untested on a real host |
 | `/usr/lib/phantom-mirage/pm-decoys-include` | Postinst script: creates `/etc/phantom-mirage/decoys.conf` with a header if missing, appends `include /etc/phantom-mirage/decoys.conf` to phantom-mirage.conf once, after a backup to `phantom-mirage.conf.pre-decoys.bak`. Refuses symlinked config. | Implemented (PR 256), tested offline (ci/test_decoys_include.sh) |
@@ -171,6 +175,92 @@ The main config keeps its hand written templates and binds and gains one line, `
 
 The helper keeps the sha256 of the text it last wrote. If decoys.conf on disk no longer matches, every change except reset_all (and set_network too) is refused with `E_CONFLICT`. The message tells you to drop the hand edits and all console decoy settings by running `sudo rm /var/lib/phantom-mirage/decoys.json` on the sensor and trying again. With no store there is no hash to compare, so the next change rewrites decoys.conf. reset_all also clears the conflict but is still not in the console UI.
 
+## 3a. Related console surface on the same branch
+
+These features are not the decoy helper. They live entirely in `pm-console.py` and the static UI on PR 256 (and, for theme toggle, earlier on the stack that includes PR 255). They matter for decoy work because the same session, CSRF and password rules protect every change, including decoy and network changes.
+
+```mermaid
+flowchart TB
+  subgraph B["Admin browser"]
+    PG["Pages: Dashboard, Decoys, Alerts, Activity, Settings"]
+    PROF["Profile menu: theme, change password, sign out"]
+    ST["Static assets with ?v=content hash"]
+  end
+  subgraph C["Console: phantom-mirage-console"]
+    API["pm-console.py<br/>session cookie, X-CSRF-Token on every POST"]
+    TZ["GET /api/timezones<br/>POST /api/settings timezone"]
+    PW["POST /api/password<br/>current + new, destroy all sessions"]
+    DASH["Dashboard KPIs and charts<br/>drill sets Activity filters"]
+    ACT["Activity filters: source, decoy, protocol, event, window"]
+  end
+  PG --> API
+  PROF --> PW
+  PROF --> API
+  ST -->|"index.html: Cache-Control no-store<br/>other assets: no-cache + ETag"| API
+  API --> TZ
+  API --> PW
+  API --> DASH
+  API --> ACT
+  DASH -->|"click or keyboard"| ACT
+  classDef low fill:#e2f0fd,stroke:#036
+  class API,TZ,PW,DASH,ACT low
+  subgraph LEG["Legend"]
+    L1["Blue: low privilege console only. Nothing here is the decoy helper."]:::low
+    L2["Theme choice stays in localStorage only; it is never sent to the server."]
+    L3["NTP setup from the console is not built and is on hold."]
+  end
+```
+
+![08-console-surface](img/08-console-surface.png)
+
+Source: [img/src/08-console-surface.mmd](img/src/08-console-surface.mmd)
+
+### Dashboard
+
+Implemented (PR 256), tested offline. Untested on a real host and in Safari.
+
+- Landing page after sign in. Live refresh updates counters and charts in place.
+- KPI cards: events in the last hour, open alerts, active decoys (non reserved), distinct sources in the last hour.
+- Charts: connections over the last hour in 5 minute buckets (with hover, focus and tap readout), protocol split, busiest decoys, top source addresses.
+- Drill down (mouse or keyboard): a KPI or chart part opens Activity with matching filters, or opens Alerts or Decoys. A time bucket sets a clearable window chip on Activity.
+
+### Activity filters
+
+Implemented (PR 256), tested offline.
+
+- Filters: source IP (search, 200 ms debounce, Enter applies), decoy, protocol (TCP, UDP, ICMP), event type, and an optional time window from a Dashboard drill.
+- Live refresh updates the table, the live label, the decoy list and the event type options only. It does not rebuild the source search box, so focus and keystrokes are kept.
+- Pause, clear filters, and CSV export stay as before.
+
+### Profile menu, password change and theme
+
+Implemented (PR 256), tested offline. Theme toggle itself was already on the stack (PR 255 and earlier); 4f4fa81 only hosts it in the profile menu as well as on the sign in page.
+
+- Profile row at the bottom of the sidebar: initials, user name, sensor name. Menu: theme, Change password, Sign out.
+- Theme: light or dark, stored under `pm_theme` in localStorage only. Nothing about the theme is sent to the server. With no saved choice the CSS follows `prefers-color-scheme`.
+- Change password opens a modal dialog that lives in `index.html` outside `#main`, so a live refresh cannot rebuild or close it. Fields: current password, new password, confirm. Client checks the two new values match; the server checks the current password, runs `password_problem` (at least 12 characters, not the username, not too simple, not too long), stores a new hash, destroys every session for that user, audits the change, and returns ok. The page then reloads to the sign in screen. Wrong current password is 403. The dialog also points at `phantom-mirage-setup --reset-admin` for recovery on the sensor.
+- Sign out calls `POST /api/logout` (CSRF protected) and reloads.
+- Every POST, including `/api/password`, `/api/settings`, `/api/logout` and `/api/decoyd/change`, must carry a valid `X-CSRF-Token` for the session or the console answers 403 and audits `csrf-reject`.
+
+### Time zone selector
+
+Implemented (PR 256), tested offline.
+
+- `GET /api/timezones` (session required) returns a sorted list of IANA names this host can resolve, always including UTC, and never the `posix/` or `right/` trees. Offline tests see more than 300 zones when `zoneinfo` is present.
+- Settings shows a drop down of those zones. `POST /api/settings` with `timezone` must match `^[A-Za-z0-9_+\-/]{1,64}$`. When more than one zone is known, the value must also be in the list; otherwise 400. Saving updates the config, audits the change, and the UI applies the zone live to times across the console.
+- The Settings card still shows the configured time source (browser at sign in, or an NTP server string written by setup). Changing NTP from the console is **not started** and is on hold. Do not treat the display of an existing `time_source` value as an NTP feature in this work.
+
+### Cache safe static assets
+
+Implemented (PR 256), tested offline.
+
+- `index.html` is branded and served with `Cache-Control: no-store`. Script, style and image URLs carry `?v=<12 hex chars>`, a short sha256 of every static file other than `index.html`.
+- Other static responses use `Cache-Control: no-cache` and a content `ETag`. An `If-None-Match` match returns 304. An upgrade therefore cannot leave a new page talking to a stale `console.js` or `console.css`.
+
+### Branding note
+
+The product logo wordmark in the header is now a bold uppercase vector (still themed). MIRAGE stays centred in the sidebar. Gateways are listed once. Implemented (PR 256), tested offline (branding tests).
+
 ## 4. Data flow diagrams
 
 ### 4.1 Decoy change (add, edit, stop, start, reset to default)
@@ -187,7 +277,7 @@ sequenceDiagram
   participant F as /etc/phantom-mirage files
   participant P as phantom-mirage.service
   Note over U,P: Legend: trust boundaries are browser | console (low privilege) | socket + helper (root) | config files | sensor. Solid arrow = request or action, dashed arrow = response.
-  U->>C: POST /api/decoyd/change {op, args, password}<br/>op = add, edit, stop, start, delete (reset to default)
+  U->>C: POST /api/decoyd/change {op, args, password}<br/>op = add, edit, stop, start, reset
   C->>C: session, CSRF, refuse network or broadcast row, password check with back off, audit "requested"
   C->>S: connect /run/phantom-mirage-decoyd.sock
   S->>H: start helper, socket on fd 3
@@ -531,12 +621,11 @@ The file swap is still a series of single file renames, not one atomic step. A c
 
 ## 9. Test plan and what has been run
 
-Run offline on PR 256 head 55c914d (by me, for this update)
+Run offline on PR 256 head 4f4fa81 (by me, for this update)
 
-- `python3 -m unittest discover -s decoyd/tests`: 65 tests, all pass, 3 skipped. The 3 skipped are `TestRealVerify` which need root and the built daemon. New tests cover the outcome record and `last_change`, rolled back and failed outcomes, no outcome on refusal, daemon-reload only when stale, gateways listed once, queueing behind the interval, firewall then farpd order, crash mid swap recovered on the next change, journal refusing foreign paths, and no journal left after success or rollback.
-- `python3 -m unittest discover -s console/tests`: 141 tests pass, including the `reset` op, `last_change` after a change, and the UI reading the outcome after a lost connection (simulated).
+- `python3 -m unittest discover -s decoyd/tests`: 65 tests, all pass, 3 skipped (`TestRealVerify`, need root and the built daemon). No decoyd code changed since 55c914d.
+- `python3 -m unittest discover -s console/tests`: 163 tests pass (was 141 at 55c914d). New coverage includes Dashboard page and drill down, Activity event filter and live safe refresh, profile menu, password dialog placement, chart hover readout, `/api/timezones` and timezone validation, timezone drop down markup, and cache safe assets after an upgrade.
 - `ci/test_decoys_include.sh` and `ci/test_decoyd_socket.sh`: pass.
-- Forge reports CI green on f09ce88, 4d65ef0 and 55c914d. I did not open the CI runs myself.
 
 What the offline tests cover: validation tables, envelope and replay, rendering, the decoy change pipeline and its rollbacks, network validation, set_network success, rollback, outcome record and journal recovery, socket peer checks with a socket pair. All with a fake `systemctl`, fake `ip` output and a fake daemon.
 
@@ -549,14 +638,15 @@ One manual test on a real host (reported by the project owner, not repeated by m
 Still needed, only on a real systemd host
 
 - Socket activation, socket owner and mode, `SO_PEERCRED` from the real console user, idle exit.
-- Whether the hardened unit can call `systemctl reload`, `restart` and `daemon-reload` and open the interface for verify. The one manual run suggests restart works for set_network; nothing else is shown.
+- Whether the hardened unit can call `systemctl reload` (SIGHUP under the hardened unit), `restart` and `daemon-reload` and open the interface for verify. The one manual run suggests restart works for set_network; nothing else is shown.
 - Real decoy reload and its rollback, and real restart rollback, including `ExecStartPre` checks.
-- Firewall reload keeping the console and its sessions up during set_network (the fix after the manual test).
+- Real firewall reload keeping the console and its sessions up during set_network (the fix after the manual test).
 - The console's 5 minute wait after a lost connection, against a real restart.
 - Journal recovery after a real crash or kill mid swap.
 - Stopped decoy behaviour on a real LAN: no reply while a neighbour answers, ARP still answered.
-- farpd restart and ARP for the new block, old block released.
-- Package install and upgrade: the include line and the socket enable on a real system.
+- farpd on a real LAN: restart and ARP for the new block, old block released.
+- Package install and upgrade: the include line, the socket enable, and a postinst upgrade that hits a conffile prompt, on a real system.
+- Safari (and other non Chromium browsers): Dashboard charts, drill down, profile menu, password dialog, time zone drop down and cache safe asset load.
 
 ## 10. Build slices
 
@@ -567,7 +657,11 @@ Still needed, only on a real systemd host
 | 3 Stop and start | Stop and Start icons per row; none on network and broadcast rows | Implemented (PR 256), tested offline |
 | 4 Settings panel | Personality, default actions, port table, "Use default template" (op `reset`). The panel note now says the address block is changed in the Network section, and that addresses bound in phantom-mirage.conf are changed there. | Implemented (PR 256), tested offline |
 | 5 Network section | Change address block and interface (set_network), outcome after a lost connection | Implemented (PR 256), tested offline, one manual real host run |
-| Console look (55c914d) | Product logo wordmark (vector, follows the theme) in the header and on the sign in page, MIRAGE centred in the sidebar, gateways listed once | Implemented (PR 256), tested offline (branding tests) |
+| Console look | Bold uppercase product wordmark (vector, themed) in the header, MIRAGE centred in the sidebar, gateways listed once | Implemented (PR 256), tested offline (branding tests) |
+| Console Dashboard and Activity | Dashboard charts with drill down; Activity event filter and live safe refresh | Implemented (PR 256), tested offline; untested on a real host and in Safari |
+| Console account | Profile menu with theme, change password (destroys sessions) and sign out; time zone drop down via `/api/timezones` | Implemented (PR 256), tested offline |
+| Console asset cache | `?v=` content hash, `no-store` HTML, `no-cache` + ETag assets | Implemented (PR 256), tested offline |
+| NTP from the console | Configure or change NTP in the UI | **Not started.** On hold. The Settings card may show an existing time source string from setup; that is display only. |
 | 6 Delete a decoy | Take an address out of service | **Not started.** Later slice, one change at a time. |
 
 Every slice still needs security review sign off and a real host test before merge.
@@ -593,6 +687,7 @@ Still open
 5. **`/etc/default` write access**: the helper can write the whole directory. Could it be narrowed to the two files?
 6. **Journal recovery scope**: it restarts the sensor only, not the firewall or farpd, and a write error before the restart records no outcome.
 7. **Display label** for a decoy.
+8. **NTP from the console**: on hold. When (if) it returns, how it interacts with the browser time source and the drift warning.
 
 Resolved since the first draft
 
@@ -603,3 +698,5 @@ Resolved since the first draft
 - Recovery from `E_CONFLICT` without reset_all in the UI: the message now names `sudo rm /var/lib/phantom-mirage/decoys.json`.
 - Multi file swap not atomic: still not atomic, but a crash mid swap is now recovered from `netchange.journal`.
 - Console lost during an address block change: the firewall is reloaded, not restarted, and the UI reads the outcome from `last_change`.
+- Change password moved out of Settings into the profile menu dialog (53ee5de).
+- Static assets made cache safe after an upgrade (0a6a357).
