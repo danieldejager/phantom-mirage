@@ -117,19 +117,36 @@ def letter_h():
                hstem(0, (CAP - SW) / 2.0, w)]
 
 
+def _area(poly):
+    a = 0.0
+    for i, (x, y) in enumerate(poly):
+        x2, y2 = poly[(i + 1) % len(poly)]
+        a += x * y2 - x2 * y
+    return a / 2.0
+
+
 def letter_a():
+    """Hollow triangular A (a delta outline). Same advance as the squared A it replaces.
+
+    The interior is a hole, not a solid fill. Stroke weight matches the other letters.
+    """
     w = 96.0
-    inset = 18.0
-    # slanted legs, flat top bar, crossbar
-    left = [(inset, ANG), (inset + SW, 0), (SW, CAP - ANG), (0, CAP)]
-    right = [(w - inset - SW, 0), (w - inset, ANG), (w, CAP), (w - SW, CAP - ANG)]
-    top = hstem(inset - 1, 0, w - 2 * inset + 2)
-    yb = 62.0
-    t = yb / CAP
-    xl = (inset + SW) + t * (SW - (inset + SW))
-    xr = (w - inset - SW) + t * ((w - SW) - (w - inset - SW))
-    bar = hstem(xl - 3, yb, (xr + 3) - (xl - 3))
-    return w, [left, right, top, bar]
+    side = math.hypot(w / 2.0, CAP)
+    # inward normal of the left edge, apex toward the bottom-left corner
+    nx, ny = CAP / side, (w / 2.0) / side
+    p1 = (w / 2.0 + SW * nx, SW * ny)
+    p2 = (SW * nx, CAP + SW * ny)
+    yb = CAP - SW
+    t = (yb - p1[1]) / (p2[1] - p1[1])
+    xl = p1[0] + t * (p2[0] - p1[0])
+    xr = w - xl
+    t_apex = (w / 2.0 - p1[0]) / (p2[0] - p1[0])
+    ya = p1[1] + t_apex * (p2[1] - p1[1])
+    outer = [(w / 2.0, 0.0), (w, CAP), (0.0, CAP)]
+    inner = [(w / 2.0, ya), (xl, yb), (xr, yb)]
+    if _area(outer) * _area(inner) > 0:
+        inner = list(reversed(inner))
+    return w, [outer, inner]
 
 
 def letter_n():
@@ -285,8 +302,8 @@ def main():
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %.1f %.1f" '
         'fill="currentColor" role="img" aria-label="Phantom Technologies">'
         "<title>Phantom Technologies</title>"
-        "<!-- Original squared lettering as filled paths: wide PHANTOM, smaller tracked TECHNOLOGIES. "
-        "Nothing is loaded at runtime. -->"
+        "<!-- Original squared lettering as filled paths: wide PHANTOM with a hollow triangular A, "
+        "smaller tracked TECHNOLOGIES. Nothing is loaded at runtime. -->"
         '<path id="phantom" d="%s"/>'
         '<path id="technologies" d="%s"/>'
         "</svg>\n"

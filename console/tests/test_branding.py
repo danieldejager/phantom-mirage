@@ -390,6 +390,50 @@ def _clusters(d, pad=1.0):
     return groups
 
 
+def _shoelace(poly):
+    a = 0.0
+    for i, (x, y) in enumerate(poly):
+        x2, y2 = poly[(i + 1) % len(poly)]
+        a += x * y2 - x2 * y
+    return a / 2.0
+
+
+def _polys(d):
+    """Subpath point lists from an M/L/Z path."""
+    polys = []
+    for part in re.findall(r"M[^Z]*Z", d):
+        nums = [float(n) for n in re.findall(r"[-+]?\d*\.?\d+", part)]
+        polys.append(list(zip(nums[0::2], nums[1::2])))
+    return polys
+
+
+def _assert_hollow_triangular_a(d, box):
+    """The PHANTOM A is a triangular outline: one outer triangle and a hole inside it."""
+    x0, y0, x1, y1 = box
+    rings = []
+    for poly in _polys(d):
+        xs = [p[0] for p in poly]
+        ys = [p[1] for p in poly]
+        if min(xs) >= x0 - 0.5 and max(xs) <= x1 + 0.5 and min(ys) >= y0 - 0.5 and max(ys) <= y1 + 0.5:
+            rings.append(poly)
+    assert len(rings) == 2, len(rings)
+    rings.sort(key=lambda p: abs(_shoelace(p)))
+    inner, outer = rings
+    self_areas = _shoelace(inner) * _shoelace(outer)
+    if self_areas >= 0:
+        raise AssertionError("triangular A interior is not a hole")
+    ix = [p[0] for p in inner]
+    iy = [p[1] for p in inner]
+    ox = [p[0] for p in outer]
+    oy = [p[1] for p in outer]
+    if not (min(ox) < min(ix) and max(ix) < max(ox) and min(oy) < min(iy) and max(iy) < max(oy)):
+        raise AssertionError("triangular A hole is not inside the outline")
+    if (max(iy) - min(iy)) < 0.25 * (max(oy) - min(oy)):
+        raise AssertionError("triangular A hole is too small to read")
+    if len(outer) != 3 or len(inner) != 3:
+        raise AssertionError("A is not a triangle")
+
+
 def _gap_ratio(groups):
     widths = sorted(g[2] - g[0] for g in groups)
     gaps = sorted(groups[i + 1][0] - groups[i][2] for i in range(len(groups) - 1))
@@ -428,6 +472,7 @@ class TestWordmark(unittest.TestCase):
         self.assertIn('aria-label="Phantom Technologies"', svg)
         self.assertIn("<title>Phantom Technologies</title>", svg)
         self.assertIn("Original squared lettering", svg)   # filled paths, nothing loaded at runtime
+        self.assertIn("hollow triangular A", svg)
         self.assertNotIn("DejaVu", svg)
         self.assertNotRegex(svg, r'(?i)<script|<text|<image|href=|\bon[a-z]+=|font|gradient|filter=')
         w, h = map(float, re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg).groups())
@@ -441,6 +486,7 @@ class TestWordmark(unittest.TestCase):
         pg, tg = _clusters(phantom), _clusters(tech)
         self.assertEqual(len(pg), 7)      # PHANTOM
         self.assertEqual(len(tg), 12)     # TECHNOLOGIES
+        _assert_hollow_triangular_a(phantom, pg[2])
         self.assertLess(max(g[3] for g in pg), min(g[1] for g in tg))   # second line sits below
         ph, th = max(g[3] for g in pg) - min(g[1] for g in pg), max(g[3] for g in tg) - min(g[1] for g in tg)
         self.assertLess(th, ph * 0.7)
@@ -461,6 +507,21 @@ class TestWordmark(unittest.TestCase):
         self.assertIn("phantom-technologies-wordmark.svg", pmc.STATIC_FILES)
         self.assertIn("docs/assets/phantom-technologies-wordmark.svg", open(os.path.join(REPO, "debian", "rules"), encoding="utf-8").read())
         self.assertIn("static/phantom-technologies-wordmark.svg", open(os.path.join(REPO, ".github", "workflows", "build.yml")).read())
+
+    def test_wordmark_matches_generator(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "make_wordmark", os.path.join(REPO, "docs", "brand", "source", "make_wordmark.py"))
+        gen = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gen)
+        width, polys = gen.letter_a()
+        self.assertEqual(width, 96.0)
+        self.assertEqual(len(polys), 2)
+        self.assertLess(gen._area(polys[0]) * gen._area(polys[1]), 0)
+        phantom, tech, _pw, _ph, _tracking = gen.build()
+        svg = open(os.path.join(REPO, "docs", "assets", "phantom-technologies-wordmark.svg"), encoding="utf-8").read()
+        self.assertIn(gen.path_d(phantom), svg)
+        self.assertIn(gen.path_d(tech), svg)
 
     def test_svg_asset(self):
         svg = open(os.path.join(REPO, "docs", "assets", "mirage-wordmark.svg"), encoding="utf-8").read()
