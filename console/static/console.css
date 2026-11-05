@@ -19,7 +19,7 @@
 --b:color-mix(in srgb,var(--a) 22%,var(--p));--h:color-mix(in srgb,var(--a) 9%,var(--p));
 --tm:var(--m);--ta:var(--a);--tok:color-mix(in srgb,var(--g) 70%,#000);--twarn:color-mix(in srgb,var(--y) 50%,#000);--bt:#FFFFFF}}
 *{box-sizing:border-box}body{margin:0;font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--t)}
-header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--b);background:var(--p)}
+header{display:flex;align-items:center;gap:12px;padding:7px 16px;border-bottom:1px solid var(--b);background:var(--p)}
 header b{font-size:16px}.tag{border:1px solid var(--a);color:var(--ta);border-radius:10px;padding:1px 8px;font-size:11px}
 .wrap{display:flex;min-height:calc(100vh - 50px)}nav{width:190px;flex-shrink:0;border-right:1px solid var(--b);padding:10px;background:var(--p)}
 #nav a{display:flex;justify-content:space-between;padding:8px 10px;border-radius:6px;color:var(--t);text-decoration:none;cursor:pointer}
@@ -89,3 +89,5 @@ td.wr{white-space:normal;max-width:420px;word-break:break-word}
 /* MIRAGE wordmark: vector trace of the README logo lettering (triangular A), drawn in the
    current text colour through a same-origin SVG mask so it follows both themes. */
 .mwm{display:inline-block;height:14px;aspect-ratio:7.54;background:currentColor;color:var(--t);-webkit-mask:url(/static/mirage-wordmark.svg) center/contain no-repeat;mask:url(/static/mirage-wordmark.svg) center/contain no-repeat}.swm{height:28px;margin:0 0 18px}.nbrand .mwm{margin:4px 0}
+/* P mark on a solid black tile in both themes, sized to the header and the splash. */
+.ptile{display:inline-flex;background:#000;border-radius:9px;padding:4px}.ptile img{display:block}.slogo .ptile{border-radius:18px;padding:10px}

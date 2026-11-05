@@ -57,7 +57,7 @@ override_dh_auto_install:
 	install -m 0644 console/pmauth.py console/pmstore.py console/branding.py console/branding.conf $(D)/usr/lib/phantom-mirage/console/
 	install -m 0755 console/pm-console.py console/pm-console-setup.py $(D)/usr/lib/phantom-mirage/console/
 	install -m 0644 console/static/index.html console/static/console.css console/static/console.js console/static/theme.js \
-	  docs/assets/phantom-mirage-logo-light.png docs/assets/phantom-mirage-logo-dark.png docs/assets/phantom-mirage-mark.png \
+	  docs/assets/phantom-mirage-logo-light.png docs/assets/phantom-mirage-logo-dark.png docs/assets/phantom-mirage-mark.png docs/assets/phantom-mirage-mark-dark.png \
 	  docs/assets/phantom-mirage-mark.svg docs/assets/mirage-wordmark.svg $(D)/usr/lib/phantom-mirage/console/static/
 	install -D -m 0644 console/static/fonts/Aldrich-Regular.woff2 $(D)/usr/lib/phantom-mirage/console/static/fonts/Aldrich-Regular.woff2
 	install -D -m 0644 console/static/fonts/Aldrich-OFL.txt $(D)/usr/lib/phantom-mirage/console/static/fonts/Aldrich-OFL.txt

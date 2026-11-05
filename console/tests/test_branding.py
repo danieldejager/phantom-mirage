@@ -171,7 +171,7 @@ class TestLoginPage(unittest.TestCase):
     def test_splash_content(self):
         t = login_page()
         self.assertNotIn("{{", t)
-        self.assertIn('<div class="slogo"><span class="chip"><img src="/static/phantom-mirage-mark.png"', t)
+        self.assertIn('<div class="slogo"><span class="ptile"><img src="/static/phantom-mirage-mark-dark.png" width="80" height="80"', t)
         self.assertIn('<span class="mwm swm" role="img" aria-label="Mirage"></span>', t)
         self.assertIn('<h1 class="sname">Mirage I</h1>', t)
         self.assertIn('<p class="slegal">Phantom Technologies</p>', t)
@@ -371,7 +371,7 @@ class TestWordmark(unittest.TestCase):
     def test_header_and_sidebar(self):
         t = login_page()
         head = re.search(r'<header>.*?</header>', t, re.S).group(0)
-        self.assertIn('<img src="/static/phantom-mirage-mark.png"', head)
+        self.assertIn('<span class="ptile"><img src="/static/phantom-mirage-mark-dark.png" width="34" height="34"', head)
         self.assertIn('<span class="hlegal note">Phantom Technologies</span>', head)
         self.assertNotIn('class="wm"', head)
         self.assertNotIn("Mirage", head)
@@ -385,3 +385,13 @@ class TestWordmark(unittest.TestCase):
         self.assertIn("mirage-wordmark.svg", pmc.STATIC_FILES)
         self.assertIn("docs/assets/mirage-wordmark.svg", open(os.path.join(REPO, "debian", "rules"), encoding="utf-8").read())
         self.assertIn("static/mirage-wordmark.svg", open(os.path.join(REPO, ".github", "workflows", "build.yml")).read())
+
+    def test_black_tile(self):
+        css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
+        self.assertIn(".ptile{display:inline-flex;background:#000;", css)
+        self.assertNotRegex(css, r'\[data-theme=[a-z]+\][^{]*\.ptile')   # same black tile in both themes
+        with open(os.path.join(REPO, "docs", "assets", "phantom-mirage-mark-dark.png"), "rb") as f:
+            self.assertEqual(f.read(8), b"\x89PNG\r\n\x1a\n")
+        rules = open(os.path.join(REPO, "debian", "rules"), encoding="utf-8").read()
+        self.assertIn("docs/assets/phantom-mirage-mark-dark.png", rules)
+        self.assertIn("static/phantom-mirage-mark-dark.png", open(os.path.join(REPO, ".github", "workflows", "build.yml")).read())

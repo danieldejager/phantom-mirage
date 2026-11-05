@@ -283,7 +283,7 @@ class Server(unittest.TestCase):
                   "/static//etc/passwd", "/static/README.md"):
             self.assertEqual(self.raw(p)[0], 404, p)
         self.assertEqual(sorted(pmc.STATIC_FILES), sorted([
-            "index.html", "console.css", "console.js", "theme.js", "phantom-mirage-mark.svg", "mirage-wordmark.svg", "phantom-mirage-mark.png",
+            "index.html", "console.css", "console.js", "theme.js", "phantom-mirage-mark.svg", "mirage-wordmark.svg", "phantom-mirage-mark-dark.png", "phantom-mirage-mark.png",
             "phantom-mirage-logo-light.png", "phantom-mirage-logo-dark.png",
             "fonts/Aldrich-Regular.woff2", "fonts/Aldrich-OFL.txt"]))
 
