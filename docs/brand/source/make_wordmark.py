@@ -125,28 +125,44 @@ def _area(poly):
     return a / 2.0
 
 
-def letter_a():
-    """Hollow triangular A (a delta outline). Same advance as the squared A it replaces.
+def _leg(cx, foot_x, stroke):
+    """One open-A stroke from the apex centre to a foot, cut flat at cap and baseline."""
+    dx, dy = foot_x - cx, CAP
+    length = math.hypot(dx, dy)
+    px, py = -dy / length, dx / length
+    half = stroke / 2.0
 
-    The interior is a hole, not a solid fill. Stroke weight matches the other letters.
+    def edge(side):
+        ox, oy = side * px * half, side * py * half
+        x0, y0 = cx + ox, oy
+        x1, y1 = foot_x + ox, CAP + oy
+        span = y1 - y0
+
+        def at(y):
+            return x0 + (y - y0) / span * (x1 - x0)
+        return at(0.0), at(CAP)
+
+    a_top, a_bot = edge(-1.0)
+    b_top, b_bot = edge(1.0)
+    top = sorted((a_top, b_top))
+    bot = sorted((a_bot, b_bot))
+    return [(top[0], 0.0), (top[1], 0.0), (bot[1], CAP), (bot[0], CAP)]
+
+
+def letter_a():
+    """Open triangular A matched to the MIRAGE wordmark.
+
+    Two strokes meet at a flat apex, with no crossbar and no base, so the
+    bottom stays open. The lean and the stroke-to-height ratio are taken from
+    the traced MIRAGE A (about 26.5 degrees off vertical, stroke about 0.208
+    of the cap). Neighbouring letters keep the wordmark stroke.
     """
-    w = 96.0
-    side = math.hypot(w / 2.0, CAP)
-    # inward normal of the left edge, apex toward the bottom-left corner
-    nx, ny = CAP / side, (w / 2.0) / side
-    p1 = (w / 2.0 + SW * nx, SW * ny)
-    p2 = (SW * nx, CAP + SW * ny)
-    yb = CAP - SW
-    t = (yb - p1[1]) / (p2[1] - p1[1])
-    xl = p1[0] + t * (p2[0] - p1[0])
-    xr = w - xl
-    t_apex = (w / 2.0 - p1[0]) / (p2[0] - p1[0])
-    ya = p1[1] + t_apex * (p2[1] - p1[1])
-    outer = [(w / 2.0, 0.0), (w, CAP), (0.0, CAP)]
-    inner = [(w / 2.0, ya), (xl, yb), (xr, yb)]
-    if _area(outer) * _area(inner) > 0:
-        inner = list(reversed(inner))
-    return w, [outer, inner]
+    stroke = CAP * 0.208  # MIRAGE A perpendicular stroke / cap, from the traced wordmark
+    foot_dx = CAP * math.tan(math.radians(26.5))
+    half = (stroke / 2.0) / math.cos(math.radians(26.5))
+    w = 2.0 * (foot_dx + half)
+    cx = w / 2.0
+    return w, [_leg(cx, cx - foot_dx, stroke), _leg(cx, cx + foot_dx, stroke)]
 
 
 def letter_n():
@@ -302,8 +318,8 @@ def main():
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %.1f %.1f" '
         'fill="currentColor" role="img" aria-label="Phantom Technologies">'
         "<title>Phantom Technologies</title>"
-        "<!-- Original squared lettering as filled paths: wide PHANTOM with a hollow triangular A, "
-        "smaller tracked TECHNOLOGIES. Nothing is loaded at runtime. -->"
+        "<!-- Original squared lettering as filled paths: wide PHANTOM with an open triangular A "
+        "matched to the MIRAGE A, smaller tracked TECHNOLOGIES. Nothing is loaded at runtime. -->"
         '<path id="phantom" d="%s"/>'
         '<path id="technologies" d="%s"/>'
         "</svg>\n"

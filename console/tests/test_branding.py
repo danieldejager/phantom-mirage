@@ -407,31 +407,39 @@ def _polys(d):
     return polys
 
 
-def _assert_hollow_triangular_a(d, box):
-    """The PHANTOM A is a triangular outline: one outer triangle and a hole inside it."""
+def _assert_open_triangular_a(d, box):
+    """PHANTOM's A matches the MIRAGE A: two strokes, joined at the top, open at the bottom, no bar."""
     x0, y0, x1, y1 = box
-    rings = []
+    legs = []
     for poly in _polys(d):
         xs = [p[0] for p in poly]
         ys = [p[1] for p in poly]
         if min(xs) >= x0 - 0.5 and max(xs) <= x1 + 0.5 and min(ys) >= y0 - 0.5 and max(ys) <= y1 + 0.5:
-            rings.append(poly)
-    assert len(rings) == 2, len(rings)
-    rings.sort(key=lambda p: abs(_shoelace(p)))
-    inner, outer = rings
-    self_areas = _shoelace(inner) * _shoelace(outer)
-    if self_areas >= 0:
-        raise AssertionError("triangular A interior is not a hole")
-    ix = [p[0] for p in inner]
-    iy = [p[1] for p in inner]
-    ox = [p[0] for p in outer]
-    oy = [p[1] for p in outer]
-    if not (min(ox) < min(ix) and max(ix) < max(ox) and min(oy) < min(iy) and max(iy) < max(oy)):
-        raise AssertionError("triangular A hole is not inside the outline")
-    if (max(iy) - min(iy)) < 0.25 * (max(oy) - min(oy)):
-        raise AssertionError("triangular A hole is too small to read")
-    if len(outer) != 3 or len(inner) != 3:
-        raise AssertionError("A is not a triangle")
+            legs.append(poly)
+    if len(legs) != 2:
+        raise AssertionError("open A should be two strokes, got %d" % len(legs))
+    if _shoelace(legs[0]) * _shoelace(legs[1]) <= 0:
+        raise AssertionError("open A strokes must both be solid, not a cut-out hole")
+
+    def xs_at(poly, y):
+        hit = [p[0] for p in poly if abs(p[1] - y) < 0.2]
+        if len(hit) < 2:
+            raise AssertionError("A stroke is not cut flat at y=%s" % y)
+        return min(hit), max(hit)
+
+    tops = [xs_at(p, y0) for p in legs]
+    bots = [xs_at(p, y1) for p in legs]
+    tops.sort()
+    bots.sort()
+    # apex is one joined flat, not two separated peaks and not a closed delta
+    if tops[0][1] < tops[1][0] - 0.5:
+        raise AssertionError("A apex is split")
+    gap = bots[1][0] - bots[0][1]
+    if gap < 0.35 * (x1 - x0):
+        raise AssertionError("A bottom is not open (gap %s)" % gap)
+    # no third shape, so there is no crossbar and no base between the feet
+    if len(legs[0]) != 4 or len(legs[1]) != 4:
+        raise AssertionError("A strokes are not simple quads")
 
 
 def _gap_ratio(groups):
@@ -472,7 +480,8 @@ class TestWordmark(unittest.TestCase):
         self.assertIn('aria-label="Phantom Technologies"', svg)
         self.assertIn("<title>Phantom Technologies</title>", svg)
         self.assertIn("Original squared lettering", svg)   # filled paths, nothing loaded at runtime
-        self.assertIn("hollow triangular A", svg)
+        self.assertIn("open triangular A", svg)
+        self.assertNotIn("hollow triangular", svg)
         self.assertNotIn("DejaVu", svg)
         self.assertNotRegex(svg, r'(?i)<script|<text|<image|href=|\bon[a-z]+=|font|gradient|filter=')
         w, h = map(float, re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg).groups())
@@ -486,7 +495,7 @@ class TestWordmark(unittest.TestCase):
         pg, tg = _clusters(phantom), _clusters(tech)
         self.assertEqual(len(pg), 7)      # PHANTOM
         self.assertEqual(len(tg), 12)     # TECHNOLOGIES
-        _assert_hollow_triangular_a(phantom, pg[2])
+        _assert_open_triangular_a(phantom, pg[2])
         self.assertLess(max(g[3] for g in pg), min(g[1] for g in tg))   # second line sits below
         ph, th = max(g[3] for g in pg) - min(g[1] for g in pg), max(g[3] for g in tg) - min(g[1] for g in tg)
         self.assertLess(th, ph * 0.7)
@@ -515,9 +524,9 @@ class TestWordmark(unittest.TestCase):
         gen = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(gen)
         width, polys = gen.letter_a()
-        self.assertEqual(width, 96.0)
+        self.assertGreater(width, 110.0)  # MIRAGE A is wider than the old squared A
         self.assertEqual(len(polys), 2)
-        self.assertLess(gen._area(polys[0]) * gen._area(polys[1]), 0)
+        self.assertGreater(gen._area(polys[0]) * gen._area(polys[1]), 0)
         phantom, tech, _pw, _ph, _tracking = gen.build()
         svg = open(os.path.join(REPO, "docs", "assets", "phantom-technologies-wordmark.svg"), encoding="utf-8").read()
         self.assertIn(gen.path_d(phantom), svg)

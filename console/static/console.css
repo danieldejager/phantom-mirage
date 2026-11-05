@@ -104,7 +104,7 @@ button.ssi{padding:4px 8px;line-height:0}button.ssi svg{vertical-align:middle}bu
 /* Phantom Technologies wordmark: original wide squared PHANTOM over a smaller
    tracked TECHNOLOGIES line. A same-origin SVG mask painted with the theme
    text colour, so it is silver-white on carbon and near-black on light. */
-.ptw{display:inline-block;height:34px;aspect-ratio:4.151;background:currentColor;color:var(--t);-webkit-mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat;mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat}
+.ptw{display:inline-block;height:34px;aspect-ratio:4.308;background:currentColor;color:var(--t);-webkit-mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat;mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat}
 /* MIRAGE wordmark centred in the sidebar pane */
 .nbrand{justify-content:center}
 
