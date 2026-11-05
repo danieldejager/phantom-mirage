@@ -11,7 +11,8 @@
 # .bak-* copies), /etc/phantom-mirage, /var/lib/phantom-mirage,
 # /var/log/phantom-mirage, the web console (its units, admin account,
 # certificate, settings and alerts in /var/lib/phantom-mirage/console, the
-# nftables table inet phantom_mirage, the timesyncd drop-in) and the
+# nftables table inet phantom_mirage, the timesyncd drop-in, the chrony
+# source file, with any chrony pool files setup set aside put back) and the
 # phantom-mirage and phantom-mirage-console users/groups if still there, turns promiscuous mode off on the configured interface, and
 # prints what it removed. If phantom-mirage-setup wrote /etc/default/farpd,
 # farpd is stopped and disabled and the original file restored from
@@ -92,6 +93,20 @@ main() {
 		run env DEBIAN_FRONTEND=noninteractive apt-get purge -y $pkgs
 		note "packages:$pkgs (purged)"
 	fi
+	# chrony: put back what setup set aside (internet pool files, chrony.conf)
+	for f in /etc/chrony/sources.d/*.sources.pm-disabled; do
+		[ -e "$f" ] || continue
+		run mv -f -- "$f" "${f%.pm-disabled}"
+		note "$f (restored)"
+	done
+	if [ -e /etc/chrony/chrony.conf.pm-backup ]; then
+		run mv -f -- /etc/chrony/chrony.conf.pm-backup /etc/chrony/chrony.conf
+		note "/etc/chrony/chrony.conf (restored)"
+	fi
+	if [ -e /etc/chrony/sources.d/phantom-mirage.sources ]; then
+		run rm -f -- /etc/chrony/sources.d/phantom-mirage.sources
+		note /etc/chrony/sources.d/phantom-mirage.sources
+	fi
 	for d in "$DEFAULT" "$DEFAULT".bak-* "$DEFAULT".new /etc/init.d/phantom-mirage /etc/phantom-mirage /var/lib/phantom-mirage /var/log/phantom-mirage \
 		/etc/systemd/system/multi-user.target.wants/phantom-mirage.service \
 		/etc/systemd/system/multi-user.target.wants/phantom-mirage-console.service \
@@ -120,6 +135,7 @@ main() {
 		systemctl daemon-reload >/dev/null 2>&1 || true
 		systemctl reset-failed phantom-mirage.service phantom-mirage-console.service phantom-mirage-firewall.service >/dev/null 2>&1 || true
 		systemctl try-restart systemd-timesyncd.service >/dev/null 2>&1 || true
+		systemctl try-restart chrony.service >/dev/null 2>&1 || true
 	fi
 	if [ -n "$IFACE" ] && [ -e "/sys/class/net/$IFACE" ]; then
 		run ip link set dev "$IFACE" promisc off
