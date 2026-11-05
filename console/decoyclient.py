@@ -12,12 +12,15 @@ import time
 import uuid
 
 DEFAULT_SOCK = "/run/phantom-mirage-decoyd.sock"
-CHANGE_OPS = ("add", "edit", "start", "stop", "delete", "reset_all")
-READ_OPS = ("list", "options")
+CHANGE_OPS = ("add", "edit", "start", "stop", "delete", "reset_all", "set_network")
+READ_OPS = ("list", "options", "netinfo")
 MAX_REPLY = 1 << 20
 # A change waits for the queue, verify, reload, settle and maybe a
 # rollback restart in the helper, so allow well over a minute.
 TIMEOUT = 90.0
+# set_network also restarts the whole sensor, farpd and the firewall and
+# may restart again on rollback, so it gets longer.
+NET_TIMEOUT = 240.0
 
 
 def sock_path():
@@ -29,8 +32,10 @@ def _fail(code, message):
             "error": {"code": code, "field": None, "message": message}}
 
 
-def call(op, args, actor, timeout=TIMEOUT):
+def call(op, args, actor, timeout=None):
     """Send one request; always returns a response dict (never raises)."""
+    if timeout is None:
+        timeout = NET_TIMEOUT if op == "set_network" else TIMEOUT
     if op not in CHANGE_OPS + READ_OPS:
         return _fail("E_UNKNOWN_OP", "unknown operation")
     actor = re.sub(r'[^A-Za-z0-9._-]', "_", str(actor))[:64] or "-"

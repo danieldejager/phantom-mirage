@@ -36,6 +36,8 @@ const DMSG = {
   E_ROLLBACK_FAILED: "The change failed and the previous configuration could not be restored. Check the sensor now: sudo systemctl status phantom-mirage",
   E_INVALID_PERSONALITY: "That personality is not available on this sensor.",
   E_TOO_MANY_PORTS: "Too many ports for one decoy.",
+  E_RESTART_FAILED_ROLLED_BACK: "The sensor did not start on the new address block, so the previous block was put back and the sensor restarted on it.",
+  E_UNCHANGED: "That is already the address block and interface in use.",
 };
 function dmsg(er) { return (DMSG[er.code] ? DMSG[er.code] + (er.code === "E_VERIFY_FAILED" && er.message ? " " + er.message : "") : (er.message || er.code || "refused")) + (er.code && !DMSG[er.code] && er.field ? " (" + er.field + ")" : ""); }
 
@@ -81,6 +83,7 @@ function start() {
 async function load(p) {
   if (p === "Status") data.status = await api("/api/status");
   if (p === "Decoys" || p === "Activity") data.decoys = await api("/api/decoys");
+  if (p === "Decoys") data.ni = await api("/api/decoyd/netinfo").then(j => j.result, e => { if (e.message === "signed out") throw e; return {error: e.message}; });
   if (p === "Decoys") data.dd = await api("/api/decoyd/list").then(j => ({map: Object.fromEntries(j.result.decoys.map(x => [x.ip, x]))}), e => { if (e.message === "signed out") throw e; return {error: e.message}; });
   if (p === "Alerts" || p === "Status") data.alerts = await api("/api/alerts");
   if (p === "Activity" && !paused) data.activity = (await api("/api/activity")).events;
@@ -142,11 +145,74 @@ ${card("Last activity", when(s.last_activity))}${card("Sensor clock", esc(new Da
 }
 function Decoys() {
   const d = data.decoys, dd = data.dd || {};
-  return `<h2>Decoys</h2><div class="row"><span class="note">Block ${esc(d.network || "(not set)")} on ${esc(d.interface || "?")} · from /etc/phantom-mirage/phantom-mirage.conf</span></div>${d.error ? `<p class="bad">${esc(d.error)}</p>` : ""}
+  return `${netSection(d)}<h2>Decoys</h2>${d.error ? `<p class="bad">${esc(d.error)}</p>` : ""}
 ${dd.error ? `<p class="note u-mb12" id="dunavail">Stop, Start and decoy settings are unavailable: ${esc(dd.error)}</p>` : ""}
 <div class="tw"><table><tr><th></th><th>Address</th><th>State</th><th>Template</th><th>Personality</th><th>Open ports</th><th>Last touched</th><th></th></tr>
 ${d.decoys.map((x, i) => `<tr${x.reserved ? ' class="resv"' : ""}><td>${x.reserved ? "" : `<button class="gear" data-act="decoy" data-id="${i}" title="Decoy settings for ${esc(x.ip)}" aria-label="Decoy settings for ${esc(x.ip)}">\u2699</button>`}</td><td>${esc(x.ip)}</td><td>${stateCell(x.ip, x.reserved)}</td><td>${esc(x.template)}</td><td>${esc(x.personality)}</td><td class="wr">${esc(x.ports.join(", ") || "none")}</td><td>${when(x.last)}</td><td>${ssButton(x.ip, x.reserved)}</td></tr>`).join("") || '<tr><td colspan="8" class="note">No decoys configured</td></tr>'}</table></div>
-<p class="note">Changes are checked by the sensor before they apply and need your password each time. The address block is set on the sensor with <code>sudo phantom-mirage-setup</code> and cannot be changed here.</p>`;
+<p class="note">Changes are checked by the sensor before they apply and need your password each time. The address block is changed in Network above.</p>`;
+}
+/* ---- Network: the address block (NETWORK) and interface. The helper
+   checks everything again; these checks only give early, plain hints. ---- */
+function netSection(d) {
+  const ni = data.ni || {};
+  return `<h2>Network</h2><div class="card netcard" id="netcard"><div class="netrow"><div><div class="k">Address block</div><div class="v" id="netcur">${esc(ni.network || d.network || "(not set)")}</div></div><div><div class="k">Interface</div><div class="v" id="ifcur">${esc(ni.interface || d.interface || "?")}</div></div><div class="netbtn">${ni.error ? "" : '<button data-act="net" id="netchange">Change address block</button>'}</div></div>
+${ni.error ? `<p class="note" id="netunavail">Changing the address block is unavailable: ${esc(ni.error)}</p>` : `<p class="note">Every address in the block is a decoy. Changing it restarts the whole sensor and cuts all live connections.</p>`}</div>`;
+}
+function ip4(s) { const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s); if (!m) return null; const o = m.slice(1).map(Number); if (o.some(x => x > 255)) return null; return ((o[0] << 24) >>> 0) + (o[1] << 16) + (o[2] << 8) + o[3]; }
+function cidr(s) { const m = /^([0-9.]+)\/(\d{1,2})$/.exec(s || ""); if (!m) return null; const a = ip4(m[1]), p = +m[2]; if (a === null || p > 32) return null; const size = 2 ** (32 - p); return {a, p, size, ok: a % size === 0}; }
+function inC(x, c) { return x >= c.a && x < c.a + c.size; }
+function netHint(v, ifn) {
+  const ni = data.ni || {}, c = cidr(v);
+  if (!c) return "Write the block as address/prefix, for example 192.168.50.8/29.";
+  if (!c.ok) return "That address is not the start of a /" + c.p + " block.";
+  if (c.p < (ni.min_prefix || 24)) return "Use a block of /" + (ni.min_prefix || 24) + " or smaller (at most 256 addresses).";
+  const priv = [["10.0.0.0", 8], ["172.16.0.0", 12], ["192.168.0.0", 16]].some(([n, p]) => { const b = ip4(n), sz = 2 ** (32 - p); return c.a >= b && c.a + c.size <= b + sz; });
+  if (!priv) return "Use a private range: 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16.";
+  const i = (ni.interfaces || []).find(x => x.name === ifn);
+  if (!i) return "Choose an interface.";
+  const lans = i.addrs.map(cidr0).filter(Boolean);
+  if (!lans.some(l => c.a >= l.a && c.a + c.size <= l.a + l.size)) return v + " is not inside the LAN of " + ifn + " (" + i.addrs.join(", ") + ").";
+  for (const x of ni.interfaces || []) for (const a of x.addrs) { const h = ip4(a.split("/")[0]); if (inC(h, c)) return v + " includes this sensor's own address " + a.split("/")[0] + "."; }
+  for (const g of ni.gateways || []) if (inC(ip4(g), c)) return v + " includes the gateway " + g + ".";
+  return "";
+}
+function cidr0(s) { const m = /^([0-9.]+)\/(\d{1,2})$/.exec(s); if (!m) return null; const a = ip4(m[1]), p = +m[2], size = 2 ** (32 - p); return {a: a - a % size, p, size}; }
+function netDialog() {
+  const ni = data.ni || {}, ifs = (ni.interfaces || []).map(x => [x.name, x.name + "  (" + x.addrs.join(", ") + ")"]);
+  if (ni.interface && !ifs.some(x => x[0] === ni.interface)) ifs.unshift([ni.interface, ni.interface + "  (current, no IPv4 address)"]);
+  const n = Object.keys((data.dd || {}).map || {}).filter(ip => ((data.dd.map[ip] || {}).source || "") !== "default").length;
+  return `<h3>Change address block</h3>
+<p class="note">Now: <b>${esc(ni.network)}</b> on <b>${esc(ni.interface)}</b>. Gateway: ${esc((ni.gateways || []).join(", ") || "none found")}.</p>
+<label class="k" for="nnet">New address block (CIDR, /${esc(ni.min_prefix || 24)} to /32, private range)</label>
+<p><input id="nnet" class="u-w100" autocomplete="off" spellcheck="false" maxlength="18" value="${esc(ni.network)}"></p>
+<label class="k" for="nif">Interface</label>
+<p>${sel('id="nif" class="u-w100"', ifs, ni.interface)}</p>
+<div class="note" id="nhint" role="status"></div>
+<div class="warnbox" id="nwarn"><b>This restarts the whole phantom-mirage service</b>, then farpd and the firewall, and cuts every live connection to every decoy. Decoy settings for addresses outside the new block, or on its network or broadcast address, are dropped; the ones inside are kept.${n ? "" : " No decoy has its own settings now."} If the sensor does not start on the new block, the previous block is put back and the sensor restarted.</div>
+<p><input id="dpw" type="password" autocomplete="current-password" placeholder="Your console password" class="u-w100"></p>
+<div class="err" id="derr" role="alert"></div><div class="row"><button class="pri" data-act="donet" id="donet">Restart sensor on new block</button><button data-act="mclose">Cancel</button></div>`;
+}
+function netCheck() { const h = $("nhint"); if (!h) return ""; const v = $("nnet").value.trim(), f = $("nif").value; const m = (v === data.ni.network && f === data.ni.interface) ? "That is the block and interface in use now." : netHint(v, f); h.textContent = m; h.classList.toggle("bad", !!m); return m; }
+async function netApply() {
+  const v = $("nnet").value.trim(), f = $("nif").value, pw = $("dpw").value;
+  $("derr").textContent = "";
+  const m = netCheck();
+  if (m) { $("derr").textContent = m; return; }
+  if (!pw) { $("derr").textContent = "Enter your password to apply the change."; return; }
+  $("donet").disabled = true; $("donet").textContent = "Restarting the sensor...";
+  try {
+    const j = await api("/api/decoyd/change", {op: "set_network", password: pw, args: {network: v, interface: f, expect: {network: data.ni.network, interface: data.ni.interface}}});
+    const r = j.result || {}, dr = r.dropped || [];
+    modalOpen(`<h3>Address block changed</h3><p class="ok" id="nok">Now ${esc(r.network)} on ${esc(r.interface)}. ${j.reloaded ? "The sensor was restarted." : "The sensor is not running; the new block applies when it starts."}</p>
+<p id="ndropped">${dr.length ? "Settings dropped for addresses outside the new block: <b>" + dr.map(esc).join(", ") + "</b>." : "No decoy settings were dropped."}</p>${(r.warnings || []).length ? `<p class="bad">${r.warnings.map(esc).join("; ")}</p>` : ""}<div class="row"><button data-act="mclose">OK</button></div>`);
+    await load("Decoys"); if (cur === "Decoys") render();
+  } catch (e) {
+    if (e.message === "signed out") return;
+    if (!$("derr")) return;
+    $("dpw").value = ""; $("donet").disabled = false; $("donet").textContent = "Restart sensor on new block";
+    $("derr").textContent = e.message;
+    if (e.code === "E_CONFLICT") { await load("Decoys"); if (cur === "Decoys") render(); }
+  }
 }
 /* ---- decoy settings panel (gear): personality, default actions and
    ports from the helper's fixed list of named services ---- */
@@ -349,6 +415,8 @@ document.addEventListener("click", e => {
     case "edreset": change("delete", {ip: ED.ip, expect_rev: ED.rev}); break;
     case "ss": modalOpen(ssDialog(b.dataset.op, b.dataset.ip)); setTimeout(() => $("dpw") && $("dpw").focus(), 0); break;
     case "dochange": { const h = hstate(b.dataset.ip) || {}; const args = {ip: b.dataset.ip}; if (h.rev) args.expect_rev = h.rev; change(b.dataset.op, args); break; }
+    case "net": modalOpen(netDialog(), true); netCheck(); setTimeout(() => $("nnet") && $("nnet").focus(), 0); break;
+    case "donet": netApply(); break;
     case "pause": paused = !paused; go("Activity"); break;
     case "csv": csv(); break;
     case "savesettings": act(async () => { $("serr").textContent = ""; try { await api("/api/settings", {alert_retention_days: +$("sret").value, timezone: $("stz").value.trim()}); go("Settings"); } catch (er) { $("serr").textContent = er.message; } }); break;
@@ -356,8 +424,10 @@ document.addEventListener("click", e => {
 });
 document.addEventListener("input", e => {
   if (e.target.id === "fsrc") { F.src = e.target.value; rt(); }
+  if (e.target.id === "nnet") netCheck();
 });
 document.addEventListener("change", e => {
+  if (e.target.id === "nif") netCheck();
   if (e.target.id === "fdec") { F.decoy = e.target.value; rt(); }
   if (e.target.id === "fpro") { F.proto = e.target.value; rt(); }
 });

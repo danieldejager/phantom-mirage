@@ -387,7 +387,7 @@ class DecoydApi(unittest.TestCase):
         self.assertEqual(self.change({"op": "stop", "args": args})[0], 403)
         self.assertEqual(self.change({"op": "stop", "args": args, "password": "nope"})[0], 403)
         self.assertEqual(self.change({"op": "list", "args": {}, "password": PW})[0], 400)
-        self.assertEqual(self.change({"op": "set_network", "args": {}, "password": PW})[0], 400)
+        self.assertEqual(self.change({"op": "set_interface", "args": {}, "password": PW})[0], 400)
         self.assertEqual(self.change({"op": "stop", "args": args, "password": PW, "network": "1.2.3.0/24"})[0], 400)
         self.assertEqual(self.h.reqs, [])
         st, j = self.change({"op": "stop", "args": args, "password": PW})
@@ -401,6 +401,39 @@ class DecoydApi(unittest.TestCase):
         self.assertIn("requested 10.9.0.9", a[-2]["detail"])
         self.assertIn("sensor reloaded", a[-1]["detail"])
         self.assertNotIn(PW, json.dumps(pmstore.read_audit()))
+
+    def test_netinfo_read(self):
+        st, j = self.c.req("GET", "/api/decoyd/netinfo")
+        self.assertEqual((st, j["result"]["echo"]), (200, "netinfo"))
+        self.assertEqual(self.h.reqs[-1]["args"], {})
+        self.assertEqual(Client().req("GET", "/api/decoyd/netinfo")[0], 401)
+
+    def test_set_network(self):
+        args = {"network": "10.9.0.32/28", "interface": "eth1",
+                "expect": {"network": "10.9.0.8/29", "interface": "eth0"}}
+        body = {"op": "set_network", "args": args, "password": PW}
+        self.assertEqual(self.change(body, csrf=False)[0], 403)
+        self.assertEqual(self.change(dict(body, password="nope"))[0], 403)
+        self.assertEqual(self.h.reqs, [])
+        self.h.reply = {"ok": True, "reloaded": True, "rolled_back": False,
+                        "result": {"network": "10.9.0.32/28", "interface": "eth1",
+                                   "dropped": ["10.9.0.10"], "farpd": True, "restarted": True}}
+        st, j = self.change(body)
+        self.assertEqual(st, 200, j)
+        q = self.h.reqs[-1]
+        self.assertEqual((q["op"], q["args"]), ("set_network", args))
+        a = self.audit()
+        self.assertIn("requested 10.9.0.32/28 on eth1", a[-2]["detail"])
+        self.assertIn("dropped settings for 10.9.0.10", a[-1]["detail"])
+        for code, want in (("E_NOT_PRIVATE", 400), ("E_HOST_ADDRESS", 400), ("E_UNCHANGED", 409),
+                           ("E_RESTART_FAILED_ROLLED_BACK", 500), ("E_ROLLBACK_FAILED", 500)):
+            self.h.reply = {"ok": False, "reloaded": False, "rolled_back": False,
+                            "error": {"code": code, "field": "args.network", "message": "x"}}
+            self.assertEqual(self.change(body)[0], want, code)
+
+    def test_set_network_timeout_longer(self):
+        import decoyclient
+        self.assertGreater(decoyclient.NET_TIMEOUT, decoyclient.TIMEOUT)
 
     def test_wrong_password_backs_off(self):
         codes = [self.change({"op": "stop", "args": {"ip": "10.9.0.9"}, "password": "bad"})[0]
@@ -575,6 +608,64 @@ class DecoySettings(DecoyStopStart):
                      "is listed twice", "args.expect_rev = e.rev", "E_VERIFY_FAILED:", 'id="dro"'):
             self.assertIn(want, js)
         self.assertNotIn("innerHTML = e", js)
+
+
+class DecoyNetwork(DecoyStopStart):
+    """The Network section end to end with the helper's own validation and
+    store retarget code behind the socket: the table follows the new block
+    and settings outside it are dropped and named."""
+
+    def setUp(self):
+        super().setUp()
+        import sim_decoyd
+        D = sim_decoyd.D
+        self.h.close()
+        with open(os.environ["PM_DEFAULT"]) as f:
+            self.old_default = f.read()
+        with open(os.environ["PM_DEFAULT"], "w") as f:
+            f.write('INTERFACE=eth0\nNETWORK="10.9.0.8/29"\n')
+        info = {"ifaces": {"eth0": {"addrs": [D.ipaddress.IPv4Interface("10.9.0.2/24")], "up": True, "lo": False}},
+                "gateways": [D.ipaddress.IPv4Address("10.9.0.1")]}
+        self.h = sim_decoyd.SimHelper(self.sock, self.conf, "10.9.0.8/29", binds={"10.9.0.14"},
+                                      info=info, default_path=os.environ["PM_DEFAULT"])
+
+    def tearDown(self):
+        super().tearDown()
+        with open(os.environ["PM_DEFAULT"], "w") as f:
+            f.write(self.old_default)
+
+    def setnet(self, net, expect="10.9.0.8/29"):
+        return self.change("set_network", {"network": net, "interface": "eth0",
+                                           "expect": {"network": expect, "interface": "eth0"}})
+
+    def test_netinfo(self):
+        st, j = self.c.req("GET", "/api/decoyd/netinfo")
+        self.assertEqual(st, 200)
+        self.assertEqual((j["result"]["network"], j["result"]["gateways"]), ("10.9.0.8/29", ["10.9.0.1"]))
+
+    def test_change_follows_block_and_drops(self):
+        for ip in ("10.9.0.9", "10.9.0.12"):
+            self.assertEqual(self.change("stop", {"ip": ip})[0], 200)
+        st, j = self.setnet("10.9.0.12/30")
+        self.assertEqual(st, 200, j)
+        self.assertEqual(j["result"]["dropped"], ["10.9.0.9", "10.9.0.12"])   # .12 is the new network address
+        st, j = self.c.req("GET", "/api/decoys")
+        got = {r["ip"]: r["reserved"] for r in j["decoys"] if r["ip"].startswith("10.9.0.")}
+        self.assertEqual(got, {"10.9.0.12": "network", "10.9.0.13": None, "10.9.0.14": None,
+                               "10.9.0.15": "broadcast"})
+        self.assertEqual(self.change("stop", {"ip": "10.9.0.12"})[1]["error"]["code"], "E_ADDRESS_RESERVED")
+        self.assertEqual(self.change("stop", {"ip": "10.9.0.13"})[0], 200)
+
+    def test_refusals(self):
+        for net, code in (("10.9.0.0/29", "E_HOST_ADDRESS"), ("8.8.8.0/29", "E_NOT_PRIVATE"),
+                          ("10.9.1.8/29", "E_NOT_ON_LAN"), ("10.9.0.0/23", "E_NETWORK_TOO_WIDE"),
+                          ("10.9.0.9/29", "E_INVALID_NETWORK"), ("10.9.0.8/29", "E_UNCHANGED")):
+            with self.subTest(net=net):
+                st, j = self.setnet(net)
+                self.assertEqual(j["error"]["code"], code, j)
+        self.assertEqual(self.setnet("10.9.0.32/28", expect="10.9.0.16/29")[1]["error"]["code"], "E_CONFLICT")
+        with open(os.environ["PM_DEFAULT"]) as f:
+            self.assertIn('NETWORK="10.9.0.8/29"', f.read())
 
 
 class DecoyReserved(DecoyStopStart):

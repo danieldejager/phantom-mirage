@@ -467,6 +467,268 @@ class TestPipeline(Base):
             self.assertEqual(r["error"]["code"], "E_INTERNAL")
 
 
+def ifc(*a):
+    return [D.ipaddress.IPv4Interface(x) for x in a]
+
+
+INFO = {"ifaces": {"eth0": {"addrs": ifc("10.9.0.2/24"), "up": True, "lo": False},
+                   "eth1": {"addrs": ifc("10.9.0.3/24"), "up": True, "lo": False},
+                   "eth2": {"addrs": [], "up": True, "lo": False},
+                   "lo": {"addrs": ifc("127.0.0.1/8"), "up": True, "lo": True}},
+        "gateways": [D.ipaddress.IPv4Address("10.9.0.1")]}
+
+
+def golden(name):
+    with open(os.path.join(GOLDEN, name)) as f:
+        return f.read()
+
+
+class TestNetworkValidation(unittest.TestCase):
+    def setUp(self):
+        self._p = dict(D.P)
+        self.sys = tempfile.mkdtemp()
+        for n in INFO["ifaces"]:
+            os.mkdir(os.path.join(self.sys, n))
+        D.P["sysfs_net"] = self.sys
+
+    def tearDown(self):
+        D.P.clear(); D.P.update(self._p)
+        shutil.rmtree(self.sys)
+
+    def code(self, net, iface="eth0", info=INFO):
+        with self.assertRaises(D.Err) as c:
+            D.check_network(net, iface, info)
+        return c.exception.code, c.exception.message
+
+    def test_good(self):
+        for n in ("10.9.0.8/29", "10.9.0.64/26", "10.9.0.200/32", "10.9.0.32/28"):
+            self.assertEqual(str(D.check_network(n, "eth0", INFO)[0]), n)
+
+    def test_format(self):
+        for n in ("10.9.0.8", "10.9.0.8/29 10.9.0.16/29", "10.9.0.8/29;reboot", "x", "10.9.0.256/29",
+                  "10.9.0.8/33", "::1/128", "$(id)", ""):
+            self.assertIn(self.code(n)[0], ("E_INVALID_NETWORK", "E_TYPE", "E_INVALID_VALUE", "E_TOO_LONG"), n)
+
+    def test_host_bits_suggests(self):
+        c, m = self.code("10.9.0.9/29")
+        self.assertEqual(c, "E_INVALID_NETWORK")
+        self.assertIn("10.9.0.8/29", m)
+
+    def test_too_wide(self):
+        self.assertEqual(self.code("10.9.0.0/23")[0], "E_NETWORK_TOO_WIDE")
+        self.assertEqual(self.code("10.0.0.0/8")[0], "E_NETWORK_TOO_WIDE")
+
+    def test_not_private(self):
+        info = {"ifaces": {"eth0": {"addrs": ifc("8.8.8.2/24"), "up": True, "lo": False}}, "gateways": []}
+        self.assertEqual(self.code("8.8.8.8/29", info=info)[0], "E_NOT_PRIVATE")
+        self.assertEqual(self.code("172.32.0.8/29", info=info)[0], "E_NOT_PRIVATE")
+
+    def test_interface(self):
+        self.assertEqual(self.code("10.9.0.8/29", "eth9")[0], "E_INVALID_INTERFACE")
+        self.assertEqual(self.code("10.9.0.8/29", "lo")[0], "E_INVALID_INTERFACE")
+        self.assertEqual(self.code("10.9.0.8/29", "eth2")[0], "E_INVALID_INTERFACE")
+        self.assertIn(self.code("10.9.0.8/29", "eth0;x")[0], ("E_INVALID_VALUE", "E_TYPE"))
+
+    def test_not_on_lan(self):
+        self.assertEqual(self.code("192.168.7.8/29")[0], "E_NOT_ON_LAN")
+
+    def test_own_address_and_gateway(self):
+        c, m = self.code("10.9.0.0/30")
+        self.assertIn(c, ("E_HOST_ADDRESS", "E_GATEWAY"))
+        self.assertEqual(self.code("10.9.0.0/31")[0], "E_GATEWAY")   # 10.9.0.0 and .1, .1 is the gateway
+        self.assertEqual(self.code("10.9.0.2/32")[0], "E_HOST_ADDRESS")
+        self.assertEqual(self.code("10.9.0.3/32")[0], "E_HOST_ADDRESS")   # other interface's address
+        self.assertEqual(self.code("10.9.0.0/24")[0], "E_HOST_ADDRESS")
+
+    def test_lan_edge(self):
+        self.assertEqual(self.code("10.9.0.255/32")[0], "E_LAN_EDGE")
+        self.assertEqual(self.code("10.9.0.248/29")[0], "E_LAN_EDGE")
+
+    def test_retarget(self):
+        st = {"v": 1, "conf_sha256": None, "overrides": {
+            "10.9.0.33": {"stopped": True}, "10.9.0.9": {"stopped": True},
+            "10.9.0.32": {"stopped": True}, "10.9.0.47": {"stopped": True}, "10.9.0.40": {"stopped": True}}}
+        new, dropped = D.retarget_store(st, D.ipaddress.IPv4Network("10.9.0.32/28"))
+        self.assertEqual(dropped, ["10.9.0.9", "10.9.0.32", "10.9.0.47"])
+        self.assertEqual(sorted(new["overrides"]), ["10.9.0.33", "10.9.0.40"])
+        self.assertEqual(len(st["overrides"]), 5)   # input untouched
+
+    def test_rewrite_golden(self):
+        self.assertEqual(D.rewrite_default(golden("default-before.txt"), "10.9.0.32/28", "eth1"),
+                         golden("default-after.txt"))
+        self.assertEqual(D.rewrite_default(golden("farpd-before.txt"), "10.9.0.32/28", "eth1"),
+                         golden("farpd-after.txt"))
+
+    def test_rewrite_needs_one_each(self):
+        for t in ("INTERFACE=eth0\n", "NETWORK=a\nNETWORK=b\nINTERFACE=eth0\n", ""):
+            with self.assertRaises(D.Err):
+                D.rewrite_default(t, "10.9.0.32/28", "eth1")
+
+    def test_host_info_parses_ip_json(self):
+        d = tempfile.mkdtemp()
+        try:
+            ip = os.path.join(d, "ip")
+            with open(ip, "w") as f:
+                f.write("#!/bin/sh\ncase \"$3\" in\naddr) cat <<'X'\n"
+                        '[{"ifname":"lo","flags":["LOOPBACK","UP"],"addr_info":[{"local":"127.0.0.1","prefixlen":8}]},'
+                        '{"ifname":"eth0","flags":["UP"],"addr_info":[{"local":"10.9.0.2","prefixlen":24}]},'
+                        '{"ifname":"bad name","flags":[],"addr_info":[]}]\nX\n;;\n'
+                        "route) echo '[{\"dst\":\"default\",\"gateway\":\"10.9.0.1\"}]' ;;\nesac\n")
+            os.chmod(ip, 0o755)
+            D.P["ip"] = ip
+            info = D.host_info()
+            self.assertEqual(sorted(info["ifaces"]), ["eth0", "lo"])
+            self.assertTrue(info["ifaces"]["lo"]["lo"])
+            self.assertEqual([str(a) for a in info["ifaces"]["eth0"]["addrs"]], ["10.9.0.2/24"])
+            self.assertEqual([str(g) for g in info["gateways"]], ["10.9.0.1"])
+            D.P["ip"] = os.path.join(d, "missing")
+            self.assertEqual(D.host_info(), {"ifaces": {}, "gateways": []})
+        finally:
+            shutil.rmtree(d)
+
+
+class TestSetNetwork(Base):
+    def setUp(self):
+        super().setUp()
+        self.w("etc/default", golden("default-before.txt"))
+        self.w("etc/farpd", golden("farpd-before.txt"))
+        os.mkdir(self.p("sys"))
+        for n in INFO["ifaces"]:
+            os.mkdir(self.p("sys/" + n))
+        D.P.update(farpd_default=self.p("etc/farpd"), sysfs_net=self.p("sys"))
+        self._hi = D.host_info
+        D.host_info = lambda: INFO
+        # a stopped override that stays and one that is dropped
+        for ip in ("10.9.0.9", "10.9.0.10"):
+            self.assertTrue(self.req("stop", {"ip": ip, "expect_rev": 0})["ok"])
+        self.w("calls", "")
+
+    def tearDown(self):
+        D.host_info = self._hi
+        super().tearDown()
+
+    def setnet(self, net="10.9.0.32/28", iface="eth1", expect=("10.9.0.8/29", "eth0")):
+        return self.req("set_network", {"network": net, "interface": iface,
+                                        "expect": {"network": expect[0], "interface": expect[1]}})
+
+    def test_netinfo(self):
+        r = self.req("netinfo")
+        self.assertTrue(r["ok"])
+        res = r["result"]
+        self.assertEqual((res["network"], res["interface"]), ("10.9.0.8/29", "eth0"))
+        self.assertEqual([i["name"] for i in res["interfaces"]], ["eth0", "eth1"])
+        self.assertEqual(res["gateways"], ["10.9.0.1"])
+
+    def test_success(self):
+        self.w("etc/decoys.json", self.r("etc/decoys.json").replace('"10.9.0.10"', '"10.9.0.10"'))
+        st = json.loads(self.r("etc/decoys.json"))
+        st["overrides"]["10.9.0.33"] = st["overrides"].pop("10.9.0.9")
+        st["overrides"]["10.9.0.33"]["ip"] = "10.9.0.33" if "ip" in st["overrides"]["10.9.0.33"] else None
+        if st["overrides"]["10.9.0.33"]["ip"] is None:
+            del st["overrides"]["10.9.0.33"]["ip"]
+        txt = D.render(st, SVCS)
+        st["conf_sha256"] = D.sha(txt)
+        self.w("etc/decoys.json", json.dumps(st))
+        self.w("etc/decoys.conf", txt)
+        r = self.setnet()
+        self.assertTrue(r["ok"], r)
+        self.assertTrue(r["reloaded"])
+        self.assertEqual(r["result"]["dropped"], ["10.9.0.10"])
+        self.assertTrue(r["result"]["farpd"])
+        self.assertEqual(self.r("etc/default"), golden("default-after.txt"))
+        self.assertEqual(self.r("etc/farpd"), golden("farpd-after.txt"))
+        self.assertEqual(self.r("etc/default.prev"), golden("default-before.txt"))
+        self.assertEqual(sorted(json.loads(self.r("etc/decoys.json"))["overrides"]), ["10.9.0.33"])
+        self.assertNotIn("10.9.0.10", self.r("etc/decoys.conf"))
+        self.assertIn("10.9.0.33", self.r("at_restart"))
+        argv = self.r("verify_argv")
+        self.assertIn("-i eth1", argv)
+        self.assertIn("10.9.0.32/28", argv)
+        calls = self.r("calls").splitlines()
+        self.assertIn("restart phantom-mirage.service", calls)
+        i = calls.index("restart phantom-mirage.service")
+        self.assertIn("restart phantom-mirage-firewall.service", calls[i:])
+        self.assertIn("restart farpd.service", calls[i:])
+        # follow up list sees the new block
+        self.assertTrue(self.req("list")["ok"])
+
+    def test_handwritten_farpd_untouched(self):
+        self.w("etc/farpd", "INTERFACE=eth0\nNETWORK=10.9.0.8/29\n")
+        r = self.setnet()
+        self.assertTrue(r["ok"], r)
+        self.assertFalse(r["result"]["farpd"])
+        self.assertEqual(self.r("etc/farpd"), "INTERFACE=eth0\nNETWORK=10.9.0.8/29\n")
+        self.assertNotIn("restart farpd.service", self.r("calls"))
+
+    def snapshot(self):
+        return {f: self.r("etc/" + f) for f in ("default", "farpd", "decoys.conf", "decoys.json")}
+
+    def test_restart_fails_rolls_back_before_restart(self):
+        before = self.snapshot()
+        # first restart fails, the restart after restore succeeds
+        self.w("systemctl", self.r("systemctl").replace(
+            'if [ "$(cat "$D/restart")" = ok ]',
+            '[ "$2" = phantom-mirage.service ] && cp "$D/etc/default" "$D/default_at_restart_$(wc -l < "$D/calls")"\n\tif [ "$(cat "$D/restart")" = ok ]'))
+        self.w("restart", "once\n")
+        self.w("systemctl", self.r("systemctl").replace(
+            'else echo failed > "$D/active"; fi ;;',
+            'else echo failed > "$D/active"; echo ok > "$D/restart"; fi ;;'))
+        r = self.setnet()
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["error"]["code"], "E_RESTART_FAILED_ROLLED_BACK")
+        self.assertTrue(r["rolled_back"])
+        self.assertEqual(self.snapshot(), before)
+        snaps = sorted(f for f in os.listdir(self.d) if f.startswith("default_at_restart_"))
+        self.assertEqual(len(snaps), 2)
+        with open(self.p(snaps[-1])) as f:
+            self.assertEqual(f.read(), before["default"])   # old block was back before the second restart
+
+    def test_rollback_failed(self):
+        before = self.snapshot()
+        self.w("restart", "no\n")
+        r = self.setnet()
+        self.assertEqual(r["error"]["code"], "E_ROLLBACK_FAILED")
+        self.assertEqual(self.snapshot(), before)
+
+    def test_verify_fails_nothing_written(self):
+        before = self.snapshot()
+        self.w("verify_rc", "1\n")
+        r = self.setnet()
+        self.assertFalse(r["ok"])
+        self.assertEqual(self.snapshot(), before)
+        self.assertNotIn("restart", self.r("calls"))
+
+    def test_inactive_sensor_not_started(self):
+        self.w("active", "inactive\n")
+        r = self.setnet()
+        self.assertTrue(r["ok"], r)
+        self.assertFalse(r["reloaded"])
+        self.assertFalse(r["result"]["restarted"])
+        self.assertEqual(self.r("etc/default"), golden("default-after.txt"))
+        self.assertNotIn("restart phantom-mirage.service", self.r("calls"))
+
+    def test_refusals(self):
+        before = self.snapshot()
+        self.assertEqual(self.setnet(expect=("10.9.0.16/29", "eth0"))["error"]["code"], "E_CONFLICT")
+        self.assertEqual(self.setnet("10.9.0.8/29", "eth0")["error"]["code"], "E_UNCHANGED")
+        self.assertEqual(self.setnet("10.9.0.0/29")["error"]["code"], "E_HOST_ADDRESS")
+        self.assertEqual(self.setnet("10.9.0.0/22")["error"]["code"], "E_NETWORK_TOO_WIDE")
+        r = self.req("set_network", {"network": "10.9.0.32/28", "interface": "eth1"})
+        self.assertEqual(r["error"]["code"], "E_MISSING_FIELD")
+        r = self.req("set_network", {"network": "10.9.0.32/28", "interface": "eth1", "cmd": "x",
+                                     "expect": {"network": "10.9.0.8/29", "interface": "eth0"}})
+        self.assertEqual(r["error"]["code"], "E_UNKNOWN_FIELD")
+        self.assertEqual(self.snapshot(), before)
+        self.assertNotIn("restart", self.r("calls"))
+
+    def test_rate_limited(self):
+        D.T.update(min_interval=100, queue_wait=1)
+        self.w("run/last_reload", "0")
+        self.assertTrue(self.setnet()["ok"])
+        r = self.setnet("10.9.0.64/28", "eth1", ("10.9.0.32/28", "eth1"))
+        self.assertEqual(r["error"]["code"], "E_RATE_LIMIT")
+
+
 class TestSocket(Base):
     def serve(self):
         path = self.p("s.sock")

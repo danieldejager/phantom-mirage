@@ -163,7 +163,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send_json(200, self.status())
         if path == "/api/decoys":
             return self.send_json(200, pmstore.decoy_list(dict(a.alerts.last_touch)))
-        if path in ("/api/decoyd/list", "/api/decoyd/options"):
+        if path in ("/api/decoyd/list", "/api/decoyd/options", "/api/decoyd/netinfo"):
             r = decoyclient.call(path.rsplit("/", 1)[1], {}, s["user"])
             return self.send_json(200 if r["ok"] else self.decoyd_status(r), r)
         if path == "/api/personalities":
@@ -347,21 +347,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return 503
         if code in ("E_BUSY", "E_RATE_LIMIT"):
             return 429
-        if code in ("E_CONFLICT", "E_EXISTS", "E_NOT_FOUND", "E_NOT_RUNNING", "E_NOT_STOPPED"):
+        if code in ("E_CONFLICT", "E_EXISTS", "E_NOT_FOUND", "E_NOT_RUNNING", "E_NOT_STOPPED", "E_UNCHANGED"):
             return 409
-        if code in ("E_RELOAD_FAILED_ROLLED_BACK", "E_ROLLBACK_FAILED", "E_INTERNAL", "E_PEER"):
+        if code in ("E_RELOAD_FAILED_ROLLED_BACK", "E_RESTART_FAILED_ROLLED_BACK", "E_ROLLBACK_FAILED", "E_INTERNAL", "E_PEER"):
             return 500
         return 400
 
     def decoyd_change(self, user, data):
         """Per decoy change: the admin re-enters the password every time.
-        The address block (NETWORK) is not editable here: no op touches it."""
+        set_network changes the address block and interface; the helper
+        validates it again and restarts the whole sensor."""
         a = self.app
         op, args, pw = data.get("op"), data.get("args"), data.get("password")
         if op not in decoyclient.CHANGE_OPS or not isinstance(args, dict) or set(data) - {"op", "args", "password"}:
             return self.err(400, "bad request")
         ip = args.get("ip")
-        if ip is None and isinstance(args.get("decoy"), dict):
+        if op == "set_network":
+            ip = None
+        elif ip is None and isinstance(args.get("decoy"), dict):
             ip = args["decoy"].get("ip")
         kind = pmstore.reserved_address(ip, pmstore.parse_networks(
             pmstore.read_default().get("NETWORK", ""))) if isinstance(ip, str) else None
@@ -383,12 +386,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             pmstore.audit(user, "decoy-" + op, "wrong password", ok=False)
             return self.err(403, "password is wrong")
         a.lockout.success(key, src)
-        target = re.sub(r'[^0-9.]', "", str(ip))[:15] if ip is not None else "all"
+        if op == "set_network":
+            target = "%s on %s" % (re.sub(r'[^0-9./]', "", str(args.get("network")))[:18],
+                                   re.sub(r'[^A-Za-z0-9_.-]', "", str(args.get("interface")))[:15])
+        else:
+            target = re.sub(r'[^0-9.]', "", str(ip))[:15] if ip is not None else "all"
         pmstore.audit(user, "decoy-" + op, "requested %s" % target)
         r = decoyclient.call(op, args, user)
         if r["ok"]:
-            pmstore.audit(user, "decoy-" + op, "%s applied%s" % (
-                target, ", sensor reloaded" if r.get("reloaded") else ", sensor not running"))
+            extra = ""
+            if op == "set_network":
+                d = (r.get("result") or {}).get("dropped") or []
+                extra = ", dropped settings for %s" % (" ".join(d)[:400] or "none")
+            pmstore.audit(user, "decoy-" + op, "%s applied%s%s" % (
+                target, ", sensor reloaded" if r.get("reloaded") else ", sensor not running", extra))
             return self.send_json(200, r)
         e = r.get("error") or {}
         pmstore.audit(user, "decoy-" + op, "%s refused %s%s" % (

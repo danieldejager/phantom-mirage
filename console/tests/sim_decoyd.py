@@ -1,7 +1,8 @@
 """A stand-in for pm-decoyd for console tests and screenshots.
 
 It speaks the helper's socket protocol and runs the helper's own
-validation and operation code (apply_op, op_list, op_options, render from
+validation and operation code (apply_op, op_list, op_options, render,
+and for set_network check_network, retarget_store, rewrite_default from
 decoyd/pm-decoyd.py) on an in-memory store, and writes the rendered
 decoys.conf where the console reads it. No root, verify or systemctl:
 those parts are covered by decoyd/tests.
@@ -11,6 +12,7 @@ import ipaddress
 import json
 import os
 import socket
+import tempfile
 import threading
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
@@ -21,7 +23,15 @@ D.P["services"] = os.path.join(REPO, "decoyd", "decoy-services.json")
 
 
 class SimHelper:
-    def __init__(self, sock_path, conf_out, network, binds=(), pers=("ws2022-fwoff", "linux-6")):
+    def __init__(self, sock_path, conf_out, network, binds=(), pers=("ws2022-fwoff", "linux-6"),
+                 iface="eth0", info=None, default_path=None):
+        # info: what host_info() would return; default_path: the
+        # /etc/default/phantom-mirage stand in that set_network rewrites
+        self.iface, self.default_path = iface, default_path
+        self.info = info or {"ifaces": {}, "gateways": []}
+        self.sys = tempfile.mkdtemp()
+        for n in self.info["ifaces"]:
+            os.mkdir(os.path.join(self.sys, n))
         self.path, self.conf_out = sock_path, conf_out
         self.nets = [ipaddress.IPv4Network(network, strict=False)]
         self.binds, self.pers = set(binds), list(pers)
@@ -48,6 +58,31 @@ class SimHelper:
             return D.op_list(self.store, self.nets, self.binds)
         if op == "options":
             return D.op_options(self.pers, self.svcs)
+        if op == "netinfo":
+            return {"network": " ".join(map(str, self.nets)), "interface": self.iface,
+                    "interfaces": [{"name": n, "addrs": [str(a) for a in x["addrs"]]}
+                                   for n, x in sorted(self.info["ifaces"].items()) if not x["lo"] and x["addrs"]],
+                    "gateways": [str(g) for g in self.info["gateways"]], "min_prefix": D.MIN_PREFIX}
+        if op == "set_network":
+            D._keys(args, "args", ("network", "interface", "expect"))
+            D._keys(args["expect"], "args.expect", ("network", "interface"))
+            if args["expect"] != {"network": " ".join(map(str, self.nets)), "interface": self.iface}:
+                raise D.Err("E_CONFLICT", "args.expect", "the address block changed since you loaded it")
+            D.P["sysfs_net"] = self.sys
+            net, iface = D.check_network(args["network"], args["interface"], self.info)
+            if [net] == self.nets and iface == self.iface:
+                raise D.Err("E_UNCHANGED", "args.network", "that is already the address block")
+            new, dropped = D.retarget_store(self.store, net)
+            if self.default_path:
+                with open(self.default_path) as f:
+                    t = D.rewrite_default(f.read(), str(net), iface)
+                with open(self.default_path, "w") as f:
+                    f.write(t)
+            with open(self.conf_out, "w") as f:
+                f.write(D.render(new, self.svcs))
+            self.store, self.nets, self.iface = new, [net], iface
+            return {"network": str(net), "interface": iface, "dropped": dropped, "farpd": False,
+                    "restarted": self.reloaded}
         new, res = D.apply_op(op, args, self.store, self.nets, self.binds, self.pers, self.svcs)
         text = D.render(new, self.svcs)
         with open(self.conf_out, "w") as f:
@@ -74,7 +109,7 @@ class SimHelper:
                 try:
                     r["result"] = self.handle(q)
                     r["ok"] = True
-                    r["reloaded"] = q["op"] not in ("list", "options") and self.reloaded
+                    r["reloaded"] = q["op"] not in ("list", "options", "netinfo") and self.reloaded
                 except D.Err as e:
                     r["error"] = {"code": e.code, "field": e.field, "message": e.message}
                 c.sendall((json.dumps(r) + "\n").encode())

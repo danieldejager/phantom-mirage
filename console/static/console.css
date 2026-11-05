@@ -101,3 +101,7 @@ table.kv th{text-align:left;width:34%;font-weight:normal;color:var(--tm)}
 :root[data-theme=light]{--istop:#C4152E;--istart:#0F7536}
 @media(prefers-color-scheme:light){:root:not([data-theme=dark]){--istop:#C4152E;--istart:#0F7536}}
 button.ssi{padding:4px 8px;line-height:0}button.ssi svg{vertical-align:middle}button.ssi.stop{color:var(--istop)}button.ssi.start{color:var(--istart)}
+/* Network section: the address block and interface above the Decoys table */
+.netcard{margin-bottom:18px}.netrow{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-end}.netrow .v{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:18px}.netbtn{margin-left:auto}
+.warnbox{border:1px solid var(--twarn);border-left-width:4px;border-radius:6px;padding:10px 12px;margin:10px 0;font-size:13px;line-height:1.45}
+#nhint{min-height:1.2em;margin:4px 0}
