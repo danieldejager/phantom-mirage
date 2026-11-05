@@ -171,8 +171,8 @@ class TestLoginPage(unittest.TestCase):
     def test_splash_content(self):
         t = login_page()
         self.assertNotIn("{{", t)
-        self.assertIn('class="lg-dark" src="/static/phantom-mirage-logo-dark.png"', t)
-        self.assertIn('class="lg-light" src="/static/phantom-mirage-logo-light.png"', t)
+        self.assertIn('<div class="slogo"><span class="chip"><img src="/static/phantom-mirage-mark.png"', t)
+        self.assertIn('<span class="mwm swm" role="img" aria-label="Mirage"></span>', t)
         self.assertIn('<h1 class="sname">Mirage I</h1>', t)
         self.assertIn('<p class="slegal">Phantom Technologies</p>', t)
         self.assertIn("\u00a9 2026 Phantom Technologies. All rights reserved.", t)
@@ -199,7 +199,7 @@ class TestLoginPage(unittest.TestCase):
     def test_font_same_origin(self):
         css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
         urls = re.findall(r'url\(\s*["\']?([^"\')]+)', css)
-        self.assertEqual(urls, ["/static/fonts/Aldrich-Regular.woff2"])
+        self.assertEqual(urls, ["/static/fonts/Aldrich-Regular.woff2"] + ["/static/mirage-wordmark.svg"] * 2)
         self.assertIn("font-family:Aldrich", css)
         self.assertNotRegex(css, r'(?i)jetbrains|rajdhani')
         with open(os.path.join(STATIC, "fonts", "Aldrich-Regular.woff2"), "rb") as f:
@@ -364,3 +364,23 @@ class TestNoCompanySuffix(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWordmark(unittest.TestCase):
+    def test_header_and_sidebar(self):
+        t = login_page()
+        head = re.search(r'<header>.*?</header>', t, re.S).group(0)
+        self.assertIn('<img src="/static/phantom-mirage-mark.png"', head)
+        self.assertIn('<span class="hlegal note">Phantom Technologies</span>', head)
+        self.assertNotIn('class="wm"', head)
+        self.assertNotIn("Mirage", head)
+        self.assertIn('<div class="nbrand brand"><span class="mwm" role="img" aria-label="Mirage"></span></div>', t)
+
+    def test_svg_asset(self):
+        svg = open(os.path.join(STATIC, "mirage-wordmark.svg"), encoding="utf-8").read()
+        self.assertTrue(svg.startswith('<svg xmlns="http://www.w3.org/2000/svg"'))
+        self.assertIn('fill="currentColor"', svg)
+        self.assertNotRegex(svg, r'(?i)<script|<text|<image|href=|\bon[a-z]+=|font')
+        self.assertIn("mirage-wordmark.svg", pmc.STATIC_FILES)
+        self.assertIn("console/static/mirage-wordmark.svg", open(os.path.join(REPO, "debian", "rules"), encoding="utf-8").read())
+        self.assertIn("static/mirage-wordmark.svg", open(os.path.join(REPO, ".github", "workflows", "build.yml")).read())
