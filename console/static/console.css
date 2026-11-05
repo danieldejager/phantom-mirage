@@ -1,23 +1,18 @@
-
-/* Themes (#141), exact values from the brand palettes: dark = option 2
-   "Afterburner" (Night #07061A, Panel #15123A, Violet #7B61FF, Haze #B04FD6,
-   Ember #FF7A2F, Spark #FFC857, Text #F3F0FF; button gradient #6C56E0 (was #A58BFF, darkened so white text is 5.2:1) to
-   #5B3FE0), light = option 4 "Mach Light" (Cloud #F5F4FB, White #FFFFFF,
-   Indigo #2A2270, Violet #5B45D6, Crimson #D6283E, Flame #FF8A2A, Ink #14102E;
-   button gradient #6C56E0 to #2A2270). Borders/hover are mixes of those.
-   --g (ok green) has no palette equivalent and is unchanged. */
-:root{color-scheme:dark;--bg:#07061A;--p:#15123A;--t:#F3F0FF;--m:#B04FD6;--a:#7B61FF;--a2:#5B3FE0;--g:#2ea043;--y:#FFC857;--r:#FF7A2F;--b1:#6C56E0;--b2:#5B3FE0;--tile:#F5F4FB;--sbg:#0B0C0F;
---b:color-mix(in srgb,var(--a) 28%,var(--p));--h:color-mix(in srgb,var(--a) 16%,var(--p));
---tm:color-mix(in srgb,var(--m) 75%,var(--t));--ta:color-mix(in srgb,var(--a) 75%,var(--t));--tok:var(--g);--twarn:var(--y);--bt:#07061A}
+/* Carbon theme tokens: dark = carbon page, flat near-black panels, silver-white
+   text (--t), muted silver (--m), cyan highlight (--a); light = the same cyan on
+   cool grey. Primary buttons use deep cyan (#0E7490, #155E75) so white text is
+   at least 5:1. --g, --y, --r are status tones checked for AA on --p. */
+:root{color-scheme:dark;--bg:#0B0D0F;--p:#101417;--t:#E4EAEE;--m:#9DABB5;--a:#22D3EE;--a2:#0E9FBF;--g:#3FD27A;--y:#F2C14E;--r:#FF6B6B;--b1:#0E7490;--b2:#155E75;--tile:#F5F4FB;--sbg:#0B0C0F;
+--b:color-mix(in srgb,var(--a) 34%,var(--p));--h:color-mix(in srgb,var(--a) 10%,var(--p));
+--tm:var(--m);--ta:var(--a);--tok:var(--g);--twarn:var(--y);--bt:#0B0D0F}
 /* theme switch: <html data-theme=light|dark> set by theme.js from localStorage;
-   no attribute = Auto (follow prefers-color-scheme). --tm/--ta/--tok/--twarn/--bt
-   are text tones mixed from the palette for WCAG AA contrast on --bg and --p. */
-:root[data-theme=light]{color-scheme:light;--bg:#F5F4FB;--p:#FFFFFF;--t:#14102E;--m:#5B45D6;--a:#5B45D6;--a2:#2A2270;--y:#FF8A2A;--r:#D6283E;--b1:#6C56E0;--b2:#2A2270;--tile:transparent;--sbg:var(--bg);
---b:color-mix(in srgb,var(--a) 22%,var(--p));--h:color-mix(in srgb,var(--a) 9%,var(--p));
---tm:var(--m);--ta:var(--a);--tok:color-mix(in srgb,var(--g) 70%,#000);--twarn:color-mix(in srgb,var(--y) 50%,#000);--bt:#FFFFFF}
-@media(prefers-color-scheme:light){:root:not([data-theme=dark]){color-scheme:light;--bg:#F5F4FB;--p:#FFFFFF;--t:#14102E;--m:#5B45D6;--a:#5B45D6;--a2:#2A2270;--y:#FF8A2A;--r:#D6283E;--b1:#6C56E0;--b2:#2A2270;--tile:transparent;--sbg:var(--bg);
---b:color-mix(in srgb,var(--a) 22%,var(--p));--h:color-mix(in srgb,var(--a) 9%,var(--p));
---tm:var(--m);--ta:var(--a);--tok:color-mix(in srgb,var(--g) 70%,#000);--twarn:color-mix(in srgb,var(--y) 50%,#000);--bt:#FFFFFF}}
+   no attribute = Auto (follow prefers-color-scheme). */
+:root[data-theme=light]{color-scheme:light;--bg:#ECEFF2;--p:#FFFFFF;--t:#0F1519;--m:#4A5864;--a:#0E7490;--a2:#155E75;--g:#2ea043;--y:#E08A00;--r:#C62828;--b1:#0E7490;--b2:#155E75;--tile:transparent;--sbg:var(--bg);
+--b:color-mix(in srgb,var(--a) 30%,var(--p));--h:color-mix(in srgb,var(--a) 8%,var(--p));
+--tm:var(--m);--ta:var(--a);--tok:color-mix(in srgb,var(--g) 70%,#000);--twarn:color-mix(in srgb,var(--y) 55%,#000);--bt:#FFFFFF}
+@media(prefers-color-scheme:light){:root:not([data-theme=dark]){color-scheme:light;--bg:#ECEFF2;--p:#FFFFFF;--t:#0F1519;--m:#4A5864;--a:#0E7490;--a2:#155E75;--g:#2ea043;--y:#E08A00;--r:#C62828;--b1:#0E7490;--b2:#155E75;--tile:transparent;--sbg:var(--bg);
+--b:color-mix(in srgb,var(--a) 30%,var(--p));--h:color-mix(in srgb,var(--a) 8%,var(--p));
+--tm:var(--m);--ta:var(--a);--tok:color-mix(in srgb,var(--g) 70%,#000);--twarn:color-mix(in srgb,var(--y) 55%,#000);--bt:#FFFFFF}}
 *{box-sizing:border-box}body{margin:0;font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--t)}
 header{display:flex;align-items:center;gap:12px;padding:7px 16px;border-bottom:1px solid var(--b);background:var(--p)}
 header b{font-size:16px}.tag{border:1px solid var(--a);color:var(--ta);border-radius:10px;padding:1px 8px;font-size:11px}
@@ -172,3 +167,31 @@ nav{display:flex;flex-direction:column}
 .ddot{fill:var(--a);stroke:var(--p);stroke-width:2.5}
 .dtipbg{fill:var(--p);stroke:var(--b);stroke-width:1;filter:drop-shadow(0 4px 10px #0005)}
 .dtipt{fill:var(--tm);font-size:15px}.dtipn{fill:var(--t);font-size:16px;font-weight:700}
+
+/* Carbon cockpit styling. The carbon weave is pure CSS gradients on the page
+   background only (no images, fonts or network fetches); panels stay flat. */
+:root{--cf1:#141719;--cf2:#1B1F22;--cf3:#0F1214}
+body,#login{background-color:var(--bg)}
+:root:not([data-theme=light]) body,:root:not([data-theme=light]) #login{background-image:
+linear-gradient(27deg,var(--cf1) 5px,transparent 5px),linear-gradient(207deg,var(--cf1) 5px,transparent 5px),
+linear-gradient(27deg,var(--cf2) 5px,transparent 5px),linear-gradient(207deg,var(--cf2) 5px,transparent 5px),
+linear-gradient(90deg,var(--cf3) 10px,transparent 10px),
+linear-gradient(var(--cf3) 25%,var(--bg) 25%,var(--bg) 50%,transparent 50%,transparent 75%,var(--cf2) 75%,var(--cf2));
+background-size:20px 20px;background-position:0 5px,10px 0,0 10px,10px 5px,0 0,0 0}
+@media(prefers-color-scheme:light){:root:not([data-theme=dark]) body,:root:not([data-theme=dark]) #login{background-image:none}}
+/* flat panels with a thin cyan edge and a hairline highlight on top */
+.card,table,.modal>div,.side,.dmenu,.pmenu{border-radius:3px}
+.card{box-shadow:inset 0 1px 0 color-mix(in srgb,var(--a) 55%,transparent)}
+header,nav,.afoot{border-color:color-mix(in srgb,var(--a) 40%,var(--p))}
+/* telemetry labels: small uppercase, letter-spaced */
+h2{text-transform:uppercase;letter-spacing:.14em;font-size:17px;font-weight:600}
+.card .k,th,table.kv th,.side label,.slegal{text-transform:uppercase;letter-spacing:.1em;font-size:11px}
+table.kv th{font-size:11px}th{color:var(--ta)}
+/* numbers and times line up like instrument readouts */
+td,.card .v,.kpi .big,.badge,.dtot,.bars .bval,.dtipn,input[type=number]{font-variant-numeric:tabular-nums}
+.kpi .big,.dtot{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.02em}
+code{font-family:ui-monospace,Menlo,Consolas,monospace}
+nav a.on{box-shadow:inset 2px 0 0 var(--a)}.d-right nav a.on{box-shadow:inset -2px 0 0 var(--a)}.d-top nav a.on{box-shadow:inset 0 -2px 0 var(--a)}
+#dline .line{stroke-width:1.75}#dline .grid{stroke-dasharray:2 4}
+button.pri{border-color:var(--a)}
+input:focus,select:focus,textarea:focus{outline:1px solid var(--a);outline-offset:0}

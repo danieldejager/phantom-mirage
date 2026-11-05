@@ -249,10 +249,10 @@ class TestLoginPage(unittest.TestCase):
 
     def test_themes(self):
         css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
-        for c in ("#07061A", "#15123A", "#7B61FF", "#F3F0FF"):     # Afterburner
+        for c in ("--bg:#0B0D0F", "--p:#101417", "--a:#22D3EE", "--t:#E4EAEE"):     # carbon dark
             self.assertIn(c, css)
         light = css[css.index("prefers-color-scheme:light"):]
-        for c in ("#F5F4FB", "#FFFFFF", "#5B45D6", "#14102E"):     # Mach Light
+        for c in ("#ECEFF2", "#FFFFFF", "#0E7490", "#0F1519"):     # light
             self.assertIn(c, light)
 
 
