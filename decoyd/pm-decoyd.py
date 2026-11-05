@@ -1259,9 +1259,18 @@ def _tool(*argv):
         return -1, ""
 
 
+# chronyc talks to chronyd over UDP on the loopback command port (monitoring
+# commands such as tracking and sources are allowed from localhost by
+# default). The default first try, the Unix socket in /run/chrony, cannot
+# work here: that directory is 0750 _chrony and the unit keeps no
+# CAP_DAC_OVERRIDE, so chronyc would fall back to UDP anyway, which
+# IPAddressDeny=any used to drop. pm-decoyd.service allows loopback only.
+CHRONYC_HOST = ("-h", "127.0.0.1")
+
+
 def chrony_sources():
     """[(name, state, stratum, reach)] from chronyc -n -c sources."""
-    rc, out = _tool(P["chronyc"], "-n", "-c", "sources")
+    rc, out = _tool(P["chronyc"], *CHRONYC_HOST, "-n", "-c", "sources")
     res = []
     for line in out.splitlines() if rc == 0 else ():
         f = line.split(",")
@@ -1270,18 +1279,34 @@ def chrony_sources():
     return res
 
 
-def chrony_tracking():
-    rc, out = _tool(P["chronyc"], "-n", "-c", "tracking")
-    f = out.strip().split(",") if rc == 0 else []
-    if len(f) < 14:
+def parse_tracking(out):
+    """The plain 'chronyc tracking' report. offset_s is the sensor clock
+    minus NTP time: positive when it says 'fast of NTP time'."""
+    d = {}
+    for line in out.splitlines():
+        k, sep, v = line.partition(":")
+        if sep:
+            d[k.strip()] = v.strip()
+    if "Reference ID" not in d or "Leap status" not in d:
         return None
-    try:
-        off = float(f[4])
-    except ValueError:
-        off = None
-    synced = f[0] != "00000000" and f[13].strip() != "Not synchronised"
-    return {"synced": synced, "reference": f[1] if synced else None, "stratum": _num(f[2]),
-            "offset_s": off, "leap": f[13].strip()}
+    m = re.match(r'^([0-9A-Fa-f]{8})\s*(?:\((.*)\))?$', d["Reference ID"])
+    refid, name = (m.group(1).upper(), (m.group(2) or "").strip()) if m else ("", "")
+    off = None
+    m = re.match(r'^([0-9.]+) seconds (fast|slow) of NTP time$', d.get("System time", ""))
+    if m:
+        off = float(m.group(1)) * (1 if m.group(2) == "fast" else -1)
+    leap = d["Leap status"]
+    synced = bool(refid) and refid != "00000000" and leap != "Not synchronised"
+    return {"synced": synced, "reference": (name or refid) if synced else None,
+            "stratum": _num(d.get("Stratum", "")), "offset_s": off, "leap": leap}
+
+
+def chrony_tracking():
+    rc, out = _tool(P["chronyc"], *CHRONYC_HOST, "tracking")
+    if rc != 0:
+        log(syslog.LOG_WARNING, "chronyc tracking failed (exit %d)" % rc)
+        return None
+    return parse_tracking(out)
 
 
 def timesyncd_status():

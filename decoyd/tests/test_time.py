@@ -2,7 +2,7 @@
 fake systemctl, chronyc and timedatectl, for both the chrony and the
 systemd-timesyncd paths: validation, the file written, restart of only the
 time service, verify, rollback, keep anyway, the crash journal and the
-systemctl allowlist. A real chrony run is ci/chrony-container-test.sh."""
+systemctl allowlist. No real chronyd is run here."""
 import json
 import os
 import unittest
@@ -26,6 +26,7 @@ exit 0
 
 FAKE_CHRONYC = r"""#!/bin/sh
 D=@D@
+echo "$*" >> "$D/chronyc_calls"
 case "$*" in
 *sources*) if [ -s "$D/reach" ]; then sed "s/@R@/$(cat "$D/reach")/" "$D/sources"; fi ;;
 *tracking*) cat "$D/tracking" ;;
@@ -42,7 +43,50 @@ esac
 
 CHRONY_CONF = ("confdir /etc/chrony/conf.d\n#pm-disabled pool ntp.ubuntu.com iburst\n"
                "sourcedir /run/chrony-dhcp\nsourcedir @SD@\n")
-TRACKING = "C0A80105,192.168.1.5,3,1762300000.1,-0.000123,0.00001,0.0001,1.2,0.01,0.1,0.002,0.001,64.0,Normal\n"
+TRACKING = """Reference ID    : C0A80105 (192.168.1.5)
+Stratum         : 3
+Ref time (UTC)  : Thu Nov 05 08:20:11 2026
+System time     : 0.000123000 seconds slow of NTP time
+Last offset     : -0.000000100 seconds
+RMS offset      : 0.000000100 seconds
+Frequency       : 1.200 ppm fast
+Residual freq   : +0.010 ppm
+Skew            : 0.100 ppm
+Root delay      : 0.002000000 seconds
+Root dispersion : 0.001000000 seconds
+Update interval : 64.0 seconds
+Leap status     : Normal
+"""
+# What chronyc tracking printed on an Ubuntu 26.04 arm64 VM before setup,
+# with chrony on its default NTS pools (the regression this pins down).
+TRACKING_UBUNTU = """Reference ID    : 5BBD5B70 (ntp-nts-2.ps6.canonical.com)
+Stratum         : 3
+Ref time (UTC)  : Thu Nov 05 08:29:41 2026
+System time     : 0.000747161 seconds fast of NTP time
+Last offset     : -0.000000672 seconds
+RMS offset      : 0.000000672 seconds
+Frequency       : 9.873 ppm fast
+Residual freq   : -0.000 ppm
+Skew            : 0.032 ppm
+Root delay      : 0.369115323 seconds
+Root dispersion : 0.003040781 seconds
+Update interval : 1036.9 seconds
+Leap status     : Normal
+"""
+TRACKING_UNSYNC = """Reference ID    : 00000000 ()
+Stratum         : 0
+Ref time (UTC)  : Thu Jan 01 00:00:00 1970
+System time     : 0.000000000 seconds fast of NTP time
+Last offset     : +0.000000000 seconds
+RMS offset      : 0.000000000 seconds
+Frequency       : 9.873 ppm fast
+Residual freq   : +0.000 ppm
+Skew            : 0.000 ppm
+Root delay      : 1.000000000 seconds
+Root dispersion : 1.000000000 seconds
+Update interval : 0.0 seconds
+Leap status     : Not synchronised
+"""
 TSS = ("       Server: 192.168.1.5 (192.168.1.5)\nPoll interval: 32s (min: 32s; max 34min 8s)\n"
        "         Leap: normal\n      Stratum: 3\n    Reference: C0A80101\n       Offset: -1.234ms\n"
        " Packet count: 2\n")
@@ -121,12 +165,42 @@ class TestChrony(TimeBase):
                          ("chrony", "chrony.service", True, ["192.168.1.5"]))
         self.assertEqual((t["synced"], t["reference"], t["stratum"], t["offset_s"], t["ready"]),
                          (True, "192.168.1.5", 3, -0.000123, None))
+        for c in self.r("chronyc_calls").splitlines():
+            self.assertTrue(c.startswith("-h 127.0.0.1 "), c)
         self.assertEqual(t["sources"][0]["reach"], "377")
 
     def test_not_synced(self):
-        self.w("tracking", "00000000,,0,0.0,0.0,0,0,0,0,0,1,1,0,Not synchronised\n")
+        self.w("tracking", TRACKING_UNSYNC)
         t = self.req("timeinfo")["result"]
-        self.assertEqual((t["synced"], t["reference"]), (False, None))
+        self.assertEqual((t["synced"], t["reference"], t["stratum"], t["offset_s"]), (False, None, 0, 0.0))
+
+    def test_ubuntu_default_pools_before_setup(self):
+        # setup not run: no Mirage server file, Ubuntu NTS pools active
+        os.unlink(self.src)
+        self.w("chrony/sources.d/ubuntu-ntp-pools.sources", "pool 1.ntp.ubuntu.com iburst nts\n")
+        self.w("tracking", TRACKING_UBUNTU)
+        self.w("sources", "^,*,91.189.91.112,2,10,@R@,40,0.0001,0.0001,0.02\n")
+        t = self.req("timeinfo")["result"]
+        self.assertEqual((t["synced"], t["reference"], t["stratum"], t["servers"]),
+                         (True, "ntp-nts-2.ps6.canonical.com", 3, []))
+        self.assertAlmostEqual(t["offset_s"], 0.000747161)
+        self.assertEqual([x["name"] for x in t["sources"]], ["91.189.91.112"])
+        self.assertIn("ubuntu-ntp-pools.sources", t["ready"])
+
+    def test_tracking_parse(self):
+        self.assertAlmostEqual(D.parse_tracking(TRACKING_UBUNTU)["offset_s"], 0.000747161)
+        slow = TRACKING_UBUNTU.replace("seconds fast of NTP", "seconds slow of NTP")
+        self.assertAlmostEqual(D.parse_tracking(slow)["offset_s"], -0.000747161)
+        self.assertTrue(D.parse_tracking(slow)["synced"])
+        noname = TRACKING_UBUNTU.replace("5BBD5B70 (ntp-nts-2.ps6.canonical.com)", "5BBD5B70 ()")
+        self.assertEqual(D.parse_tracking(noname)["reference"], "5BBD5B70")
+        self.assertIsNone(D.parse_tracking(""))
+        self.assertIsNone(D.parse_tracking("506 Cannot talk to daemon\n"))
+
+    def test_chronyc_fails(self):
+        self.w("chronyc", "#!/bin/sh\necho '506 Cannot talk to daemon' >&2\nexit 1\n")
+        t = self.req("timeinfo")["result"]
+        self.assertEqual((t["synced"], t["stratum"], t["sources"]), (False, None, []))
 
     def test_apply(self):
         r = self.set(["192.168.1.6", "ntp.lan"])
@@ -260,3 +334,13 @@ class TestAllowlist(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUnitFile(unittest.TestCase):
+    def test_chronyc_can_reach_loopback(self):
+        with open(os.path.join(os.path.dirname(__file__), "..", "..", "debian", "pm-decoyd.service")) as f:
+            u = f.read()
+        lines = [l.strip() for l in u.splitlines() if not l.startswith("#")]
+        self.assertIn("IPAddressDeny=any", lines)
+        self.assertIn("IPAddressAllow=localhost", lines)
+        self.assertEqual([l for l in lines if l.startswith("IPAddressAllow=")], ["IPAddressAllow=localhost"])
