@@ -440,7 +440,7 @@ class Server(unittest.TestCase):
         self.assertIn(":root[data-theme=light]{", css)
         self.assertIn("@media(prefers-color-scheme:light){:root:not([data-theme=dark]){", css)
         self.assertIn(".themetg{", css)
-        self.assertIn("--b1:#6C56E0;", css)       # dark primary button: white text 5.2:1
+        self.assertIn("--b1:#0E7490;", css)       # dark primary button: white text 5.4:1
         self.assertNotIn("#A58BFF;", css)
 
     def test_static_only_exact_names(self):
