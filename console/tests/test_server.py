@@ -338,6 +338,45 @@ class Server(unittest.TestCase):
         js = open(os.path.join(os.path.dirname(__file__), "..", "static", "console.js")).read()
         self.assertIn("try { profSet(); } catch (e) { bootFail(e); return; }", js)
 
+    def test_timezones_endpoint_and_validation(self):
+        """All IANA zones are listed for the Settings drop-down and only those save."""
+        self.assertEqual(Client().req("GET", "/api/timezones")[0], 401)
+        c = Client()
+        _, j = c.login()
+        st, z = c.req("GET", "/api/timezones")
+        self.assertEqual(st, 200)
+        zs = z["zones"]
+        self.assertEqual(zs, sorted(zs))
+        for n in ("UTC", "Australia/Melbourne", "Pacific/Auckland", "Asia/Kolkata", "America/St_Johns"):
+            self.assertIn(n, zs)
+        self.assertGreater(len(zs), 300)
+        self.assertFalse([n for n in zs if n.startswith(("posix/", "right/"))])
+        _, old = c.req("GET", "/api/settings")
+        try:
+            for n in ("Asia/Kolkata", "America/St_Johns", "UTC", "Pacific/Chatham"):
+                st, _ = c.req("POST", "/api/settings", {"timezone": n}, j["csrf"])
+                self.assertEqual(st, 200, n)
+                self.assertEqual(c.req("GET", "/api/settings")[1]["timezone"], n)
+                self.assertEqual(c.req("GET", "/api/status")[1]["timezone"], n)
+            for bad in ("Mars/Olympus", "America/St_Johnson", "../etc", "Australia/Melbourne "):
+                st, e = c.req("POST", "/api/settings", {"timezone": bad}, j["csrf"])
+                self.assertEqual(st, 400, bad)
+                self.assertEqual(e.get("error"), "bad time zone")
+        finally:
+            c.req("POST", "/api/settings", {"timezone": old["timezone"]}, j["csrf"])
+
+    def test_timezone_dropdown_markup(self):
+        """Settings uses a labelled native select with UTC offsets, applied live."""
+        js = open(os.path.join(os.path.dirname(__file__), "..", "static", "console.js")).read()
+        self.assertIn('<select id="stz" aria-label="Time zone">', js)
+        self.assertIn('<label for="stz">Time zone</label>', js)
+        self.assertNotIn('<input id="stz"', js)
+        self.assertIn('"/api/timezones"', js)
+        self.assertIn('Intl.supportedValuesOf("timeZone")', js)
+        self.assertIn('timeZoneName: "longOffset"', js)
+        self.assertNotIn(".toLocaleString()", js)
+        self.assertNotIn(".toLocaleTimeString()", js)
+
     def test_profile_menu(self):
         """The profile row sits at the bottom of the menu pane and opens a
         menu with the theme switch and Sign out; the old header controls are gone."""

@@ -94,8 +94,10 @@ async function load(p) {
   if (p === "Decoys") data.dd = await api("/api/decoyd/list").then(j => ({map: Object.fromEntries(j.result.decoys.map(x => [x.ip, x]))}), e => { if (e.message === "signed out") throw e; return {error: e.message}; });
   if (p === "Alerts" || p === "Dashboard") data.alerts = await api("/api/alerts");
   if (p === "Activity" && !paused) data.activity = (await api("/api/activity")).events;
+  if (p === "Settings") await zonesLoad();
   if (p === "Settings") { data.settings = await api("/api/settings"); data.audit = (await api("/api/audit")).audit; data.alerts = await api("/api/alerts"); }
   if (!data.status) data.status = await api("/api/status");
+  tzSet(data.status.timezone);
   drift();
 }
 function drift() {
@@ -144,8 +146,31 @@ function render() { nav(); $("main").innerHTML = pages[cur](); if (cur === "Acti
 function card(k, v) { return `<div class="card"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`; }
 function dot(c) { return `<span class="dot ${c}"></span>`; }
 function svc(s) { return s === "active" ? dot("g") + "Running" : s === "inactive" ? dot("r") + "Stopped" : s === "failed" ? dot("r") + "Failed" : dot("y") + esc(s || "unknown"); }
-function when(ts) { if (!ts) return "never"; const t = Date.parse(ts); if (isNaN(t)) return esc(ts); const s = Math.round((Date.now() - t) / 1000); return s < 60 ? s + " s ago" : s < 3600 ? Math.round(s / 60) + " min ago" : s < 86400 ? Math.round(s / 3600) + " h ago" : new Date(t).toLocaleString(); }
-function tm(ts) { const t = Date.parse(ts); return isNaN(t) ? esc(ts) : esc(new Date(t).toLocaleString()); }
+/* display time zone: the sensor's configured IANA zone, applied live */
+let TZ = "";
+function tzSet(z) { try { new Intl.DateTimeFormat([], {timeZone: z}); TZ = z; } catch (e) { TZ = ""; } }
+function tzo(o) { return TZ ? Object.assign({timeZone: TZ}, o || {}) : (o || {}); }
+function tzOff(z, d) {
+  try {
+    const p = new Intl.DateTimeFormat("en-US", {timeZone: z, timeZoneName: "longOffset"}).formatToParts(d || new Date()).find(x => x.type === "timeZoneName");
+    const v = p ? p.value.replace("GMT", "") : ""; return "UTC" + (v || "+00:00");
+  } catch (e) { return "UTC"; }
+}
+let ZONES = null;
+async function zonesLoad() {
+  if (ZONES) return ZONES;
+  try { ZONES = (await api("/api/timezones")).zones; } catch (e) { if (e.message === "signed out") throw e; }
+  if (!ZONES || !ZONES.length) { try { ZONES = Intl.supportedValuesOf("timeZone"); } catch (e) { ZONES = []; } if (!ZONES.includes("UTC")) ZONES = ZONES.concat("UTC"); }
+  return ZONES;
+}
+function tzSelect(cur) {
+  const zs = (ZONES || []).slice(); if (cur && !zs.includes(cur)) zs.push(cur);
+  const now = new Date(), g = {};
+  for (const z of zs) { const r = z.includes("/") ? z.split("/")[0] : "Other"; (g[r] = g[r] || []).push(z); }
+  return `<select id="stz" aria-label="Time zone">` + Object.keys(g).sort().map(r => `<optgroup label="${esc(r)}">` + g[r].sort().map(z => `<option value="${esc(z)}"${z === cur ? " selected" : ""}>${esc(z.replace(/_/g, " "))} (${tzOff(z, now)})</option>`).join("") + "</optgroup>").join("") + "</select>";
+}
+function when(ts) { if (!ts) return "never"; const t = Date.parse(ts); if (isNaN(t)) return esc(ts); const s = Math.round((Date.now() - t) / 1000); return s < 60 ? s + " s ago" : s < 3600 ? Math.round(s / 60) + " min ago" : s < 86400 ? Math.round(s / 3600) + " h ago" : new Date(t).toLocaleString([], tzo()); }
+function tm(ts) { const t = Date.parse(ts); return isNaN(t) ? esc(ts) : esc(new Date(t).toLocaleString([], tzo())); }
 
 function Dashboard() { return dashMetrics() + sysStatus(); }
 function sysStatus() {
@@ -154,7 +179,7 @@ function sysStatus() {
   return `<section class="sys" aria-labelledby="sysh"><h2 id="sysh">System status</h2><div class="cards">
 ${card("Sensor", esc(s.sensor_name))}${card("Phantom Mirage service", svc(sv["phantom-mirage"]))}${card("farpd (ARP responder)", svc(sv.farpd))}${card("Console firewall", svc(sv["phantom-mirage-firewall"]))}
 ${card("Health", health)}${card("Interface", esc(s.interface || "-"))}${card("Decoy address block", esc(s.network || "-"))}${card("Open alerts", s.open_alerts)}
-${card("Last activity", when(s.last_activity))}${card("Sensor clock", esc(new Date(s.server_time_ms).toLocaleString()) + `<div class="note">source: ${esc(s.time_source)}${s.ntp_server ? " " + esc(s.ntp_server) : ""}; zone ${esc(s.timezone)}</div>`)}</div>
+${card("Last activity", when(s.last_activity))}${card("Sensor clock", esc(new Date(s.server_time_ms).toLocaleString([], tzo())) + `<div class="note">source: ${esc(s.time_source)}${s.ntp_server ? " " + esc(s.ntp_server) : ""}; zone ${esc(s.timezone)}</div>`)}</div>
 <p class="note">Start, stop and reconfigure the sensor on its terminal (<code>sudo phantom-mirage-setup</code>, <code>systemctl</code>). All data stays on the sensor; no outbound connections.</p>
 <p class="note">Console certificate SHA-256: <code>${esc(s.cert_sha256)}</code> · version ${esc(s.version)}</p></section>`;
 }
@@ -247,7 +272,7 @@ function tipBind() {
     });
   }
 }
-function hm(t) { return new Date(t).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}); }
+function hm(t) { return new Date(t).toLocaleTimeString([], tzo({hour: "2-digit", minute: "2-digit"})); }
 /* Drill down from a Dashboard chart part to Activity with matching filters */
 function drill(el) {
   const k = el.dataset.drill, v = el.dataset.v || "";
@@ -316,7 +341,7 @@ function dashUpdate() {
   }
   DPROTO.forEach((p, i) => { const c = $("dseg" + p); if (pc[i]) c.setAttribute("tabindex", "0"); else c.removeAttribute("tabindex"); });
   $("dline").setAttribute("aria-label", "Connections over the last hour, " + conn.length + " in total, peak " + Math.max(...b) + " in 5 minutes");
-  $("dlinet").innerHTML = "<caption>Connections per 5 minute bucket</caption><tr><th>Bucket start</th><th>Connections</th></tr>" + b.map((v, i) => `<tr><td>${esc(new Date(t0 + i * bw).toLocaleTimeString())}</td><td>${v}</td></tr>`).join("");
+  $("dlinet").innerHTML = "<caption>Connections per 5 minute bucket</caption><tr><th>Bucket start</th><th>Connections</th></tr>" + b.map((v, i) => `<tr><td>${esc(new Date(t0 + i * bw).toLocaleTimeString([], tzo()))}</td><td>${v}</td></tr>`).join("");
   /* protocol donut */
   const tot = pc.reduce((a, c) => a + c, 0);
   $("dtot").textContent = String(tot);
@@ -330,7 +355,7 @@ function dashUpdate() {
   barsUpdate("dbs", topN(rows, "src"), "Top source addresses");
   /* live pulse: restart the beat on each refresh */
   const l = $("dlive"); l.classList.remove("beat"); void l.getBoundingClientRect(); l.classList.add("beat");
-  $("dlivet").textContent = "Live · updated " + new Date().toLocaleTimeString();
+  $("dlivet").textContent = "Live · updated " + new Date().toLocaleTimeString([], tzo());
 }
 function Decoys() {
   const d = data.decoys, dd = data.dd || {};
@@ -636,7 +661,7 @@ function csv() {
 function Settings() {
   const c = data.settings;
   return `<h2>Settings</h2><div class="u-wide cards">
-<div class="card"><div class="k">Retention and display</div><p>Alerts kept for <input id="sret" type="number" min="1" max="3650" value="${esc(c.alert_retention_days)}" class="u-w90"> days</p><p>Time zone <input id="stz" value="${esc(c.timezone)}"></p><button class="pri" data-act="savesettings">Save</button><div class="err" id="serr"></div></div>
+<div class="card"><div class="k">Retention and display</div><p>Alerts kept for <input id="sret" type="number" min="1" max="3650" value="${esc(c.alert_retention_days)}" class="u-w90"> days</p><p><label for="stz">Time zone</label> ${tzSelect(c.timezone)}</p><p class="note">Times across the console use this zone.</p><button class="pri" data-act="savesettings">Save</button><div class="err" id="serr"></div></div>
 <div class="card"><div class="k">Time source</div><p>${c.time_source === "ntp" ? "NTP server on the local network: <code>" + esc(c.ntp_server) + "</code>" : "Sensor clock set from the admin's browser at each sign-in"}</p><p class="note">Warns when the sensor clock is more than ${esc(c.drift_warn_seconds)} s off. Change it on the sensor: <code>sudo phantom-mirage-setup --reconfigure-console</code>.</p></div>
 <div class="card"><div class="k">Service</div><p class="note">Console on https://127.0.0.1:${esc(c.port)} (sensor ${esc(c.sensor_name)}). Reach it with <code>ssh -L ${esc(c.port)}:127.0.0.1:${esc(c.port)} user@sensor</code>. Uninstall on the sensor: <code>sudo phantom-mirage-uninstall</code> (asks first; wipes all console data).</p></div></div>
 <h2 class="u-mt18">Audit log</h2><div class="tw"><table><tr><th>Time</th><th>Who</th><th>Action</th><th>Detail</th><th>Result</th></tr>${data.audit.map(a => `<tr><td>${tm(a.ts)}</td><td>${esc(a.actor)}</td><td>${esc(a.action)}</td><td class="wr">${esc(a.detail)}</td><td>${a.ok ? '<span class="ok">ok</span>' : '<span class="bad">refused</span>'}</td></tr>`).join("")}</table></div>`;
@@ -676,7 +701,7 @@ document.addEventListener("click", e => {
     case "winclear": F.from = F.to = 0; $("fwinrow").innerHTML = ""; rt(); $("fsrc").focus(); break;
     case "fclear": clearTimeout(fT); F = {src: "", decoy: "", proto: "", event: "", from: 0, to: 0}; render(); break;
     case "csv": clearTimeout(fT); if ($("fsrc")) F.src = $("fsrc").value; rt(); csv(); break;
-    case "savesettings": act(async () => { $("serr").textContent = ""; try { await api("/api/settings", {alert_retention_days: +$("sret").value, timezone: $("stz").value.trim()}); go("Settings"); } catch (er) { $("serr").textContent = er.message; } }); break;
+    case "savesettings": act(async () => { $("serr").className = "err"; $("serr").textContent = ""; try { await api("/api/settings", {alert_retention_days: +$("sret").value, timezone: $("stz").value.trim()}); const z = $("stz").value.trim(); if (data.status) data.status.timezone = z; tzSet(z); await go("Settings"); $("serr").className = "ok"; $("serr").textContent = "Saved. Times now shown in " + z + "."; } catch (er) { $("serr").textContent = er.message; } }); break;
   }
 });
 let fT = null;

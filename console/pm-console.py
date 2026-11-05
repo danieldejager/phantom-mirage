@@ -16,6 +16,10 @@ import sys
 import threading
 import time
 import urllib.parse
+try:
+    import zoneinfo
+except ImportError:  # pragma: no cover
+    zoneinfo = None
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import branding  # noqa: E402
@@ -48,6 +52,25 @@ CLOCK_MAX_STEP = 86400       # browser may move the clock by at most 24 h (#120)
 BRAND = {"{{PRODUCT}}": branding.PRODUCT, "{{LEGAL_NAME}}": branding.LEGAL_NAME,
          "{{COPYRIGHT}}": branding.COPYRIGHT}
 HOST_RE = re.compile(r'^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$')
+
+
+_TZ = None
+
+
+def time_zones():
+    """Sorted IANA zone names this host can resolve; always includes UTC."""
+    global _TZ
+    if _TZ is None:
+        zs = set()
+        if zoneinfo is not None:
+            try:
+                zs = {z for z in zoneinfo.available_timezones()
+                      if not z.startswith(("posix/", "right/")) and z not in ("Factory", "localtime", "posixrules")}
+            except Exception:  # noqa: BLE001
+                zs = set()
+        zs.add("UTC")
+        _TZ = sorted(zs)
+    return _TZ
 
 
 def asset_version():
@@ -195,6 +218,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send_json(200, {"events": ev[::-1]})
         if path == "/api/audit":
             return self.send_json(200, {"audit": pmstore.read_audit()})
+        if path == "/api/timezones":
+            return self.send_json(200, {"zones": time_zones()})
         if path == "/api/settings":
             c = a.cfg
             return self.send_json(200, {k: c.get(k) for k in (
@@ -350,6 +375,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if "timezone" in data:
                 tz = str(data["timezone"])
                 if not re.match(r'^[A-Za-z0-9_+\-/]{1,64}$', tz):
+                    return self.err(400, "bad time zone")
+                zs = time_zones()
+                if len(zs) > 1 and tz not in zs:
                     return self.err(400, "bad time zone")
                 changes.append("timezone %s -> %s" % (c.get("timezone"), tz))
                 c["timezone"] = tz
