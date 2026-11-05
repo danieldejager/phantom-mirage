@@ -6,6 +6,10 @@
   </picture>
 </p>
 
+<p align="center">
+  <img alt="Phantom Mirage web console, Dashboard" src="docs/assets/console-dashboard-carbon.png" width="900">
+</p>
+
 Phantom Mirage I (version: see AC_INIT in configure.ac, or run `phantom-mirage --version`)
 Part of the Phantom deception product range.
 
