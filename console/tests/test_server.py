@@ -526,6 +526,20 @@ class DecoyStopStart(unittest.TestCase):
         with open(self.conf) as f:
             self.assertNotIn("bind", f.read())
 
+    def test_activity_filter_live_safe(self):
+        """The live refresh must not re-render the Activity filter controls
+        (that dropped focus and keystrokes); typing is debounced and Enter applies."""
+        with open(os.path.join(os.path.dirname(__file__), "..", "static", "console.js")) as f:
+            js = f.read()
+        self.assertIn('if (cur === "Activity" && $("fsrc")) actUpdate(); else render();', js)
+        upd = js[js.index("function actUpdate"):js.index("const ACT_MAX")]
+        self.assertNotIn("fsrc", upd)
+        self.assertNotIn('$("main")', upd)
+        self.assertIn("setTimeout(() => { F.src = v; rt(); }, 200)", js)
+        self.assertIn('e.target.id === "fsrc" && e.key === "Enter"', js)
+        for s in ('id="fcount"', 'id="fempty"', "No events match the filter."):
+            self.assertIn(s, js)
+
     def test_refusals(self):
         self.assertEqual(self.hrow("10.9.0.14")["source"], "main_conf")
         st, j = self.change("stop", {"ip": "10.9.0.14"})

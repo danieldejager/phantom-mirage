@@ -111,7 +111,11 @@ function drift() {
 }
 async function refresh() {
   if (cur === "Settings" || $("modal").classList.contains("open")) return;
-  try { await load(cur); render(); } catch (e) { /* shown on next action */ }
+  try {
+    await load(cur);
+    /* Activity: update the table in place so the search box keeps focus and caret */
+    if (cur === "Activity" && $("fsrc")) actUpdate(); else render();
+  } catch (e) { /* shown on next action */ }
 }
 async function go(p) {
   cur = p; nav();
@@ -404,14 +408,29 @@ function Alerts() {
 <div class="tw"><table><tr><th>Severity</th><th>Decoys</th><th>Source</th><th>First seen</th><th>Last seen</th><th>Count</th><th>Status</th><th></th></tr>${A.alerts.map(a => `<tr><td><span class="sev sev-${esc(a.severity)}">${esc(a.severity)}</span> <span class="note">${esc(a.why)}</span></td><td class="wr">${esc(a.decoys.join(", "))}</td><td>${esc(a.src)}${muted.includes(a.src) ? ' <span class="note">(muted)</span>' : ""}</td><td>${tm(a.first)}</td><td>${tm(a.last)}</td><td>${a.count}</td><td>${esc(a.status)}${a.note ? `<div class="note">${esc(a.note)}</div>` : ""}</td>
 <td>${a.status === "Open" ? `<button data-act="ack" data-id="${a.id}">Acknowledge</button> ` : ""}${a.status !== "Closed" ? `<button data-act="close" data-id="${a.id}">Close</button> ` : `<button data-act="reopen" data-id="${a.id}">Reopen</button> `}${muted.includes(a.src) ? "" : `<button data-act="mute" data-src="${esc(a.src)}">Mute source</button>`}</td></tr>`).join("") || '<tr><td colspan="8" class="note">No alerts</td></tr>'}</table></div>`;
 }
-function rows() { return data.activity.filter(e => (!F.src || String(e.src).includes(F.src)) && (!F.decoy || e.decoy === F.decoy) && (!F.proto || e.proto === F.proto)); }
+function rows() { return data.activity.filter(e => (!F.src || String(e.src).includes(F.src.trim())) && (!F.decoy || e.decoy === F.decoy) && (!F.proto || e.proto === F.proto)); }
 function Activity() {
   const ds = [...new Set(data.activity.map(e => e.decoy))].sort();
-  return `<h2>Activity <span class="note">${paused ? "paused" : "● live"}</span></h2><div class="row"><input id="fsrc" placeholder="Source IP" value="${esc(F.src)}"><select id="fdec"><option value="">All decoys</option>${ds.map(d => `<option ${F.decoy === d ? "selected" : ""}>${esc(d)}</option>`).join("")}</select><select id="fpro"><option value="">All protocols</option>${["TCP", "UDP", "ICMP"].map(p => `<option ${F.proto === p ? "selected" : ""}>${p}</option>`).join("")}</select><button data-act="pause">${paused ? "Resume" : "Pause"}</button><button class="pri" data-act="csv">Export CSV</button></div><div class="tw"><table id="ft"></table></div><p class="note">Inbound events on the decoys from /var/log/phantom-mirage/events.jsonl (newest first).</p>`;
+  return `<h2>Activity <span class="note" id="alive">${paused ? "paused" : "● live"}</span></h2><div class="row"><input id="fsrc" type="search" placeholder="Source IP" aria-label="Filter by source IP" aria-controls="ft" value="${esc(F.src)}"><select id="fdec" aria-label="Filter by decoy">${decOpts(ds)}</select><select id="fpro" aria-label="Filter by protocol"><option value="">All protocols</option>${["TCP", "UDP", "ICMP"].map(p => `<option ${F.proto === p ? "selected" : ""}>${p}</option>`).join("")}</select><button data-act="pause">${paused ? "Resume" : "Pause"}</button><button class="pri" data-act="csv">Export CSV</button></div><p class="note" id="fcount" role="status" aria-live="polite"></p><div class="tw"><table id="ft"></table></div><p class="note">Inbound events on the decoys from /var/log/phantom-mirage/events.jsonl (newest first).</p>`;
 }
+function decOpts(ds) { return `<option value="">All decoys</option>` + ds.map(d => `<option ${F.decoy === d ? "selected" : ""}>${esc(d)}</option>`).join(""); }
+/* Live refresh on Activity: new rows, decoy list and live label only; the
+   filter controls are never re-rendered while the owner uses them. */
+function actUpdate() {
+  $("alive").textContent = paused ? "paused" : "● live";
+  const sel = $("fdec"), ds = [...new Set(data.activity.map(e => e.decoy).concat(F.decoy ? [F.decoy] : []))].sort();
+  const have = [...sel.options].slice(1).map(o => o.value).join(",");
+  if (have !== ds.join(",") && document.activeElement !== sel) sel.innerHTML = decOpts(ds);
+  rt();
+}
+const ACT_MAX = 200;
 function rt() {
   const t = $("ft");
-  if (t) t.innerHTML = "<tr><th>Time</th><th>Source</th><th>Decoy</th><th>Port</th><th>Protocol</th><th>Event</th><th>Source OS</th></tr>" + rows().slice(0, 200).map(e => `<tr><td>${tm(e.ts)}</td><td>${esc(e.src)}</td><td>${esc(e.decoy)}</td><td>${esc(e.port == null ? "" : e.port)}</td><td>${esc(e.proto)}</td><td>${esc(e.event)}${e.reply ? " (reply, no alert)" : ""}</td><td>${esc(e.os)}</td></tr>`).join("");
+  if (!t) return;
+  const r = rows(), all = data.activity.length, filt = F.src || F.decoy || F.proto;
+  const c = $("fcount");
+  if (c) c.textContent = (filt ? r.length + " of " + all + " events match" : all + " events") + (r.length > ACT_MAX ? "; showing the newest " + ACT_MAX + " (Export CSV has all " + r.length + ")" : "") + ".";
+  t.innerHTML = "<tr><th>Time</th><th>Source</th><th>Decoy</th><th>Port</th><th>Protocol</th><th>Event</th><th>Source OS</th></tr>" + (r.length ? "" : `<tr><td colspan="7" class="note" id="fempty">${all ? "No events match the filter." : "No events yet."}</td></tr>`) + r.slice(0, ACT_MAX).map(e => `<tr><td>${tm(e.ts)}</td><td>${esc(e.src)}</td><td>${esc(e.decoy)}</td><td>${esc(e.port == null ? "" : e.port)}</td><td>${esc(e.proto)}</td><td>${esc(e.event)}${e.reply ? " (reply, no alert)" : ""}</td><td>${esc(e.os)}</td></tr>`).join("");
 }
 function csvCell(v) { v = String(v == null ? "" : v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
 function csv() {
@@ -460,12 +479,16 @@ document.addEventListener("click", e => {
     case "net": modalOpen(netDialog(), true); netCheck(); setTimeout(() => $("nnet") && $("nnet").focus(), 0); break;
     case "donet": netApply(); break;
     case "pause": paused = !paused; go("Activity"); break;
-    case "csv": csv(); break;
+    case "csv": clearTimeout(fT); if ($("fsrc")) F.src = $("fsrc").value; rt(); csv(); break;
     case "savesettings": act(async () => { $("serr").textContent = ""; try { await api("/api/settings", {alert_retention_days: +$("sret").value, timezone: $("stz").value.trim()}); go("Settings"); } catch (er) { $("serr").textContent = er.message; } }); break;
   }
 });
+let fT = null;
+document.addEventListener("keydown", e => {
+  if (e.target.id === "fsrc" && e.key === "Enter") { e.preventDefault(); clearTimeout(fT); F.src = e.target.value; rt(); }
+});
 document.addEventListener("input", e => {
-  if (e.target.id === "fsrc") { F.src = e.target.value; rt(); }
+  if (e.target.id === "fsrc") { clearTimeout(fT); const v = e.target.value; fT = setTimeout(() => { F.src = v; rt(); }, 200); }
   if (e.target.id === "nnet") netCheck();
 });
 document.addEventListener("change", e => {
