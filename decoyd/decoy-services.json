@@ -1,0 +1,30 @@
+{
+  "_comment": "Named services the console may offer per decoy (pm-decoyd). Each id maps to a fixed action. Only plain actions are listed: no scripts, no proxy, no tarpit, no backdoor emulations. Root owned; read by pm-decoyd only.",
+  "services": [
+    {"id": "ftp", "label": "FTP", "proto": "tcp", "port": 21, "action": "open"},
+    {"id": "ssh", "label": "SSH", "proto": "tcp", "port": 22, "action": "open"},
+    {"id": "telnet", "label": "Telnet", "proto": "tcp", "port": 23, "action": "open"},
+    {"id": "smtp", "label": "SMTP mail", "proto": "tcp", "port": 25, "action": "open"},
+    {"id": "dns-tcp", "label": "DNS (TCP)", "proto": "tcp", "port": 53, "action": "open"},
+    {"id": "dns", "label": "DNS (UDP)", "proto": "udp", "port": 53, "action": "open"},
+    {"id": "http", "label": "Web server (HTTP)", "proto": "tcp", "port": 80, "action": "open"},
+    {"id": "pop3", "label": "POP3 mail", "proto": "tcp", "port": 110, "action": "open"},
+    {"id": "rpcbind", "label": "RPC portmapper", "proto": "tcp", "port": 111, "action": "open"},
+    {"id": "ntp", "label": "NTP time", "proto": "udp", "port": 123, "action": "open"},
+    {"id": "msrpc", "label": "Microsoft RPC", "proto": "tcp", "port": 135, "action": "open"},
+    {"id": "netbios-ns", "label": "NetBIOS name", "proto": "udp", "port": 137, "action": "open"},
+    {"id": "netbios-ssn", "label": "NetBIOS session", "proto": "tcp", "port": 139, "action": "open"},
+    {"id": "imap", "label": "IMAP mail", "proto": "tcp", "port": 143, "action": "open"},
+    {"id": "snmp", "label": "SNMP", "proto": "udp", "port": 161, "action": "open"},
+    {"id": "https", "label": "Web server (HTTPS)", "proto": "tcp", "port": 443, "action": "open"},
+    {"id": "smb", "label": "Windows file sharing (SMB)", "proto": "tcp", "port": 445, "action": "open"},
+    {"id": "syslog", "label": "Syslog", "proto": "udp", "port": 514, "action": "open"},
+    {"id": "mssql", "label": "Microsoft SQL Server", "proto": "tcp", "port": 1433, "action": "open"},
+    {"id": "mysql", "label": "MySQL", "proto": "tcp", "port": 3306, "action": "open"},
+    {"id": "rdp", "label": "Remote Desktop (RDP)", "proto": "tcp", "port": 3389, "action": "open"},
+    {"id": "postgres", "label": "PostgreSQL", "proto": "tcp", "port": 5432, "action": "open"},
+    {"id": "vnc", "label": "VNC", "proto": "tcp", "port": 5900, "action": "open"},
+    {"id": "winrm", "label": "Windows remote management", "proto": "tcp", "port": 5985, "action": "open"},
+    {"id": "http-alt", "label": "Web server (8080)", "proto": "tcp", "port": 8080, "action": "open"}
+  ]
+}

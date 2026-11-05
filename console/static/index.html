@@ -6,14 +6,16 @@
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="no-referrer">
 <link rel="icon" type="image/svg+xml" href="/static/phantom-mirage-mark.svg">
-<link rel="stylesheet" href="/static/console.css">
+<script src="/static/theme.js?v={{V}}"></script>
+<link rel="stylesheet" href="/static/console.css?v={{V}}">
 <title>{{PRODUCT}} console</title>
 </head>
 <body>
 <div id="login"><div class="splash">
- <div class="slogo"><img class="lg-dark" src="/static/phantom-mirage-logo-dark.png" width="280" height="114" alt=""><img class="lg-light" src="/static/phantom-mirage-logo-light.png" width="280" height="123" alt=""></div>
+ <div class="slogo"><span class="ptile"><img src="/static/phantom-mirage-mark-dark.png" width="80" height="80" alt=""></span></div>
  <h1 class="sname">{{PRODUCT}}</h1>
- <p class="slegal">{{LEGAL_NAME}}</p>
+ <p class="slegal"><span class="ptw sptw" role="img" aria-label="{{LEGAL_NAME}}"></span></p>
+ <span class="mwm swm" role="img" aria-label="Mirage"></span>
  <div class="card">
  <form id="lf" autocomplete="on">
   <p class="note">Sensor console sign-in<span id="lsensor"></span></p>
@@ -26,13 +28,14 @@
  </form>
  <p class="note">Forgot the password or locked out? On the sensor run <code>sudo phantom-mirage-setup --reset-admin</code>.</p>
  </div>
+ <div class="u-mt18"><button type="button" class="themetg" data-theme-toggle aria-pressed="false" aria-label="Dark theme"><span class="ti" aria-hidden="true">&#9790;</span> <span class="tl">Theme</span></button></div>
  <footer class="sfoot"><p>{{PRODUCT}} | {{LEGAL_NAME}}</p><p class="copy">{{COPYRIGHT}}</p></footer>
 </div></div>
-<header><span class="brand"><span class="chip"><img src="/static/phantom-mirage-mark.png" width="26" height="26" alt=""></span><span class="wm">{{PRODUCT}}</span><span class="hlegal note">{{LEGAL_NAME}}</span></span><span class="u-mla note" id="hsensor"></span><button id="logout" data-act="logout">Sign out</button></header>
+<header><span class="brand"><span class="ptile"><img src="/static/phantom-mirage-mark-dark.png" width="34" height="34" alt=""></span><span class="hlegal ptw" role="img" aria-label="{{LEGAL_NAME}}"></span></span></header>
 <div id="drift" class="drift hide" role="status"></div>
-<div class="wrap"><nav id="dock" aria-label="Sidebar menu"><div class="nbrand brand"><span class="chip"><img src="/static/phantom-mirage-mark.png" width="22" height="22" alt=""></span><span class="u-fs13 wm">{{PRODUCT}}</span></div><div class="dockbar"><span class="dh" id="dh" tabindex="0" role="button" aria-label="Drag handle: drag to move menu, double-click or Enter to dock" title="Drag to move; double-click to dock">&#10303;</span><button class="dbtn dret" id="dret" aria-label="Dock menu back">Dock</button><button class="dbtn" id="dbtn" aria-haspopup="menu" aria-expanded="false" aria-controls="dmenu" aria-label="Menu position options" title="Menu position">&#128204;</button><div class="dmenu hide" id="dmenu" role="menu" aria-label="Menu position"><button role="menuitemradio" aria-checked="false" data-dock="left">Dock left</button><button role="menuitemradio" aria-checked="false" data-dock="right">Dock right</button><button role="menuitemradio" aria-checked="false" data-dock="top">Dock top</button><button role="menuitemradio" aria-checked="false" data-dock="col">Collapse</button><button role="menuitemradio" aria-checked="false" data-dock="float">Float</button></div></div><div id="nav" role="navigation" aria-label="Main"></div></nav><main id="main"></main></div>
+<div class="wrap"><nav id="dock" aria-label="Sidebar menu"><div class="nbrand brand"><span class="mwm" role="img" aria-label="Mirage"></span></div><div class="dockbar"><span class="dh" id="dh" tabindex="0" role="button" aria-label="Drag handle: drag to move menu, double-click or Enter to dock" title="Drag to move; double-click to dock">&#10303;</span><button class="dbtn dret" id="dret" aria-label="Dock menu back">Dock</button><button class="dbtn" id="dbtn" aria-haspopup="menu" aria-expanded="false" aria-controls="dmenu" aria-label="Menu position options" title="Menu position">&#128204;</button><div class="dmenu hide" id="dmenu" role="menu" aria-label="Menu position"><button role="menuitemradio" aria-checked="false" data-dock="left">Dock left</button><button role="menuitemradio" aria-checked="false" data-dock="right">Dock right</button><button role="menuitemradio" aria-checked="false" data-dock="top">Dock top</button><button role="menuitemradio" aria-checked="false" data-dock="col">Collapse</button><button role="menuitemradio" aria-checked="false" data-dock="float">Float</button></div></div><div id="nav" role="navigation" aria-label="Main"></div><div class="prof" id="prof"><div class="pmenu hide" id="pmenu" role="menu" aria-label="Account"><button type="button" role="menuitemcheckbox" class="pmi" data-theme-toggle aria-checked="false" aria-label="Dark theme"><span class="ti" aria-hidden="true">&#9790;</span> <span class="tl">Theme</span> theme</button><button type="button" role="menuitem" class="pmi" id="pmpw"><span class="ti" aria-hidden="true">&#128273;</span> Change password</button><button type="button" role="menuitem" class="pmi" data-act="logout"><span class="ti" aria-hidden="true">&#x23FB;</span> Sign out</button></div><button type="button" class="pbtn" id="pbtn" aria-haspopup="menu" aria-expanded="false" aria-controls="pmenu" aria-label="Account menu" title="Account"><span class="pav" id="pav" aria-hidden="true"></span><span class="pid"><span class="pnm" id="pnm"></span><span class="psn" id="psn"></span></span><span class="pch" aria-hidden="true">&#8963;</span></button></div></nav><main id="main"></main></div>
 <footer class="afoot note">{{PRODUCT}} | <span class="copy">{{COPYRIGHT}}</span></footer>
-<div class="dz" id="dzl"></div><div class="dz" id="dzr"></div><div class="dz" id="dzt"></div><div class="modal" id="modal"><div id="mbox"></div></div>
-<script src="/static/console.js"></script>
+<div class="dz" id="dzl"></div><div class="dz" id="dzr"></div><div class="dz" id="dzt"></div><div class="modal" id="pwdlg"><div id="pwbox" role="dialog" aria-modal="true" aria-labelledby="pwh" aria-describedby="pwnote"><h3 id="pwh">Change password</h3><form id="pwf"><p><label for="pcur" class="vh">Current password</label><input id="pcur" type="password" autocomplete="current-password" placeholder="Current password" class="u-w100"></p><p><label for="pnew" class="vh">New password</label><input id="pnew" type="password" autocomplete="new-password" placeholder="New password (12+ characters)" class="u-w100"></p><p><label for="pnew2" class="vh">Repeat new password</label><input id="pnew2" type="password" autocomplete="new-password" placeholder="Repeat new password" class="u-w100"></p><div class="err" id="perr" role="alert"></div><div class="row"><button class="pri" type="submit">Change password</button><button type="button" id="pwcancel">Cancel</button></div></form><p class="note" id="pwnote">Locked out? On the sensor run <code>sudo phantom-mirage-setup --reset-admin</code>.</p></div></div><div class="modal" id="modal"><div id="mbox"></div></div>
+<script src="/static/console.js?v={{V}}"></script>
 </body>
 </html>

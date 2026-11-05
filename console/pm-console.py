@@ -4,6 +4,7 @@
 HTTPS on 127.0.0.1 only (reach it with: ssh -L 8443:127.0.0.1:8443 user@sensor).
 Python 3 standard library only; no outbound connections.
 """
+import hashlib
 import http.server
 import json
 import os
@@ -15,9 +16,14 @@ import sys
 import threading
 import time
 import urllib.parse
+try:
+    import zoneinfo
+except ImportError:  # pragma: no cover
+    zoneinfo = None
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import branding  # noqa: E402
+import decoyclient  # noqa: E402
 import pmauth  # noqa: E402
 import pmstore  # noqa: E402
 
@@ -34,7 +40,7 @@ TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
 # exact-name allowlist for /static/ (#141): URL name -> file under STATIC.
 # Nothing from the request is ever joined onto a path.
 STATIC_FILES = {n: n for n in (
-    "index.html", "console.css", "console.js", "phantom-mirage-mark.svg",
+    "index.html", "console.css", "console.js", "theme.js", "phantom-mirage-mark.svg", "mirage-wordmark.svg", "phantom-technologies-wordmark.svg", "phantom-mirage-mark-dark.png",
     "phantom-mirage-mark.png", "phantom-mirage-logo-light.png",
     "phantom-mirage-logo-dark.png")}
 STATIC_FILES.update({"fonts/Aldrich-Regular.woff2": os.path.join("fonts", "Aldrich-Regular.woff2"),
@@ -48,10 +54,46 @@ BRAND = {"{{PRODUCT}}": branding.PRODUCT, "{{LEGAL_NAME}}": branding.LEGAL_NAME,
 HOST_RE = re.compile(r'^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$')
 
 
+_TZ = None
+
+
+def time_zones():
+    """Sorted IANA zone names this host can resolve; always includes UTC."""
+    global _TZ
+    if _TZ is None:
+        zs = set()
+        if zoneinfo is not None:
+            try:
+                zs = {z for z in zoneinfo.available_timezones()
+                      if not z.startswith(("posix/", "right/")) and z not in ("Factory", "localtime", "posixrules")}
+            except Exception:  # noqa: BLE001
+                zs = set()
+        zs.add("UTC")
+        _TZ = sorted(zs)
+    return _TZ
+
+
+def asset_version():
+    """Short hash of every static asset. index.html loads its scripts, style
+    sheet and images with ?v=<this>, so a browser can never pair a new page
+    with a stale cached console.js or console.css after an upgrade."""
+    h = hashlib.sha256()
+    for name in sorted(STATIC_FILES):
+        if name == "index.html":
+            continue
+        try:
+            with open(os.path.join(STATIC, STATIC_FILES[name]), "rb") as f:
+                h.update(name.encode() + b"\0" + f.read())
+        except OSError:
+            pass
+    return h.hexdigest()[:12]
+
+
 def brand_html(data):
     t = data.decode("utf-8")
     for k, v in BRAND.items():
         t = t.replace(k, html.escape(v))
+    t = t.replace("{{V}}", asset_version())
     return t.encode("utf-8")
 
 
@@ -96,7 +138,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Cross-Origin-Opener-Policy", "same-origin")
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         self.send_header("Strict-Transport-Security", "max-age=31536000")
-        self.send_header("Cache-Control", "no-store" if api else "private, max-age=300")
+        self.send_header("Cache-Control", "no-store" if api else "no-cache")
 
     def send_json(self, code, obj, cookies=()):
         body = json.dumps(obj).encode()
@@ -162,6 +204,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send_json(200, self.status())
         if path == "/api/decoys":
             return self.send_json(200, pmstore.decoy_list(dict(a.alerts.last_touch)))
+        if path in ("/api/decoyd/list", "/api/decoyd/options", "/api/decoyd/netinfo"):
+            r = decoyclient.call(path.rsplit("/", 1)[1], {}, s["user"])
+            return self.send_json(200 if r["ok"] else self.decoyd_status(r), r)
+        if path == "/api/personalities":
+            return self.send_json(200, {"personalities": pmstore.personalities()})
         if path == "/api/alerts":
             return self.send_json(200, {"alerts": a.alerts.snapshot(),
                                         "muted": a.cfg.get("muted", [])})
@@ -171,6 +218,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send_json(200, {"events": ev[::-1]})
         if path == "/api/audit":
             return self.send_json(200, {"audit": pmstore.read_audit()})
+        if path == "/api/timezones":
+            return self.send_json(200, {"zones": time_zones()})
         if path == "/api/settings":
             c = a.cfg
             return self.send_json(200, {k: c.get(k) for k in (
@@ -190,8 +239,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             data = f.read()
         if ext == ".html":
             data = brand_html(data)
+            self.send_response(200)
+            self.headers_common(TYPES[ext], len(data), api=True)
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        # assets: always revalidate (no-cache) against a content ETag, so an
+        # upgrade is picked up on the next load and unchanged files cost a 304
+        tag = '"%s"' % hashlib.sha256(data).hexdigest()[:20]
+        if tag in [t.strip() for t in self.headers.get("If-None-Match", "").split(",")]:
+            self.send_response(304)
+            self.send_header("ETag", tag)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
         self.send_response(200)
-        self.headers_common(TYPES[ext], len(data), api=(ext == ".html"))
+        self.headers_common(TYPES[ext], len(data), api=False)
+        self.send_header("ETag", tag)
         self.end_headers()
         self.wfile.write(data)
 
@@ -312,11 +376,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 tz = str(data["timezone"])
                 if not re.match(r'^[A-Za-z0-9_+\-/]{1,64}$', tz):
                     return self.err(400, "bad time zone")
+                zs = time_zones()
+                if len(zs) > 1 and tz not in zs:
+                    return self.err(400, "bad time zone")
                 changes.append("timezone %s -> %s" % (c.get("timezone"), tz))
                 c["timezone"] = tz
             pmstore.save_config(c)
             pmstore.audit(user, "settings", "; ".join(changes))
             return self.send_json(200, {"ok": True})
+        if path == "/api/decoyd/change":
+            return self.decoyd_change(user, data)
         if path == "/api/password":
             adm = pmstore.load_admin() or {}
             cur, new = data.get("current", ""), data.get("new", "")
@@ -331,6 +400,72 @@ class Handler(http.server.BaseHTTPRequestHandler):
             pmstore.audit(user, "password-change", "all sessions signed out")
             return self.send_json(200, {"ok": True})
         return self.err(404, "not found")
+
+    @staticmethod
+    def decoyd_status(r):
+        code = (r.get("error") or {}).get("code", "")
+        if code in ("E_UNAVAILABLE", "E_TIMEOUT", "E_BAD_REPLY"):
+            return 503
+        if code == "E_BUSY":
+            return 429
+        if code in ("E_CONFLICT", "E_EXISTS", "E_NOT_FOUND", "E_NOT_RUNNING", "E_NOT_STOPPED", "E_UNCHANGED"):
+            return 409
+        if code in ("E_RELOAD_FAILED_ROLLED_BACK", "E_RESTART_FAILED_ROLLED_BACK", "E_ROLLBACK_FAILED", "E_INTERNAL", "E_PEER"):
+            return 500
+        return 400
+
+    def decoyd_change(self, user, data):
+        """Per decoy change: the admin re-enters the password every time.
+        set_network changes the address block and interface; the helper
+        validates it again and restarts the whole sensor."""
+        a = self.app
+        op, args, pw = data.get("op"), data.get("args"), data.get("password")
+        if op not in decoyclient.CHANGE_OPS or not isinstance(args, dict) or set(data) - {"op", "args", "password"}:
+            return self.err(400, "bad request")
+        ip = args.get("ip")
+        if op == "set_network":
+            ip = None
+        elif ip is None and isinstance(args.get("decoy"), dict):
+            ip = args["decoy"].get("ip")
+        kind = pmstore.reserved_address(ip, pmstore.parse_networks(
+            pmstore.read_default().get("NETWORK", ""))) if isinstance(ip, str) else None
+        if kind:
+            field = "args.ip" if "ip" in args else "decoy.ip"
+            pmstore.audit(user, "decoy-" + op, "%s refused E_ADDRESS_RESERVED" % re.sub(r'[^0-9.]', "", ip)[:15], ok=False)
+            return self.send_json(400, {"ok": False, "error": {
+                "code": "E_ADDRESS_RESERVED", "field": field,
+                "message": "%s is the %s address of the decoy block and cannot be a decoy" % (ip, kind)}})
+        src = self.source()
+        key = "decoy-reauth:" + user
+        until = a.lockout.locked_until(key, src)
+        if until:
+            pmstore.audit(user, "decoy-" + op, "password re-entry backing off", ok=False)
+            return self.err(423, "too many wrong passwords; try again in %d s" % max(1, int(until - time.time())))
+        adm = pmstore.load_admin() or {}
+        if not (isinstance(pw, str) and pw and pmauth.verify_password(pw, adm.get("hash", ""))):
+            a.lockout.failure(key, src)
+            pmstore.audit(user, "decoy-" + op, "wrong password", ok=False)
+            return self.err(403, "password is wrong")
+        a.lockout.success(key, src)
+        if op == "set_network":
+            target = "%s on %s" % (re.sub(r'[^0-9./]', "", str(args.get("network")))[:18],
+                                   re.sub(r'[^A-Za-z0-9_.-]', "", str(args.get("interface")))[:15])
+        else:
+            target = re.sub(r'[^0-9.]', "", str(ip))[:15] if ip is not None else "all"
+        pmstore.audit(user, "decoy-" + op, "requested %s" % target)
+        r = decoyclient.call(op, args, user)
+        if r["ok"]:
+            extra = ""
+            if op == "set_network":
+                d = (r.get("result") or {}).get("dropped") or []
+                extra = ", dropped settings for %s" % (" ".join(d)[:400] or "none")
+            pmstore.audit(user, "decoy-" + op, "%s applied%s%s" % (
+                target, ", sensor reloaded" if r.get("reloaded") else ", sensor not running", extra))
+            return self.send_json(200, r)
+        e = r.get("error") or {}
+        pmstore.audit(user, "decoy-" + op, "%s refused %s%s" % (
+            target, e.get("code"), ", rolled back" if r.get("rolled_back") else ""), ok=False)
+        return self.send_json(self.decoyd_status(r), r)
 
     def login(self, data, tok):
         a = self.app

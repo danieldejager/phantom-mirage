@@ -1,0 +1,5 @@
+# Phantom Mirage settings, written by phantom-mirage-setup
+INTERFACE=eth0
+NETWORK="10.9.0.8/29"
+# keep this comment
+ALLOW_WIDE_NETWORK=no

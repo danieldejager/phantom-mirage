@@ -17,8 +17,14 @@ from collections import OrderedDict
 
 STATE_DIR = os.environ.get("PM_CONSOLE_STATE", "/var/lib/phantom-mirage/console")
 SENSOR_CONF = os.environ.get("PM_SENSOR_CONF", "/etc/phantom-mirage/phantom-mirage.conf")
+# per decoy settings written by pm-decoyd; the sensor conf includes it by
+# this fixed path, and the console follows only that one include
+DECOYS_INCLUDE = "/etc/phantom-mirage/decoys.conf"
+DECOYS_CONF = os.environ.get("PM_DECOYS_CONF", DECOYS_INCLUDE)
 SENSOR_DEFAULT = os.environ.get("PM_DEFAULT", "/etc/default/phantom-mirage")
 EVENT_LOG = os.environ.get("PM_EVENT_LOG", "/var/log/phantom-mirage/events.jsonl")
+# the pinned personality file the service loads with -p (pm-start, #150)
+FPDB = os.environ.get("PM_FPDB", "/etc/phantom-mirage/columbo-v1.db")
 
 GROUP_WINDOW = 600          # same source within 10 minutes -> one alert
 MAX_ALERTS = 5000
@@ -121,6 +127,24 @@ def read_default(p=None):
     return vals
 
 
+PORT_STATES = ("open", "closed", "reset", "block", "filtered")
+
+
+def personalities(db=None):
+    """Personality names the service can use: the Fingerprint lines of the
+    pinned personality file. Read only; a missing file gives []."""
+    out = []
+    try:
+        with open(db or FPDB, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                m = re.match(r'^Fingerprint ([A-Za-z0-9._+-]{1,64})\s*$', line)
+                if m and m.group(1) not in out:
+                    out.append(m.group(1))
+    except OSError:
+        return []
+    return out
+
+
 def parse_decoys(conf=None):
     """Templates and bindings from the honeyd-style config."""
     tmpl, binds = {}, []
@@ -129,7 +153,16 @@ def parse_decoys(conf=None):
             text = f.read()
     except OSError:
         return {"templates": {}, "binds": [], "error": "cannot read config"}
-    for raw in text.splitlines():
+    lines = text.splitlines()
+    for raw in list(lines):
+        w = raw.split("#", 1)[0].split()
+        if w == ["include", DECOYS_INCLUDE]:
+            try:
+                with open(DECOYS_CONF) as f:
+                    lines += f.read().splitlines()
+            except OSError:
+                pass
+    for raw in lines:
         line = raw.split("#", 1)[0].strip()
         if not line:
             continue
@@ -144,12 +177,50 @@ def parse_decoys(conf=None):
         elif len(w) >= 6 and w[0] == "set" and w[2] == "default" and w[4] == "action":
             tmpl.setdefault(w[1], {"personality": "", "ports": [], "default": {}})["default"][w[3]] = w[5]
         elif len(w) >= 5 and w[0] == "add" and w[3] == "port":
+            # add <tmpl> <tcp|udp> port <N> [<open|filtered|...>]
             t = tmpl.setdefault(w[1], {"personality": "", "ports": [], "default": {}})
-            if w[4] not in ("block", "reset", "closed"):
-                t["ports"].append("%s/%s" % (w[2], w[3]))
+            state = w[5] if len(w) >= 6 else ""
+            if state not in ("block", "reset", "closed"):
+                t["ports"].append("%s/%s" % (w[2], w[4]))
+            # every port with its state, for the read-only detail panel
+            if w[2] in ("tcp", "udp") and w[4].isdigit():
+                kind = state if state in PORT_STATES else ("script" if state else "open")
+                t.setdefault("port_states", []).append(
+                    {"proto": w[2], "port": int(w[4]), "state": kind})
         elif len(w) >= 3 and w[0] == "bind":
             binds.append({"ip": w[1], "template": w[2]})
     return {"templates": tmpl, "binds": binds}
+
+
+def parse_networks(net):
+    """NETWORK as the decoy helper reads it: one or more IPv4 blocks
+    separated by spaces. Bad entries are skipped."""
+    out = []
+    for w in str(net or "").split():
+        try:
+            out.append(ipaddress.IPv4Network(w, strict=False))
+        except ValueError:
+            pass
+    return out
+
+
+def reserved_address(ip, nets):
+    """'network' or 'broadcast' when the decoy helper refuses ip as the first
+    or last address of its block (only blocks /30 and wider, the same rule as
+    check_ip in pm-decoyd), else None. /31 and /32 have no reserved address."""
+    try:
+        a = ipaddress.IPv4Address(ip)
+    except ValueError:
+        return None
+    owner = [n for n in nets if a in n]
+    if not owner or owner[0].prefixlen > 30:
+        return None
+    n = owner[0]
+    if a == n.network_address:
+        return "network"
+    if a == n.broadcast_address:
+        return "broadcast"
+    return None
 
 
 def decoy_list(last_touch):
@@ -162,12 +233,13 @@ def decoy_list(last_touch):
         rows.append({"ip": b["ip"], "template": b["template"],
                      "personality": t.get("personality", ""),
                      "ports": t.get("ports", []),
+                     "port_states": t.get("port_states", []),
+                     "default": t.get("default", {}),
                      "last": last_touch.get(b["ip"])})
     if net and "default" in d.get("templates", {}):
         t = d["templates"]["default"]
         bound = {r["ip"] for r in rows}
-        try:
-            n = ipaddress.ip_network(net, strict=False)
+        for n in parse_networks(net):
             if n.num_addresses <= 256:
                 for a in n:
                     s = str(a)
@@ -175,9 +247,19 @@ def decoy_list(last_touch):
                         continue
                     rows.append({"ip": s, "template": "default",
                                  "personality": t.get("personality", ""),
-                                 "ports": t.get("ports", []), "last": last_touch.get(s)})
+                                 "ports": t.get("ports", []),
+                                 "port_states": t.get("port_states", []),
+                                 "default": t.get("default", {}), "last": last_touch.get(s)})
+                    bound.add(s)
+    nets = parse_networks(net)
+    for r in rows:
+        r["reserved"] = reserved_address(r["ip"], nets)
+    def order(r):
+        try:
+            return (0, int(ipaddress.ip_address(r["ip"])))
         except ValueError:
-            pass
+            return (1, 0)
+    rows.sort(key=order)
     return {"network": net, "interface": dflt.get("INTERFACE", ""), "decoys": rows,
             "error": d.get("error")}
 
