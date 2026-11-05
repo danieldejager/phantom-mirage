@@ -69,7 +69,7 @@ td.wr{white-space:normal;max-width:420px;word-break:break-word}
    legal name and copyright in Aldrich (SIL OFL 1.1, bundled, same-origin) */
 @font-face{font-family:Aldrich;src:url(/static/fonts/Aldrich-Regular.woff2) format("woff2");font-weight:400;font-style:normal;font-display:swap}
 #login{background:var(--sbg)}
-.slogo img{display:block;max-width:80vw;height:auto}.slogo .lg-light{display:none}
+.slogo{margin:0 0 10px}.slogo img{display:block;max-width:80vw;height:auto}.slogo .lg-light{display:none}
 :root[data-theme=light] .slogo .lg-dark{display:none}:root[data-theme=light] .slogo .lg-light{display:block}
 @media(prefers-color-scheme:light){:root:not([data-theme=dark]) .slogo .lg-dark{display:none}:root:not([data-theme=dark]) .slogo .lg-light{display:block}}
 .sname{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}

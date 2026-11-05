@@ -173,11 +173,12 @@ class TestLoginPage(unittest.TestCase):
         self.assertNotIn("{{", t)
         login = t[t.index('<div id="login">'):t.index("<header>")]
         brand = login[:login.index('<div class="card">')]
+        self.assertIn('<div class="slogo"><span class="ptile"><img src="/static/phantom-mirage-mark-dark.png" width="80" height="80" alt=""></span></div>', brand)
+        self.assertLess(brand.index("slogo"), brand.index("mwm swm"))
         self.assertIn('<span class="mwm swm" role="img" aria-label="Mirage"></span>', brand)
         self.assertIn('<h1 class="sname">Mirage I</h1>', brand)
-        self.assertNotIn("ptile", brand)
         self.assertNotIn("ptw", brand)
-        self.assertNotIn("phantom-mirage-mark", brand)
+        self.assertNotIn('class="slegal"', brand)
         self.assertNotIn("Phantom Technologies", brand)
         self.assertIn("\u00a9 2026 Phantom Technologies. All rights reserved.", login)
         self.assertIn("sudo phantom-mirage-setup --reset-admin", login)
@@ -409,9 +410,11 @@ class TestWordmark(unittest.TestCase):
         self.assertIn('<div class="nbrand brand"><span class="mwm" role="img" aria-label="Mirage"></span></div>', t)
         login = t[t.index('<div id="login">'):t.index("<header>")]
         brand = login[:login.index('<div class="card">')]
+        self.assertIn('<div class="slogo"><span class="ptile"><img src="/static/phantom-mirage-mark-dark.png" width="80" height="80" alt=""></span></div>', brand)
+        self.assertLess(brand.index("slogo"), brand.index("mwm swm"))
         self.assertIn('<span class="mwm swm" role="img" aria-label="Mirage"></span>', brand)
+        self.assertEqual(brand.count("ptile"), 1)
         self.assertNotIn("ptw", brand)
-        self.assertNotIn("ptile", brand)
         self.assertNotIn('class="slegal"', brand)
 
     def test_sidebar_wordmark_centred(self):
