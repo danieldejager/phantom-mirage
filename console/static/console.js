@@ -632,7 +632,6 @@ function Settings() {
   return `<h2>Settings</h2><div class="u-wide cards">
 <div class="card"><div class="k">Retention and display</div><p>Alerts kept for <input id="sret" type="number" min="1" max="3650" value="${esc(c.alert_retention_days)}" class="u-w90"> days</p><p>Time zone <input id="stz" value="${esc(c.timezone)}"></p><button class="pri" data-act="savesettings">Save</button><div class="err" id="serr"></div></div>
 <div class="card"><div class="k">Time source</div><p>${c.time_source === "ntp" ? "NTP server on the local network: <code>" + esc(c.ntp_server) + "</code>" : "Sensor clock set from the admin's browser at each sign-in"}</p><p class="note">Warns when the sensor clock is more than ${esc(c.drift_warn_seconds)} s off. Change it on the sensor: <code>sudo phantom-mirage-setup --reconfigure-console</code>.</p></div>
-<div class="card"><div class="k">Admin password</div><form id="pwf"><p><input id="pcur" type="password" autocomplete="current-password" placeholder="Current password" class="u-w100"></p><p><input id="pnew" type="password" autocomplete="new-password" placeholder="New password (12+ characters)" class="u-w100"></p><p><input id="pnew2" type="password" autocomplete="new-password" placeholder="Repeat new password" class="u-w100"></p><button class="pri" type="submit">Change password</button><div class="err" id="perr"></div></form><p class="note">Locked out? On the sensor run <code>sudo phantom-mirage-setup --reset-admin</code>.</p></div>
 <div class="card"><div class="k">Service</div><p class="note">Console on https://127.0.0.1:${esc(c.port)} (sensor ${esc(c.sensor_name)}). Reach it with <code>ssh -L ${esc(c.port)}:127.0.0.1:${esc(c.port)} user@sensor</code>. Uninstall on the sensor: <code>sudo phantom-mirage-uninstall</code> (asks first; wipes all console data).</p></div></div>
 <h2 class="u-mt18">Audit log</h2><div class="tw"><table><tr><th>Time</th><th>Who</th><th>Action</th><th>Detail</th><th>Result</th></tr>${data.audit.map(a => `<tr><td>${tm(a.ts)}</td><td>${esc(a.actor)}</td><td>${esc(a.action)}</td><td class="wr">${esc(a.detail)}</td><td>${a.ok ? '<span class="ok">ok</span>' : '<span class="bad">refused</span>'}</td></tr>`).join("")}</table></div>`;
 }
@@ -699,6 +698,25 @@ document.addEventListener("submit", e => {
   $("pcur").value = $("pnew").value = $("pnew2").value = "";
 });
 
+/* ---- Change password dialog, opened from the profile menu. Static in
+   index.html (outside #main) so the live refresh never rebuilds or closes it. ---- */
+function pwOpen() {
+  $("pcur").value = $("pnew").value = $("pnew2").value = ""; $("perr").textContent = "";
+  $("pwdlg").classList.add("open"); $("pcur").focus();
+}
+function pwClose() { $("pwdlg").classList.remove("open"); $("perr").textContent = ""; $("pbtn").focus(); }
+$("pwcancel").addEventListener("click", pwClose);
+$("pwdlg").addEventListener("click", e => { if (e.target.id === "pwdlg") pwClose(); });
+$("pwdlg").addEventListener("keydown", e => {
+  if (e.key === "Escape") { e.preventDefault(); pwClose(); return; }
+  if (e.key !== "Tab") return;
+  /* focus trap */
+  const f = [...$("pwbox").querySelectorAll("input,button")].filter(x => !x.disabled);
+  const a = f[0], z = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); }
+  else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+});
+
 /* ---- dockable menu (from the mockup) ---- */
 /* ---- Profile row at the bottom of the menu pane: avatar initials, user
    and sensor; opens a small menu with the theme switch and Sign out. Built
@@ -732,7 +750,12 @@ function profSet() {
     else if (e.key === "Tab") close(false);
   });
   /* selecting an item closes the menu; theme.js and the data-act handler do the work */
-  m.addEventListener("click", e => { if (e.target.closest("[role^=menuitem]")) setTimeout(() => close(true), 0); });
+  m.addEventListener("click", e => {
+    const it = e.target.closest("[role^=menuitem]");
+    if (!it) return;
+    if (it.id === "pmpw") { close(false); pwOpen(); return; }
+    setTimeout(() => close(true), 0);
+  });
   document.addEventListener("click", e => { if (!e.target.closest("#prof")) close(false); });
   document.addEventListener("keydown", e => { if (e.key === "Escape" && !m.classList.contains("hide") && !m.contains(e.target)) close(true); });
 })();

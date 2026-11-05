@@ -273,6 +273,29 @@ class Server(unittest.TestCase):
         css = open(os.path.join(d, "console.css")).read()
         self.assertIn(".dtip{pointer-events:none}", css)
 
+    def test_password_dialog_in_profile_menu(self):
+        """Change password lives in the profile menu as a modal dialog; the
+        Settings page no longer has the Admin password card."""
+        st, r, page = self.raw("/")
+        page = page.decode() if isinstance(page, bytes) else page
+        menu = page[page.index('id="pmenu"'):page.index('id="pbtn"')]
+        self.assertLess(menu.index('id="pmpw"'), menu.index('data-act="logout"'))
+        dlg = page[page.index('id="pwdlg"'):page.index('id="modal"')]
+        for k in ('role="dialog" aria-modal="true" aria-labelledby="pwh"', 'id="pcur" type="password" autocomplete="current-password"',
+                  'id="pnew" type="password" autocomplete="new-password"', 'id="pnew2" type="password" autocomplete="new-password"',
+                  'id="pwcancel"', "--reset-admin", 'id="pwf"'):
+            self.assertIn(k, dlg)
+        self.assertNotIn("style=", dlg)
+        js = open(os.path.join(os.path.dirname(__file__), "..", "static", "console.js")).read()
+        sett = js[js.index("function Settings()"):js.index("/* ---- actions")]
+        self.assertNotIn("Admin password", sett)
+        self.assertNotIn("pcur", sett)
+        pw = js[js.index("function pwOpen"):js.index("/* ---- dockable menu")]
+        for k in ('"Escape"', '"Tab"', 'e.shiftKey', '$("pbtn").focus()'):
+            self.assertIn(k, pw)
+        self.assertIn('api("/api/password", {current: cu, new: n1})', js)
+        self.assertIn("New passwords do not match", js)
+
     def test_profile_menu(self):
         """The profile row sits at the bottom of the menu pane and opens a
         menu with the theme switch and Sign out; the old header controls are gone."""
