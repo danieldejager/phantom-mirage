@@ -73,7 +73,7 @@ $("lf").addEventListener("submit", async e => {
 });
 function start() {
   $("login").style.display = "none";
-  $("hsensor").textContent = "sensor: " + (SESSION.sensor_name || "?") + " · " + (SESSION.user || "");
+  profSet();
   go(netPending() ? "Decoys" : cur);
   timer = setInterval(refresh, 5000);
 }
@@ -644,6 +644,42 @@ document.addEventListener("submit", e => {
 });
 
 /* ---- dockable menu (from the mockup) ---- */
+/* ---- Profile row at the bottom of the menu pane: avatar initials, user
+   and sensor; opens a small menu with the theme switch and Sign out. Built
+   once at sign-in and never touched by the live refresh. ---- */
+function profSet() {
+  const u = SESSION.user || "user", sn = SESSION.sensor_name || "";
+  $("pav").textContent = (u.replace(/[^A-Za-z0-9]/g, "").slice(0, 2) || "?").toUpperCase();
+  $("pnm").textContent = u;
+  $("psn").textContent = sn ? "sensor " + sn : "";
+  $("pbtn").setAttribute("aria-label", "Account menu for " + u + (sn ? " on sensor " + sn : ""));
+  $("pbtn").title = u + (sn ? " · " + sn : "");
+}
+(function () {
+  const btn = $("pbtn"), m = $("pmenu"), items = () => [...m.querySelectorAll("[role^=menuitem]")];
+  function open(on, focus) {
+    m.classList.toggle("hide", !on); btn.setAttribute("aria-expanded", String(on));
+    if (on) { const it = items(); (focus === "last" ? it[it.length - 1] : it[0]).focus(); }
+  }
+  function close(back) { if (m.classList.contains("hide")) return; open(false); if (back) btn.focus(); }
+  btn.addEventListener("click", () => { if (m.classList.contains("hide")) open(true); else close(true); });
+  btn.addEventListener("keydown", e => {
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); open(true, e.key === "ArrowUp" ? "last" : "first"); }
+  });
+  m.addEventListener("keydown", e => {
+    const it = items(), i = it.indexOf(document.activeElement);
+    if (e.key === "Escape") { e.preventDefault(); close(true); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); it[(i + 1) % it.length].focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); it[(i - 1 + it.length) % it.length].focus(); }
+    else if (e.key === "Home") { e.preventDefault(); it[0].focus(); }
+    else if (e.key === "End") { e.preventDefault(); it[it.length - 1].focus(); }
+    else if (e.key === "Tab") close(false);
+  });
+  /* selecting an item closes the menu; theme.js and the data-act handler do the work */
+  m.addEventListener("click", e => { if (e.target.closest("[role^=menuitem]")) setTimeout(() => close(true), 0); });
+  document.addEventListener("click", e => { if (!e.target.closest("#prof")) close(false); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !m.classList.contains("hide") && !m.contains(e.target)) close(true); });
+})();
 const DK = "mirage.dock"; let D = {pos: "left", col: false, x: 80, y: 120};
 try { Object.assign(D, JSON.parse(localStorage.getItem(DK) || "{}")); } catch (e) { /* ignore */ }
 function dsave() { try { localStorage.setItem(DK, JSON.stringify(D)); } catch (e) { /* ignore */ } }

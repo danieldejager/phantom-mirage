@@ -16,7 +16,8 @@
     var bs = document.querySelectorAll("[data-theme-toggle]");
     for (var i = 0; i < bs.length; i++) {
       var b = bs[i], dark = cur === "dark";
-      b.setAttribute("aria-pressed", dark ? "true" : "false");
+      /* a menu item (profile menu) reports its state as checked, a button as pressed */
+      b.setAttribute(b.getAttribute("role") === "menuitemcheckbox" ? "aria-checked" : "aria-pressed", dark ? "true" : "false");
       b.setAttribute("aria-label", "Dark theme");
       b.setAttribute("title", dark ? "Dark theme on: switch to light" : "Light theme on: switch to dark");
       var ic = b.querySelector(".ti"), lb = b.querySelector(".tl");

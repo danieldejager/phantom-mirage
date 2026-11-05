@@ -147,3 +147,21 @@ button.ssi{padding:4px 8px;line-height:0}button.ssi svg{vertical-align:middle}bu
 #fwinrow:empty{display:none}
 @media(prefers-reduced-motion:reduce){.seg[data-drill]:hover,.seg[data-drill]:focus{stroke-width:18}}
 .brow:focus-visible .btrack,.brow:focus .btrack{stroke:var(--a);stroke-width:1.5}.hit:focus-visible{stroke:var(--a);stroke-width:2}
+
+/* Profile row pinned to the bottom of the menu pane */
+nav{display:flex;flex-direction:column}
+.prof{position:sticky;bottom:0;margin-top:auto;padding-top:10px;border-top:1px solid var(--b);background:var(--p)}
+.pbtn{display:flex;align-items:center;gap:10px;width:100%;padding:6px;border:0;border-radius:8px;background:none;color:var(--t);text-align:left;font:inherit;cursor:pointer}
+.pbtn:hover,.pbtn[aria-expanded=true]{background:var(--h)}.pbtn:focus-visible,.pmi:focus-visible{outline:2px solid var(--a);outline-offset:1px}
+.pav{width:34px;height:34px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;letter-spacing:.5px;color:#fff;background:linear-gradient(135deg,var(--b1),var(--a2))}
+.pid{display:flex;flex-direction:column;min-width:0;flex:1}.pnm{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.psn{font-size:11px;color:var(--tm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pch{color:var(--tm);font-size:12px}
+.pmenu{position:absolute;bottom:calc(100% + 6px);left:0;min-width:180px;z-index:45;background:var(--p);border:1px solid var(--b);border-radius:10px;padding:6px;box-shadow:0 10px 30px #0006;display:flex;flex-direction:column;gap:2px}
+.pmenu.hide{display:none}
+.pmi{display:flex;align-items:center;gap:10px;border:0;background:none;color:var(--t);text-align:left;padding:8px 10px;border-radius:6px;font:inherit;font-size:14px;cursor:pointer}.pmi:hover{background:var(--h)}.pmi .ti{width:16px;text-align:center;color:var(--ta)}
+.pmi[data-act=logout]{color:var(--r)}.pmi[data-act=logout] .ti{color:var(--r)}
+.d-col .pid,.d-col .pch{display:none}.d-col .pbtn{justify-content:center;padding:4px 0}
+.d-right .pmenu{left:auto;right:0}
+.d-top .prof{order:4;position:relative;margin:0;padding:0;border:0}.d-top .pbtn{width:auto}.d-top .psn,.d-top .pch{display:none}.d-top .pmenu{bottom:auto;top:calc(100% + 6px);left:auto;right:0}
+@media(max-width:719px){.prof{position:relative;border-top:1px solid var(--b)}.pmenu{bottom:auto;top:calc(100% + 6px)}}
+.d-top nav{flex-direction:row}

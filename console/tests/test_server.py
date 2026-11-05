@@ -256,6 +256,31 @@ class Server(unittest.TestCase):
             self.assertTrue(body)
         self.assertEqual(self.raw("/static/fonts/Aldrich-Regular.woff2")[2][:4], b"wOF2")
 
+    def test_profile_menu(self):
+        """The profile row sits at the bottom of the menu pane and opens a
+        menu with the theme switch and Sign out; the old header controls are gone."""
+        st, r, page = self.raw("/")
+        page = page.decode() if isinstance(page, bytes) else page
+        header = page[page.index("<header>"):page.index("</header>")]
+        self.assertNotIn("Sign out", header)
+        self.assertNotIn("data-theme-toggle", header)
+        self.assertNotIn("hsensor", page)
+        nav = page[page.index('<nav id="dock"'):page.index("</nav>")]
+        self.assertLess(nav.index('id="nav"'), nav.index('id="prof"'))
+        for k in ('id="pbtn" aria-haspopup="menu" aria-expanded="false" aria-controls="pmenu"', 'id="pmenu" role="menu"', 'role="menuitem" class="pmi" data-act="logout"', 'role="menuitemcheckbox" class="pmi" data-theme-toggle'):
+            self.assertIn(k, nav)
+        self.assertNotIn("style=", nav)
+        d = os.path.join(os.path.dirname(__file__), "..", "static")
+        js = open(os.path.join(d, "console.js")).read()
+        prof = js[js.index("function profSet"):js.index('const DK = "mirage.dock"')]
+        for k in ('e.key === "Escape"', '"ArrowDown"', '"ArrowUp"', '"Tab"', 'btn.setAttribute("aria-expanded"', 'close(true)', '!e.target.closest("#prof")'):
+            self.assertIn(k, prof)
+        self.assertNotIn("innerHTML", prof)
+        self.assertNotIn("prof", js[js.index("function render()"):js.index("function card(")])
+        css = open(os.path.join(d, "console.css")).read()
+        self.assertIn(".prof{position:sticky;bottom:0;margin-top:auto", css)
+        self.assertIn('"menuitemcheckbox" ? "aria-checked" : "aria-pressed"', open(os.path.join(d, "theme.js")).read())
+
     def test_theme_toggle_served_csp_unchanged(self):
         csp = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; "
                "font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
@@ -268,7 +293,9 @@ class Server(unittest.TestCase):
         self.assertLess(head.index('<script src="/static/theme.js"></script>'), head.index("/static/console.css"))
         self.assertNotRegex(page, r'<script(?![^>]*\bsrc=)')
         # one toggle button in the header and one on the sign-in splash, no radio group
-        self.assertEqual(page.count('class="themetg" data-theme-toggle aria-pressed="false" aria-label="Dark theme"'), 2)
+        # sign-in page button, plus the item in the profile menu
+        self.assertEqual(page.count('class="themetg" data-theme-toggle aria-pressed="false" aria-label="Dark theme"'), 1)
+        self.assertEqual(page.count('role="menuitemcheckbox" class="pmi" data-theme-toggle aria-checked="false" aria-label="Dark theme"'), 1)
         self.assertNotIn("data-theme-pick", page)
         self.assertNotIn('role="radiogroup"', page)
         st, r, js = self.raw("/static/theme.js")
