@@ -95,6 +95,7 @@ async function load(p) {
   if (p === "Alerts" || p === "Dashboard") data.alerts = await api("/api/alerts");
   if (p === "Activity" && !paused) data.activity = (await api("/api/activity")).events;
   if (p === "Settings") await zonesLoad();
+  if (p === "Settings") data.ni = await api("/api/decoyd/netinfo").then(j => j.result, e => { if (e.message === "signed out") throw e; return {error: e.message}; });
   if (p === "Settings") data.ti = await api("/api/decoyd/timeinfo").then(j => j.result, e => { if (e.message === "signed out") throw e; return {error: e.message}; });
   if (p === "Settings") { data.settings = await api("/api/settings"); data.audit = (await api("/api/audit")).audit; data.alerts = await api("/api/alerts"); }
   if (!data.status) data.status = await api("/api/status");
@@ -700,7 +701,14 @@ function timeHint() {
   const v = timeVals(), ni = data.ni || {}, blk = cidr((ni.network || "").split(" ")[0] || "");
   if (!v.length) return "Enter at least one server.";
   for (const x of v) {
-    if (/^[0-9.]+$/.test(x)) { const a = ip4(x); if (a === null) return x + " is not a valid IPv4 address."; if (blk && inC(a, blk)) return x + " is inside the decoy block."; }
+    if (/^[0-9.]+$/.test(x)) {
+      const a = ip4(x); if (a === null) return x + " is not a valid IPv4 address.";
+      if (a >>> 24 === 127) return x + " is a loopback address, so the sensor would ask itself. Use another host on your network that runs NTP.";
+      if (a === 0 || a === 0xffffffff || a >>> 28 === 14 || a >>> 16 === 0xa9fe) return x + " cannot be an NTP server (unspecified, multicast, broadcast or link-local address).";
+      if ((ni.interfaces || []).some(i => (i.addrs || []).some(y => y.split("/")[0] === x))) return x + " is an address of this sensor. Use another host on your network that runs NTP.";
+      if (blk && inC(a, blk)) return x + " is inside the decoy block.";
+    }
+    else if (x === "localhost" || x.endsWith(".localhost")) return x + " is this sensor itself. Use another host on your network that runs NTP.";
     else if (!/^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/.test(x)) return x + " is not an IPv4 address or host name.";
   }
   if (new Set(v).size !== v.length) return "A server is listed twice.";

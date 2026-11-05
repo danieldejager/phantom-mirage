@@ -922,6 +922,17 @@ class DecoyTime(DecoyStopStart):
         a.update(kw)
         return self.change("set_time", a)
 
+    def test_refuses_self(self):
+        for addr, msg in (("127.0.0.1", "loopback address, so the sensor would ask itself"),
+                          ("192.168.1.20", "is an address of this sensor"),
+                          ("localhost", "is this sensor itself"),
+                          ("169.254.1.1", "cannot be an NTP server")):
+            st, j = self.st([addr])
+            self.assertEqual(st, 400, j)
+            self.assertEqual(j["error"]["code"], "E_INVALID")
+            self.assertIn(msg, j["error"]["message"])
+        self.assertEqual(pmstore.load_config()["ntp_server"], "192.168.1.5")
+
     def test_timeinfo(self):
         st, j = self.c.req("GET", "/api/decoyd/timeinfo")
         self.assertEqual(st, 200)

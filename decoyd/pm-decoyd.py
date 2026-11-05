@@ -1215,9 +1215,15 @@ def render_time(kind, servers):
     return TIME_MARK + "[Time]\nNTP=%s\nFallbackNTP=\n" % " ".join(servers)
 
 
-def check_servers(v, nets):
+def own_addresses():
+    """This host's IPv4 addresses on every interface (loopback included)."""
+    return {a.ip for i in host_info()["ifaces"].values() for a in i["addrs"]}
+
+
+def check_servers(v, nets, own=()):
     """1 to 3 servers, each an IPv4 address or a plain host name; no
-    duplicates, nothing inside the decoy block, no loopback/multicast."""
+    duplicates, nothing inside the decoy block, no loopback/multicast, and
+    never one of this sensor's own addresses."""
     if not isinstance(v, list) or not 1 <= len(v) <= MAX_SERVERS:
         raise Err("E_INVALID", "args.servers", "give 1 to %d NTP servers" % MAX_SERVERS)
     out = []
@@ -1231,12 +1237,21 @@ def check_servers(v, nets):
                 a = ipaddress.IPv4Address(s)
             except ValueError:
                 raise Err("E_INVALID", f, "%s is not a valid IPv4 address" % s[:40])
-            if a.is_loopback or a.is_multicast or a.is_unspecified or a.is_link_local or a.is_reserved \
+            if a.is_loopback:
+                raise Err("E_INVALID", f, "%s is a loopback address, so the sensor would ask itself; "
+                          "use another host on your network that runs NTP" % s)
+            if a.is_multicast or a.is_unspecified or a.is_link_local or a.is_reserved \
                     or a == ipaddress.IPv4Address("255.255.255.255"):
-                raise Err("E_INVALID", f, "%s cannot be an NTP server" % s)
+                raise Err("E_INVALID", f, "%s cannot be an NTP server (unspecified, multicast, "
+                          "broadcast, link-local or reserved address)" % s)
+            if a in own:
+                raise Err("E_INVALID", f, "%s is an address of this sensor; "
+                          "use another host on your network that runs NTP" % s)
             if any(a in n for n in nets):
                 raise Err("E_INVALID", f, "%s is inside the decoy block; use a real host for time" % s)
-        elif not HOST_RE.match(s) or s == "localhost" or s.endswith(".localhost"):
+        elif s == "localhost" or s.endswith(".localhost"):
+            raise Err("E_INVALID", f, "%s is this sensor itself; use another host on your network that runs NTP" % s)
+        elif not HOST_RE.match(s):
             raise Err("E_INVALID", f, "use an IPv4 address or a host name (letters, digits, dots, hyphens)")
         if s in out:
             raise Err("E_INVALID", f, "%s is listed twice" % s)
@@ -1442,7 +1457,7 @@ def set_time(helper, args, actor, rid):
     if not isinstance(keep, bool):
         raise Err("E_INVALID", "args.keep", "keep must be true or false")
     nets, _ = read_default()
-    servers = check_servers(args["servers"], nets)
+    servers = check_servers(args["servers"], nets, own_addresses())
     lock = helper._lock()
     try:
         recover_time_journal()

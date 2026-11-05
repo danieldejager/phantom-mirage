@@ -45,6 +45,7 @@ class SimHelper:
                      "servers": ["192.168.1.5"], "synced": True, "reference": "192.168.1.5",
                      "stratum": 3, "offset_s": -0.000412, "sources": [], "ready": None, "max_servers": 3}
         self.unreachable = set()
+        self.own = {D.ipaddress.IPv4Address("192.168.1.20"), D.ipaddress.IPv4Address("127.0.0.1")}
         with open(conf_out, "w") as f:
             f.write(D.render(self.store, self.svcs))
         self.ls = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -76,7 +77,7 @@ class SimHelper:
             return t
         if op == "set_time":
             D._keys(args, "args", ("servers", "expect"), ("keep",))
-            servers = D.check_servers(args["servers"], self.nets)
+            servers = D.check_servers(args["servers"], self.nets, self.own)
             if args["expect"] != self.time["servers"]:
                 raise D.Err("E_CONFLICT", "args.expect", "the time servers changed since you loaded them")
             if servers == self.time["servers"]:

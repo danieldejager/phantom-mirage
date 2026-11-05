@@ -65,7 +65,10 @@ def ask(prompt, default=None, check=None):
                 die("test stdin ended at: " + prompt)
             v = line.rstrip("\n")
         else:
-            v = input("%s%s: " % (prompt, " [%s]" % default if default not in (None, "") else ""))
+            try:
+                v = input("%s%s: " % (prompt, " [%s]" % default if default not in (None, "") else ""))
+            except EOFError:
+                die("no answer for '%s' (input ended); nothing was changed" % prompt, 2)
         v = v.strip() or (str(default) if default is not None else "")
         err = check(v) if check else None
         if not err:
@@ -109,17 +112,50 @@ def chk_ts(v):
     return None if v in ("ntp", "browser") else "ntp or browser"
 
 
-def chk_ntp(v):
-    """A host on the local network only: no internet time servers."""
+def own_addrs():
+    """This machine's own addresses (all interfaces, IPv4 and IPv6)."""
+    if os.environ.get("PM_OWN_ADDRS") is not None and TEST:   # tests only
+        return {ipaddress.ip_address(x) for x in os.environ["PM_OWN_ADDRS"].split()}
+    out = set()
+    try:
+        r = subprocess.run(["ip", "-o", "addr", "show"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                           stderr=subprocess.DEVNULL, timeout=10, env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"})
+        for line in r.stdout.decode("utf-8", "replace").splitlines():
+            w = line.split()
+            if len(w) > 3 and w[2] in ("inet", "inet6"):
+                try:
+                    out.add(ipaddress.ip_interface(w[3]).ip)
+                except ValueError:
+                    pass
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return out
+
+
+def chk_ntp(v, own=None):
+    """A host on the local network only: no internet time servers, and never
+    this sensor itself."""
+    if not v:
+        return "enter the address of an NTP server on your local network (there is no default)"
     try:
         a = ipaddress.ip_address(v)
-        return None if (a.is_private or a.is_link_local) and not a.is_loopback else \
-            "use the address of an NTP server on your local network (private address)"
     except ValueError:
+        if v.lower() == "localhost" or v.lower().endswith(".localhost"):
+            return "%s is this sensor itself; enter another host on your network that runs NTP" % v
         if re.match(r'^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$', v) and (
                 v.endswith((".lan", ".local", ".internal", ".home.arpa")) or "." not in v):
             return None
         return "use a private IP or a local hostname (.lan, .local, .internal, .home.arpa)"
+    if a.is_loopback:
+        return "%s is a loopback address, so the sensor would ask itself for the time; " \
+               "enter another host on your network that runs NTP" % v
+    if a.is_unspecified or a.is_multicast or a.is_link_local or a == ipaddress.ip_address("255.255.255.255"):
+        return "%s cannot be an NTP server (unspecified, multicast, broadcast or link-local address)" % v
+    if a in (own_addrs() if own is None else own):
+        return "%s is an address of this sensor; enter another host on your network that runs NTP" % v
+    if not a.is_private:
+        return "use the address of an NTP server on your local network (private address)"
+    return None
 
 
 def chk_tz(v):
@@ -373,7 +409,14 @@ def first_run(argv):
             say("console certificate SHA-256 fingerprint: " + ensure_cert(cfg["sensor_name"]))
             fix_perms()
         return 0
+    if "ntp_server" in o:
+        err = chk_ntp(o["ntp_server"])
+        if err:
+            die("ntp-server: " + err, 2)
     if not interactive():
+        if o.get("time_source") == "ntp" and "ntp_server" not in o:
+            die("--time-source ntp needs --ntp-server ADDRESS (an NTP host on your network); "
+                "there is no default", 2)
         say("console: NOT set up (no terminal). Run on the sensor: sudo phantom-mirage-setup --console")
         return 3
     checks = [("sensor_name", "Sensor name (required)", None, chk_name),
@@ -393,12 +436,10 @@ def first_run(argv):
             vals[key] = ask(prompt, cfg.get(key) or dflt, chk)
     if vals["time_source"] == "ntp":
         if "ntp_server" in o:
-            err = chk_ntp(o["ntp_server"])
-            if err:
-                die("ntp-server: " + err, 2)
             vals["ntp_server"] = o["ntp_server"]
         else:
-            vals["ntp_server"] = ask("Local NTP server", cfg.get("ntp_server") or None, chk_ntp)
+            # No default: a stale or loopback value must never be offered.
+            vals["ntp_server"] = ask("Local NTP server (address of an NTP host on your network)", None, chk_ntp)
     else:
         vals["ntp_server"] = ""
     for key, prompt, dflt, chk in (

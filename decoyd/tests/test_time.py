@@ -9,6 +9,8 @@ import unittest
 
 from test_decoyd import Base, D
 
+ORIG_OWN = D.own_addresses
+
 FAKE_SYSTEMCTL = r"""#!/bin/sh
 D=@D@
 echo "$*" >> "$D/calls"
@@ -130,9 +132,9 @@ class TimeBase(Base):
 
 
 class TestCheckServers(unittest.TestCase):
-    def code(self, v, nets=()):
+    def code(self, v, nets=(), own=()):
         with self.assertRaises(D.Err) as c:
-            D.check_servers(v, list(nets))
+            D.check_servers(v, list(nets), own)
         return c.exception.message
 
     def test_good(self):
@@ -146,11 +148,18 @@ class TestCheckServers(unittest.TestCase):
         self.assertIn("1 to 3", self.code("192.168.1.5"))
         self.assertIn("decoy block", self.code(["10.9.0.9"], net))
         self.assertIn("twice", self.code(["ntp.lan", "NTP.lan"]))
-        for bad in ("127.0.0.1", "224.0.0.1", "0.0.0.0", "169.254.1.1", "255.255.255.255"):
+        for bad in ("127.0.0.1", "127.1.2.3"):
+            self.assertIn("loopback address, so the sensor would ask itself", self.code([bad]))
+        for bad in ("224.0.0.1", "0.0.0.0", "169.254.1.1", "255.255.255.255"):
             self.assertIn("cannot be", self.code([bad]))
+        for bad in ("localhost", "ntp.localhost"):
+            self.assertIn("this sensor itself", self.code([bad]))
+        own = {D.ipaddress.IPv4Address("192.168.1.20")}
+        self.assertIn("an address of this sensor", self.code(["192.168.1.20"], own=own))
+        self.assertEqual(D.check_servers(["192.168.1.21"], [], own), ["192.168.1.21"])
         for bad in ("1.2.3", "300.1.1.1", "01.2.3.4"):
             self.assertIn("not a valid", self.code([bad]))
-        for bad in ("ntp.lan; reboot", "a b", "-x", "ntp..lan", "$(id)", "x\nserver 1.1.1.1", "localhost",
+        for bad in ("ntp.lan; reboot", "a b", "-x", "ntp..lan", "$(id)", "x\nserver 1.1.1.1",
                     "a" * 64 + ".lan", "nts://ntp.lan", "ntp.lan:123"):
             self.assertIn("host name", self.code([bad]), bad)
         self.assertIn("not a server", self.code([5]))
@@ -168,6 +177,19 @@ class TestChrony(TimeBase):
         for c in self.r("chronyc_calls").splitlines():
             self.assertTrue(c.startswith("-h 127.0.0.1 "), c)
         self.assertEqual(t["sources"][0]["reach"], "377")
+
+    def test_set_time_refuses_own_and_loopback(self):
+        D.own_addresses = lambda: {D.ipaddress.IPv4Address("192.168.1.20"), D.ipaddress.IPv4Address("127.0.0.1")}
+        try:
+            for addr, msg in (("192.168.1.20", "an address of this sensor"), ("127.0.0.1", "loopback")):
+                r = self.set([addr])
+                self.assertFalse(r["ok"], r)
+                self.assertEqual(r["error"]["code"], "E_INVALID")
+                self.assertIn(msg, r["error"]["message"])
+            self.assertEqual(self.r("chrony/sources.d/phantom-mirage.sources"), "server 192.168.1.5 iburst\n")
+            self.assertNotIn("restart", self.r("calls"))
+        finally:
+            D.own_addresses = ORIG_OWN
 
     def test_not_synced(self):
         self.w("tracking", TRACKING_UNSYNC)
