@@ -1,0 +1,50 @@
+flowchart TB
+  subgraph B["Admin browser (untrusted input)"]
+    BR["Browser<br/>console UI"]
+  end
+  subgraph C["Console trust zone: user phantom-mirage-console, low privilege"]
+    CON["pm-console.py<br/>HTTPS on 127.0.0.1 only<br/>session + CSRF checks"]
+    CST[("/var/lib/phantom-mirage/console<br/>console state, audit")]
+  end
+  subgraph H["Helper trust zone: root, started on demand"]
+    SOCK{{"pm-decoyd.socket<br/>/run/phantom-mirage-decoyd.sock<br/>root:phantom-mirage-console 0660"}}
+    HLP["pm-decoyd (Python, stdlib)<br/>validate, generate, verify,<br/>swap, reload, check, roll back"]
+    JS[("/var/lib/phantom-mirage/decoys.json<br/>source of truth, root 0600")]
+  end
+  subgraph E["Sensor config (root owned, read by sensor)"]
+    MAIN[("/etc/phantom-mirage/phantom-mirage.conf<br/>hand edited + one include line")]
+    DC[("/etc/phantom-mirage/decoys.conf<br/>generated only, root 0644")]
+    PREV[("decoys.conf.prev<br/>last good copy")]
+    DEF[("/etc/default/phantom-mirage<br/>NETWORK, INTERFACE")]
+    DB[("/etc/phantom-mirage/columbo-v1.db<br/>6 personalities, sha256 pinned")]
+  end
+  subgraph S["Sensor zone"]
+    SD["systemd PID 1"]
+    PM["phantom-mirage.service<br/>starts root, drops to user phantom-mirage<br/>Landlock + script sandbox"]
+    FARP["farpd<br/>answers ARP for whole NETWORK"]
+  end
+  BR -- "1 HTTPS POST /api/decoys/*<br/>cookie + X-CSRF-Token" --> CON
+  CON -- "2 audit before/after" --> CST
+  CON -- "3 typed JSON request<br/>AF_UNIX, SO_PEERCRED" --> SOCK
+  SOCK -- "4 activates" --> HLP
+  HLP -- "5 read" --> DEF
+  HLP -- "5 read" --> DB
+  HLP -- "6 write" --> JS
+  HLP -- "7 write tmp, verify, rename" --> DC
+  HLP -- "7 keep" --> PREV
+  MAIN -. "include" .-> DC
+  HLP -- "8 systemctl reload / is-active<br/>(D-Bus)" --> SD
+  SD -- "9 ExecReload: SIGHUP" --> PM
+  PM -- "10 re-read on HUP" --> MAIN
+  HLP -- "11 typed JSON response" --> CON
+  classDef zone fill:#f6f8fa,stroke:#555
+  classDef priv fill:#fde2e2,stroke:#b00
+  classDef low fill:#e2f0fd,stroke:#036
+  class HLP,SOCK priv
+  class CON low
+  subgraph LEG["Legend"]
+    L1["Red: runs as root"]:::priv
+    L2["Blue: low privilege"]:::low
+    L3[("Cylinder: file on disk")]
+    L4["Solid arrow: data flow, numbered in order<br/>Dotted arrow: include<br/>Box border: trust boundary"]
+  end

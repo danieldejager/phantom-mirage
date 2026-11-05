@@ -1,0 +1,28 @@
+sequenceDiagram
+  Note over U,F: Legend: trust boundaries are browser | console (low privilege) | socket + helper (root) | config files | sensor. Solid arrow = request or action, dashed arrow = response.
+  autonumber
+  actor U as Admin (browser)
+  participant C as Console (phantom-mirage-console)
+  participant S as pm-decoyd.socket (systemd)
+  participant H as pm-decoyd (root)
+  participant F as /etc/phantom-mirage files
+  participant P as phantom-mirage.service
+  U->>C: POST add / edit / start / stop / delete (session, CSRF)
+  C->>C: session, CSRF, rate limit, audit "requested"
+  C->>S: connect /run/phantom-mirage-decoyd.sock
+  S->>H: start helper with socket fd
+  C->>H: JSON request {v:1, op, id, args}
+  H->>H: SO_PEERCRED uid check, take lock
+  H->>H: validate every field against fixed lists
+  H->>F: read NETWORK, columbo-v1.db, main conf binds
+  H->>H: build new decoys.json state, render decoys.conf
+  H->>F: write decoys.conf.new (O_EXCL, fsync)
+  H->>H: phantom-mirage --verify-config on full config using .new
+  H->>F: copy current to decoys.conf.prev, rename .new over decoys.conf
+  H->>P: systemctl reload phantom-mirage (SIGHUP)
+  Note over P: all templates freed and re-read,<br/>live sessions on every decoy drop
+  H->>P: wait, systemctl is-active, MainPID unchanged
+  H->>F: commit decoys.json
+  H-->>C: {ok:true, result, reloaded:true}
+  C->>C: audit "applied"
+  C-->>U: success, note that sessions were reset

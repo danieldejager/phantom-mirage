@@ -1,0 +1,22 @@
+flowchart LR
+  subgraph LAN["LAN (attacker or scanner)"]
+    A["Probe to 192.0.2.9<br/>ARP who-has, TCP SYN, UDP, ICMP echo"]
+  end
+  subgraph SENSOR["Sensor host"]
+    FA["farpd<br/>still answers ARP<br/>for whole NETWORK"]
+    PM["phantom-mirage<br/>bind 192.0.2.9 pm_s_192_0_2_9"]
+    T["Template pm_s_192_0_2_9<br/>default tcp action block<br/>default udp action block<br/>default icmp action block<br/>no ports"]
+    LOG[("events.jsonl<br/>touch still logged")]
+  end
+  A -- "1 ARP who-has" --> FA
+  FA -- "2 ARP reply (MAC)" --> A
+  A -- "3 TCP / UDP / ICMP" --> PM
+  PM -- "4 match bind" --> T
+  T -- "5 drop, no reply" --> X(("dropped"))
+  PM -- "6 log inbound" --> LOG
+  classDef drop fill:#fde2e2,stroke:#b00
+  class X,T drop
+  subgraph LEG["Legend"]
+    LA["Red: drop template, no reply sent"]:::drop
+    LB["Arrows: packets, numbered in order<br/>Box border: sensor host boundary<br/>Example address from 192.0.2.0/24"]
+  end
