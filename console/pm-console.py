@@ -4,6 +4,7 @@
 HTTPS on 127.0.0.1 only (reach it with: ssh -L 8443:127.0.0.1:8443 user@sensor).
 Python 3 standard library only; no outbound connections.
 """
+import hashlib
 import http.server
 import json
 import os
@@ -49,10 +50,27 @@ BRAND = {"{{PRODUCT}}": branding.PRODUCT, "{{LEGAL_NAME}}": branding.LEGAL_NAME,
 HOST_RE = re.compile(r'^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$')
 
 
+def asset_version():
+    """Short hash of every static asset. index.html loads its scripts, style
+    sheet and images with ?v=<this>, so a browser can never pair a new page
+    with a stale cached console.js or console.css after an upgrade."""
+    h = hashlib.sha256()
+    for name in sorted(STATIC_FILES):
+        if name == "index.html":
+            continue
+        try:
+            with open(os.path.join(STATIC, STATIC_FILES[name]), "rb") as f:
+                h.update(name.encode() + b"\0" + f.read())
+        except OSError:
+            pass
+    return h.hexdigest()[:12]
+
+
 def brand_html(data):
     t = data.decode("utf-8")
     for k, v in BRAND.items():
         t = t.replace(k, html.escape(v))
+    t = t.replace("{{V}}", asset_version())
     return t.encode("utf-8")
 
 
@@ -97,7 +115,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Cross-Origin-Opener-Policy", "same-origin")
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         self.send_header("Strict-Transport-Security", "max-age=31536000")
-        self.send_header("Cache-Control", "no-store" if api else "private, max-age=300")
+        self.send_header("Cache-Control", "no-store" if api else "no-cache")
 
     def send_json(self, code, obj, cookies=()):
         body = json.dumps(obj).encode()
@@ -196,8 +214,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             data = f.read()
         if ext == ".html":
             data = brand_html(data)
+            self.send_response(200)
+            self.headers_common(TYPES[ext], len(data), api=True)
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        # assets: always revalidate (no-cache) against a content ETag, so an
+        # upgrade is picked up on the next load and unchanged files cost a 304
+        tag = '"%s"' % hashlib.sha256(data).hexdigest()[:20]
+        if tag in [t.strip() for t in self.headers.get("If-None-Match", "").split(",")]:
+            self.send_response(304)
+            self.send_header("ETag", tag)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
         self.send_response(200)
-        self.headers_common(TYPES[ext], len(data), api=(ext == ".html"))
+        self.headers_common(TYPES[ext], len(data), api=False)
+        self.send_header("ETag", tag)
         self.end_headers()
         self.wfile.write(data)
 

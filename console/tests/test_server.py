@@ -296,6 +296,48 @@ class Server(unittest.TestCase):
         self.assertIn('api("/api/password", {current: cu, new: n1})', js)
         self.assertIn("New passwords do not match", js)
 
+    def test_assets_cache_safe_after_upgrade(self):
+        """Regression: a fresh index.html with a stale cached console.js from
+        the previous version left a blank screen. Assets are loaded with a
+        content version and always revalidated."""
+        st, r, page = self.raw("/")
+        page = page.decode()
+        v = pmc.asset_version()
+        self.assertRegex(v, r"^[0-9a-f]{12}$")
+        for a in ("theme.js", "console.css", "console.js"):
+            self.assertIn('/static/%s?v=%s"' % (a, v), page)
+        self.assertNotIn("{{V}}", page)
+        self.assertEqual(r.getheader("Cache-Control"), "no-store")
+        st, r, body = self.raw("/static/console.js?v=" + v)
+        self.assertEqual(st, 200)
+        self.assertEqual(r.getheader("Cache-Control"), "no-cache")
+        tag = r.getheader("ETag")
+        self.assertTrue(tag and tag.startswith('"'))
+        c = http.client.HTTPSConnection("127.0.0.1", PORT, context=ssl._create_unverified_context(), timeout=10)
+        c.request("GET", "/static/console.js", headers={"Host": "localhost:%d" % PORT, "If-None-Match": tag})
+        r2 = c.getresponse(); r2.read(); c.close()
+        self.assertEqual(r2.status, 304)
+        # the version follows the content of the installed files
+        d = tempfile.mkdtemp()
+        try:
+            for n, rel in pmc.STATIC_FILES.items():
+                src = os.path.join(pmc.STATIC, rel)
+                if os.path.isfile(src):
+                    os.makedirs(os.path.dirname(os.path.join(d, rel)), exist_ok=True)
+                    shutil.copy(src, os.path.join(d, rel))
+            old, pmc.STATIC = pmc.STATIC, d
+            try:
+                a = pmc.asset_version()
+                with open(os.path.join(d, "console.js"), "a") as f:
+                    f.write("\n")
+                self.assertNotEqual(a, pmc.asset_version())
+            finally:
+                pmc.STATIC = old
+        finally:
+            shutil.rmtree(d)
+        js = open(os.path.join(os.path.dirname(__file__), "..", "static", "console.js")).read()
+        self.assertIn("try { profSet(); } catch (e) { bootFail(e); return; }", js)
+
     def test_profile_menu(self):
         """The profile row sits at the bottom of the menu pane and opens a
         menu with the theme switch and Sign out; the old header controls are gone."""
@@ -330,7 +372,7 @@ class Server(unittest.TestCase):
         page = page.decode()
         head = page[:page.index("</head>")]
         # theme.js runs from <head>, before the stylesheet, so there is no flash
-        self.assertLess(head.index('<script src="/static/theme.js"></script>'), head.index("/static/console.css"))
+        self.assertLess(head.index('<script src="/static/theme.js?v=' + pmc.asset_version() + '"></script>'), head.index("/static/console.css"))
         self.assertNotRegex(page, r'<script(?![^>]*\bsrc=)')
         # one toggle button in the header and one on the sign-in splash, no radio group
         # sign-in page button, plus the item in the profile menu

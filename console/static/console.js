@@ -73,9 +73,15 @@ $("lf").addEventListener("submit", async e => {
 });
 function start() {
   $("login").style.display = "none";
-  profSet();
+  try { profSet(); } catch (e) { bootFail(e); return; }
   go(netPending() ? "Decoys" : cur);
   timer = setInterval(refresh, 5000);
+}
+/* never leave a blank screen: say what failed and how to recover */
+function bootFail(e) {
+  const p = document.createElement("p"); p.className = "bad"; p.id = "bootfail";
+  p.textContent = "The console could not start (" + (e && e.message || e) + "). Reload the page; if this persists, clear the browser cache for this site.";
+  $("main").replaceChildren(p);
 }
 
 /* ---- data ---- */
