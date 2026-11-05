@@ -902,6 +902,87 @@ class DecoyNetwork(DecoyStopStart):
             self.assertIn('NETWORK="10.9.0.8/29"', f.read())
 
 
+class DecoyTime(DecoyStopStart):
+    """The Time card end to end: timeinfo read, set_time with the helper's
+    own server checks behind the socket, the audit line, the console config
+    following the change, and refusal in browser time mode."""
+
+    def setUp(self):
+        super().setUp()
+        self.cfg = pmstore.load_config()
+        c = dict(self.cfg, time_source="ntp", ntp_server="192.168.1.5")
+        pmstore.save_config(c)
+
+    def tearDown(self):
+        pmstore.save_config(self.cfg)
+        super().tearDown()
+
+    def st(self, servers, expect=("192.168.1.5",), **kw):
+        a = {"servers": servers, "expect": list(expect)}
+        a.update(kw)
+        return self.change("set_time", a)
+
+    def test_refuses_self(self):
+        for addr, msg in (("127.0.0.1", "loopback address, so the sensor would ask itself"),
+                          ("192.168.1.20", "is an address of this sensor"),
+                          ("localhost", "is this sensor itself"),
+                          ("169.254.1.1", "cannot be an NTP server")):
+            st, j = self.st([addr])
+            self.assertEqual(st, 400, j)
+            self.assertEqual(j["error"]["code"], "E_INVALID")
+            self.assertIn(msg, j["error"]["message"])
+        self.assertEqual(pmstore.load_config()["ntp_server"], "192.168.1.5")
+
+    def test_timeinfo(self):
+        st, j = self.c.req("GET", "/api/decoyd/timeinfo")
+        self.assertEqual(st, 200)
+        self.assertEqual((j["result"]["service"], j["result"]["servers"], j["result"]["status"]),
+                         ("chrony", ["192.168.1.5"], "up"))
+
+    def test_change(self):
+        st, j = self.st(["192.168.1.6", "ntp.lan"])
+        self.assertEqual(st, 200, j)
+        self.assertTrue(j["result"]["reached"])
+        self.assertEqual(self.h.reqs[-1]["args"], {"servers": ["192.168.1.6", "ntp.lan"], "expect": ["192.168.1.5"]})
+        self.assertEqual(pmstore.load_config()["ntp_server"], "192.168.1.6 ntp.lan")
+        a = pmstore.read_audit()[0]
+        self.assertEqual(a["action"], "decoy-set_time")
+        self.assertIn("time servers 192.168.1.6 ntp.lan applied, chrony.service restarted, server reached", a["detail"])
+
+    def test_unreachable_and_keep(self):
+        self.h.unreachable = {"192.168.1.9"}
+        st, j = self.st(["192.168.1.9"])
+        self.assertEqual((st, j["error"]["code"]), (500, "E_TIME_UNREACHABLE_ROLLED_BACK"))
+        self.assertFalse(pmstore.read_audit()[0]["ok"])
+        st, j = self.st(["192.168.1.9"], keep=True)
+        self.assertEqual(st, 200, j)
+        self.assertIn("kept as asked", j["result"]["warnings"][0])
+        self.assertIn("not reached yet, kept anyway", pmstore.read_audit()[0]["detail"])
+
+    def test_refusals(self):
+        for sv, code in ((["10.9.0.9"], "E_INVALID"), (["ntp.lan; reboot"], "E_INVALID"), ([], "E_INVALID"),
+                         (["192.168.1.5"], "E_UNCHANGED")):
+            with self.subTest(sv=sv):
+                self.assertEqual(self.st(sv)[1]["error"]["code"], code)
+        self.assertEqual(self.st(["192.168.1.6"], expect=["1.1.1.1"])[1]["error"]["code"], "E_CONFLICT")
+        st, j = self.change("set_time", {"servers": ["192.168.1.6"], "expect": ["192.168.1.5"]}, pw="wrong")
+        self.assertEqual(st, 403)
+
+    def test_browser_mode_refused(self):
+        pmstore.save_config(dict(self.cfg, time_source="browser"))
+        n = len(self.h.reqs)
+        st, j = self.st(["192.168.1.6"])
+        self.assertEqual((st, j["error"]["code"]), (409, "E_BROWSER_TIME"))
+        self.assertEqual(len(self.h.reqs), n)
+
+    def test_ui(self):
+        with open(os.path.join(os.path.dirname(__file__), "..", "static", "console.js")) as f:
+            js = f.read()
+        for s in ("function timeCard", "/api/decoyd/timeinfo", 'op: "set_time"', "function timePoll", "tkeep",
+                  "function drift"):
+            self.assertIn(s, js)
+
+
 class DecoyReserved(DecoyStopStart):
     """Network and broadcast addresses of the block: listed, flagged, no
     controls, and refused by the console before the helper is asked."""

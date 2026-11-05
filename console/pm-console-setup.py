@@ -6,6 +6,14 @@
         [--timezone TZ] [--retention DAYS] [--reconfigure] [--dry-run]
   pm-console-setup.py reset-admin
   pm-console-setup.py status
+  pm-console-setup.py restore-time
+
+The sensor clock: setup finds the time service the machine runs (chrony,
+the default on Ubuntu 26.04, or systemd-timesyncd) and points that one at
+a single NTP server on the local network, with no internet fallback. For
+chrony the distribution's internet pool files are set aside (renamed
+*.pm-disabled) and chrony.conf is backed up once as chrony.conf.pm-backup;
+restore-time puts them back.
 
 The admin password is only ever read at a hidden prompt; it is never
 accepted as an option. Test-only: PM_TEST_STDIN=1 reads the answers
@@ -27,6 +35,10 @@ import pmstore  # noqa: E402
 USER = "phantom-mirage-console"
 TIMESYNCD_DROPIN = os.environ.get("PM_TIMESYNCD_DROPIN",
                                   "/etc/systemd/timesyncd.conf.d/phantom-mirage.conf")
+CHRONY_DIR = os.environ.get("PM_CHRONY_DIR", "/etc/chrony")
+MARK = "# written by phantom-mirage-setup"
+DISABLED = ".pm-disabled"
+SRC_LINE = re.compile(r'^\s*(pool|server|peer)\s', re.I)
 NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$')
 USER_RE = re.compile(r'^[a-z_][a-z0-9_.-]{0,31}$')
 TEST = os.environ.get("PM_TEST_STDIN") == "1"
@@ -53,7 +65,10 @@ def ask(prompt, default=None, check=None):
                 die("test stdin ended at: " + prompt)
             v = line.rstrip("\n")
         else:
-            v = input("%s%s: " % (prompt, " [%s]" % default if default not in (None, "") else ""))
+            try:
+                v = input("%s%s: " % (prompt, " [%s]" % default if default not in (None, "") else ""))
+            except EOFError:
+                die("no answer for '%s' (input ended); nothing was changed" % prompt, 2)
         v = v.strip() or (str(default) if default is not None else "")
         err = check(v) if check else None
         if not err:
@@ -97,17 +112,50 @@ def chk_ts(v):
     return None if v in ("ntp", "browser") else "ntp or browser"
 
 
-def chk_ntp(v):
-    """A host on the local network only: no internet time servers."""
+def own_addrs():
+    """This machine's own addresses (all interfaces, IPv4 and IPv6)."""
+    if os.environ.get("PM_OWN_ADDRS") is not None and TEST:   # tests only
+        return {ipaddress.ip_address(x) for x in os.environ["PM_OWN_ADDRS"].split()}
+    out = set()
+    try:
+        r = subprocess.run(["ip", "-o", "addr", "show"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                           stderr=subprocess.DEVNULL, timeout=10, env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"})
+        for line in r.stdout.decode("utf-8", "replace").splitlines():
+            w = line.split()
+            if len(w) > 3 and w[2] in ("inet", "inet6"):
+                try:
+                    out.add(ipaddress.ip_interface(w[3]).ip)
+                except ValueError:
+                    pass
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return out
+
+
+def chk_ntp(v, own=None):
+    """A host on the local network only: no internet time servers, and never
+    this sensor itself."""
+    if not v:
+        return "enter the address of an NTP server on your local network (there is no default)"
     try:
         a = ipaddress.ip_address(v)
-        return None if (a.is_private or a.is_link_local) and not a.is_loopback else \
-            "use the address of an NTP server on your local network (private address)"
     except ValueError:
+        if v.lower() == "localhost" or v.lower().endswith(".localhost"):
+            return "%s is this sensor itself; enter another host on your network that runs NTP" % v
         if re.match(r'^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$', v) and (
                 v.endswith((".lan", ".local", ".internal", ".home.arpa")) or "." not in v):
             return None
         return "use a private IP or a local hostname (.lan, .local, .internal, .home.arpa)"
+    if a.is_loopback:
+        return "%s is a loopback address, so the sensor would ask itself for the time; " \
+               "enter another host on your network that runs NTP" % v
+    if a.is_unspecified or a.is_multicast or a.is_link_local or a == ipaddress.ip_address("255.255.255.255"):
+        return "%s cannot be an NTP server (unspecified, multicast, broadcast or link-local address)" % v
+    if a in (own_addrs() if own is None else own):
+        return "%s is an address of this sensor; enter another host on your network that runs NTP" % v
+    if not a.is_private:
+        return "use the address of an NTP server on your local network (private address)"
+    return None
 
 
 def chk_tz(v):
@@ -162,37 +210,164 @@ def ensure_cert(name):
     return fp
 
 
-def apply_time(cfg, dry):
-    """NTP from a local server, or no NTP at all (browser sets the clock):
-    either way no internet time servers (FallbackNTP= is emptied)."""
-    if cfg["time_source"] == "ntp":
-        body = "# written by phantom-mirage-setup\n[Time]\nNTP=%s\nFallbackNTP=\n" % cfg["ntp_server"]
-    else:
-        body = "# written by phantom-mirage-setup (clock set from the admin browser)\n[Time]\nNTP=\nFallbackNTP=\n"
-    if dry:
-        say("dry run: would write %s and run timedatectl set-ntp %s" % (
-            TIMESYNCD_DROPIN, "true" if cfg["time_source"] == "ntp" else "false"))
-        return
-    if os.geteuid() != 0 and "PM_TIMESYNCD_DROPIN" not in os.environ:
-        say("not root: sensor clock settings left unchanged")
-        return
-    os.makedirs(os.path.dirname(TIMESYNCD_DROPIN), exist_ok=True)
-    with open(TIMESYNCD_DROPIN, "w") as f:
+def _run(cmd, timeout=20):
+    try:
+        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout,
+                           universal_newlines=True)
+        return r.returncode, r.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return -1, ""
+
+
+def chrony_unit():
+    for u in ("chrony.service", "chronyd.service"):
+        if _run(["systemctl", "cat", u])[0] == 0:
+            return u
+    return "chrony.service"
+
+
+def time_service():
+    """Which time service this machine actually runs: 'chrony',
+    'timesyncd' or 'none'. An active unit wins; otherwise an installed one."""
+    forced = os.environ.get("PM_TIME_SERVICE")
+    if forced in ("chrony", "timesyncd", "none"):
+        return forced
+    for u, name in (("chrony.service", "chrony"), ("chronyd.service", "chrony"),
+                    ("systemd-timesyncd.service", "timesyncd")):
+        if _run(["systemctl", "is-active", u])[1] == "active":
+            return name
+    if os.path.isfile(os.path.join(CHRONY_DIR, "chrony.conf")):
+        return "chrony"
+    if any(os.path.exists(p) for p in ("/usr/lib/systemd/systemd-timesyncd", "/lib/systemd/systemd-timesyncd")):
+        return "timesyncd"
+    return "none"
+
+
+def _write(path, body):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
         f.write(body)
-    if os.geteuid() != 0:
-        return
-    for cmd in (["timedatectl", "set-ntp", "true" if cfg["time_source"] == "ntp" else "false"],
-                ["systemctl", "try-restart", "systemd-timesyncd"]):
+    os.chmod(tmp, 0o644)
+    os.rename(tmp, path)
+
+
+def chrony_files(cfg):
+    """Configure chrony: comment out pool/server/peer lines in chrony.conf
+    (backup kept once), make sure it reads sources.d, set aside every other
+    *.sources file there (the Ubuntu internet NTS pools), and write ours.
+    Returns the list of things changed. Idempotent."""
+    conf = os.path.join(CHRONY_DIR, "chrony.conf")
+    sdir = os.path.join(CHRONY_DIR, "sources.d")
+    done = []
+    text = open(conf).read() if os.path.isfile(conf) else ""
+    out, changed, has_dir = [], False, False
+    for line in text.splitlines(True):
+        if SRC_LINE.match(line):
+            out.append("#pm-disabled " + line)
+            changed = True
+        else:
+            if re.match(r'^\s*sourcedir\s+%s/?\s*$' % re.escape(sdir), line):
+                has_dir = True
+            out.append(line)
+    if not has_dir:
+        out.append("%s\nsourcedir %s\n" % (MARK, sdir))
+        changed = True
+    if changed:
+        if text and not os.path.exists(conf + ".pm-backup"):
+            _write(conf + ".pm-backup", text)
+        _write(conf, "".join(out))
+        done.append("chrony.conf: internet pool/server lines commented out (backup chrony.conf.pm-backup)")
+    os.makedirs(sdir, exist_ok=True)
+    for n in sorted(os.listdir(sdir)):
+        if n.endswith(".sources") and n != "phantom-mirage.sources":
+            os.rename(os.path.join(sdir, n), os.path.join(sdir, n + DISABLED))
+            done.append("set aside %s (now %s%s)" % (n, n, DISABLED))
+    ours = os.path.join(sdir, "phantom-mirage.sources")
+    if cfg["time_source"] == "ntp":
+        _write(ours, "%s\nserver %s iburst\n" % (MARK, cfg["ntp_server"]))
+    elif os.path.exists(ours):
+        os.unlink(ours)
+    return done
+
+
+def apply_time(cfg, dry):
+    """NTP from one local server, or no NTP at all (browser sets the clock).
+    Configures whichever time service runs here; never an internet server."""
+    svc = time_service()
+    ntp = cfg["time_source"] == "ntp"
+    what = ("server %s" % cfg["ntp_server"]) if ntp else "no servers (clock set from the admin browser)"
+    if dry:
+        say("dry run: time service %s; would configure %s with no internet fallback" % (svc, what))
+        return svc
+    if svc == "none":
+        say("time: no time service found (neither chrony nor systemd-timesyncd); sensor clock left unchanged. "
+            "Install chrony and run setup again for NTP")
+        return svc
+    test = "PM_TIMESYNCD_DROPIN" in os.environ or "PM_CHRONY_DIR" in os.environ
+    if os.geteuid() != 0 and not test:
+        say("not root: sensor clock settings left unchanged")
+        return svc
+    if svc == "chrony":
+        for d in chrony_files(cfg):
+            say("time: " + d)
+        if os.geteuid() == 0:
+            u = chrony_unit()
+            rc, _ = _run(["systemctl", "restart", u], 30)
+            if rc != 0:
+                say("time: warning: systemctl restart %s failed" % u)
+        say("time: chrony configured with %s; no internet fallback" % what)
+        if os.geteuid() == 0 and ntp:
+            rc, out = _run(["chronyc", "-n", "sources"])
+            say("time: chrony sources now: " + (" | ".join(out.splitlines()[-3:]) if rc == 0 and out else "not readable yet"))
+            say("time: undo the pool changes with: sudo /usr/bin/python3 -I %s restore-time" % os.path.abspath(__file__))
+    else:
+        if ntp:
+            body = "%s\n[Time]\nNTP=%s\nFallbackNTP=\n" % (MARK, cfg["ntp_server"])
+        else:
+            body = "%s (clock set from the admin browser)\n[Time]\nNTP=\nFallbackNTP=\n" % MARK
+        _write(TIMESYNCD_DROPIN, body)
+        if os.geteuid() == 0:
+            for cmd in (["timedatectl", "set-ntp", "true" if ntp else "false"],
+                        ["systemctl", "try-restart", "systemd-timesyncd"]):
+                _run(cmd)
+        say("time: systemd-timesyncd configured with %s; no internet fallback" % what)
+        if os.geteuid() == 0 and ntp:
+            rc, out = _run(["timedatectl", "show-timesync", "-p", "ServerAddress", "--value"])
+            say("time: timesyncd server now: " + (out or "not contacted yet"))
+    if cfg["timezone"] and os.geteuid() == 0:
+        _run(["timedatectl", "set-timezone", cfg["timezone"]])
+    return svc
+
+
+def restore_time(_):
+    """Put back what setup set aside for chrony and remove our time files."""
+    sdir = os.path.join(CHRONY_DIR, "sources.d")
+    conf = os.path.join(CHRONY_DIR, "chrony.conf")
+    n = 0
+    if os.path.isdir(sdir):
+        for f in sorted(os.listdir(sdir)):
+            if f.endswith(DISABLED):
+                os.rename(os.path.join(sdir, f), os.path.join(sdir, f[:-len(DISABLED)]))
+                n += 1
         try:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
-        except (OSError, subprocess.SubprocessError):
+            os.unlink(os.path.join(sdir, "phantom-mirage.sources"))
+            n += 1
+        except FileNotFoundError:
             pass
-    if cfg["timezone"]:
-        try:
-            subprocess.run(["timedatectl", "set-timezone", cfg["timezone"]],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
-        except (OSError, subprocess.SubprocessError):
-            pass
+    if os.path.exists(conf + ".pm-backup"):
+        os.rename(conf + ".pm-backup", conf)
+        n += 1
+    try:
+        os.unlink(TIMESYNCD_DROPIN)
+        n += 1
+    except FileNotFoundError:
+        pass
+    if os.geteuid() == 0:
+        _run(["systemctl", "try-restart", chrony_unit()], 30)
+        _run(["systemctl", "try-restart", "systemd-timesyncd"])
+    say("time: %s restored" % ("distribution time settings" if n else "nothing to restore;"))
+    return 0
 
 
 def parse(argv):
@@ -234,7 +409,14 @@ def first_run(argv):
             say("console certificate SHA-256 fingerprint: " + ensure_cert(cfg["sensor_name"]))
             fix_perms()
         return 0
+    if "ntp_server" in o:
+        err = chk_ntp(o["ntp_server"])
+        if err:
+            die("ntp-server: " + err, 2)
     if not interactive():
+        if o.get("time_source") == "ntp" and "ntp_server" not in o:
+            die("--time-source ntp needs --ntp-server ADDRESS (an NTP host on your network); "
+                "there is no default", 2)
         say("console: NOT set up (no terminal). Run on the sensor: sudo phantom-mirage-setup --console")
         return 3
     checks = [("sensor_name", "Sensor name (required)", None, chk_name),
@@ -254,12 +436,10 @@ def first_run(argv):
             vals[key] = ask(prompt, cfg.get(key) or dflt, chk)
     if vals["time_source"] == "ntp":
         if "ntp_server" in o:
-            err = chk_ntp(o["ntp_server"])
-            if err:
-                die("ntp-server: " + err, 2)
             vals["ntp_server"] = o["ntp_server"]
         else:
-            vals["ntp_server"] = ask("Local NTP server", cfg.get("ntp_server") or None, chk_ntp)
+            # No default: a stale or loopback value must never be offered.
+            vals["ntp_server"] = ask("Local NTP server (address of an NTP host on your network)", None, chk_ntp)
     else:
         vals["ntp_server"] = ""
     for key, prompt, dflt, chk in (
@@ -335,10 +515,11 @@ def status(_):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2 or sys.argv[1] not in ("first-run", "reset-admin", "status"):
-        die("usage: pm-console-setup.py first-run|reset-admin|status [options]", 2)
+    if len(sys.argv) < 2 or sys.argv[1] not in ("first-run", "reset-admin", "status", "restore-time"):
+        die("usage: pm-console-setup.py first-run|reset-admin|status|restore-time [options]", 2)
     try:
-        sys.exit({"first-run": first_run, "reset-admin": reset_admin, "status": status}[sys.argv[1]](sys.argv[2:]))
+        sys.exit({"first-run": first_run, "reset-admin": reset_admin, "status": status,
+                  "restore-time": restore_time}[sys.argv[1]](sys.argv[2:]))
     except (KeyboardInterrupt, EOFError):
         print()
         die("aborted")
