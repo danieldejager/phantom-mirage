@@ -144,9 +144,11 @@ def parse_decoys(conf=None):
         elif len(w) >= 6 and w[0] == "set" and w[2] == "default" and w[4] == "action":
             tmpl.setdefault(w[1], {"personality": "", "ports": [], "default": {}})["default"][w[3]] = w[5]
         elif len(w) >= 5 and w[0] == "add" and w[3] == "port":
+            # add <tmpl> <tcp|udp> port <N> [<open|filtered|...>]
             t = tmpl.setdefault(w[1], {"personality": "", "ports": [], "default": {}})
-            if w[4] not in ("block", "reset", "closed"):
-                t["ports"].append("%s/%s" % (w[2], w[3]))
+            state = w[5] if len(w) >= 6 else ""
+            if state not in ("block", "reset", "closed"):
+                t["ports"].append("%s/%s" % (w[2], w[4]))
         elif len(w) >= 3 and w[0] == "bind":
             binds.append({"ip": w[1], "template": w[2]})
     return {"templates": tmpl, "binds": binds}
