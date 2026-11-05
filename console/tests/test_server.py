@@ -256,6 +256,23 @@ class Server(unittest.TestCase):
             self.assertTrue(body)
         self.assertEqual(self.raw("/static/fonts/Aldrich-Regular.woff2")[2][:4], b"wOF2")
 
+    def test_chart_hover_readout(self):
+        """The connections chart shows a visible readout (guide, dot, box) for
+        the hovered, focused or tapped bucket, moved with SVG attributes only."""
+        d = os.path.join(os.path.dirname(__file__), "..", "static")
+        js = open(os.path.join(d, "console.js")).read()
+        for k in ('id="dtip"', 'id="dguide"', 'id="ddot"', 'id="dtipb" transform=', 'id="dtipt"', 'id="dtipn"'):
+            self.assertIn(k, js)
+        tip = js[js.index("let tipI = -1"):js.index("function hm(t)")]
+        for k in ('"pointermove"', '"pointerleave"', '"touch"', '"focus"', '"ArrowLeft"', '"ArrowRight"', 'setAttribute("transform"', 'hm(f) + " to " + hm(f + k.bw)'):
+            self.assertIn(k, tip)
+        self.assertNotIn(".style", tip)
+        self.assertNotIn("innerHTML", tip)
+        self.assertIn("tipBind(); dashUpdate();", js)
+        self.assertIn("tipDraw();", js[js.index("function dashUpdate"):])
+        css = open(os.path.join(d, "console.css")).read()
+        self.assertIn(".dtip{pointer-events:none}", css)
+
     def test_profile_menu(self):
         """The profile row sits at the bottom of the menu pane and opens a
         menu with the theme switch and Sign out; the old header controls are gone."""

@@ -165,3 +165,10 @@ nav{display:flex;flex-direction:column}
 .d-top .prof{order:4;position:relative;margin:0;padding:0;border:0}.d-top .pbtn{width:auto}.d-top .psn,.d-top .pch{display:none}.d-top .pmenu{bottom:auto;top:calc(100% + 6px);left:auto;right:0}
 @media(max-width:719px){.prof{position:relative;border-top:1px solid var(--b)}.pmenu{bottom:auto;top:calc(100% + 6px)}}
 .d-top nav{flex-direction:row}
+
+/* Connections chart hover / focus readout */
+.dtip{pointer-events:none}.dtip.hide{display:none}
+.dguide{stroke:var(--a);stroke-width:1.5;stroke-dasharray:4 4}
+.ddot{fill:var(--a);stroke:var(--p);stroke-width:2.5}
+.dtipbg{fill:var(--p);stroke:var(--b);stroke-width:1;filter:drop-shadow(0 4px 10px #0005)}
+.dtipt{fill:var(--tm);font-size:15px}.dtipn{fill:var(--t);font-size:16px;font-weight:700}

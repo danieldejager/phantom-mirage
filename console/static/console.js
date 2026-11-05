@@ -134,7 +134,7 @@ function nav() {
   const n = openAlerts();
   $("nav").innerHTML = Object.keys(pages).map(p => `<a href="#" class="${p === cur ? "on" : ""}" data-go="${p}" data-tip="${p}" title="${p}" aria-label="${p}${p === "Alerts" && n ? ", " + n + " open" : ""}"${p === cur ? ' aria-current="page"' : ""}><span class="ic" aria-hidden="true">${ICONS[p]}</span><span class="lb">${p}</span>${p === "Alerts" && n ? `<span class="badge">${n}</span>` : ""}</a>`).join("");
 }
-function render() { nav(); $("main").innerHTML = pages[cur](); if (cur === "Activity") rt(); if (cur === "Dashboard") dashUpdate(); }
+function render() { nav(); $("main").innerHTML = pages[cur](); if (cur === "Activity") rt(); if (cur === "Dashboard") { tipBind(); dashUpdate(); } }
 function card(k, v) { return `<div class="card"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`; }
 function dot(c) { return `<span class="dot ${c}"></span>`; }
 function svc(s) { return s === "active" ? dot("g") + "Running" : s === "inactive" ? dot("r") + "Stopped" : s === "failed" ? dot("r") + "Failed" : dot("y") + esc(s || "unknown"); }
@@ -182,7 +182,8 @@ function dashMetrics() {
 <div class="cards kpis">${kpi("kev", "Events (last hour)", "Show the last hour of events in Activity")}${kpi("kal", "Open alerts", "Open the Alerts page")}${kpi("kdc", "Active decoys", "Open the Decoys page")}${kpi("ksrc", "Distinct sources (last hour)", "Show the last hour of events in Activity")}</div>
 <div class="dgrid">
 <figure class="card chart wide"><figcaption class="k">Connections over the last hour (5 minute buckets)</figcaption>
-<svg id="dline" viewBox="0 0 1000 200" role="img" aria-label="Connections over time"><line class="grid" x1="40" y1="170" x2="985" y2="170"></line><line class="grid" x1="40" y1="20" x2="985" y2="20"></line><text class="ax" id="dmax" x="34" y="24" text-anchor="end">0</text><text class="ax" x="34" y="174" text-anchor="end">0</text>${ax}<path class="area" id="darea" d=""></path><path class="line" id="dpath" d=""></path>${[...Array(DBK).keys()].map(i => `<rect class="hit" id="dhit${i}" x="${(40 + i * 945 / DBK).toFixed(1)}" y="20" width="${(945 / DBK).toFixed(1)}" height="150" role="button" tabindex="0" data-drill="win"></rect>`).join("")}<text class="dempty" id="dlinee" x="512" y="100" text-anchor="middle">No connections in the last hour</text></svg>
+<svg id="dline" viewBox="0 0 1000 200" role="img" aria-label="Connections over time"><line class="grid" x1="40" y1="170" x2="985" y2="170"></line><line class="grid" x1="40" y1="20" x2="985" y2="20"></line><text class="ax" id="dmax" x="34" y="24" text-anchor="end">0</text><text class="ax" x="34" y="174" text-anchor="end">0</text>${ax}<path class="area" id="darea" d=""></path><path class="line" id="dpath" d=""></path>${[...Array(DBK).keys()].map(i => `<rect class="hit" id="dhit${i}" x="${(40 + i * 945 / DBK).toFixed(1)}" y="20" width="${(945 / DBK).toFixed(1)}" height="150" role="button" tabindex="0" data-drill="win"></rect>`).join("")}<text class="dempty" id="dlinee" x="512" y="100" text-anchor="middle">No connections in the last hour</text><g class="dtip hide" id="dtip" aria-hidden="true"><line class="dguide" id="dguide" x1="0" y1="20" x2="0" y2="170"></line><circle class="ddot" id="ddot" cx="0" cy="170" r="6"></circle><g id="dtipb" transform="translate(0 24)"><rect class="dtipbg" id="dtipbg" x="0" y="0" width="200" height="52" rx="6"></rect><text class="dtipt" id="dtipt" x="10" y="21"></text><text class="dtipn" id="dtipn" x="10" y="42"></text></g></g></svg>
+<p class="vh" id="dtipl" aria-live="polite"></p>
 <table class="vh" id="dlinet"><caption>Connections per 5 minute bucket</caption></table></figure>
 <figure class="card chart"><figcaption class="k">Protocol split (last hour)</figcaption>
 <div class="donutw"><svg id="donut" viewBox="0 0 140 140" role="img" aria-label="Protocol split"><circle class="dtrack" cx="70" cy="70" r="52"></circle>${DPROTO.map(p => `<circle class="seg seg-${p.toLowerCase()}" id="dseg${p}" data-drill="proto" data-v="${p}" role="button" aria-label="Show ${p} events in Activity" cx="70" cy="70" r="52" stroke-dasharray="0 ${DCIRC}" transform="rotate(-90 70 70)"></circle>`).join("")}<text class="dtot" id="dtot" x="70" y="76" text-anchor="middle">0</text></svg>
@@ -190,6 +191,55 @@ function dashMetrics() {
 <figure class="card chart"><figcaption class="k">Busiest decoys (last hour)</figcaption>${barSlots("dbd", "Busiest decoys")}</figure>
 <figure class="card chart"><figcaption class="k">Top source addresses (last hour)</figcaption>${barSlots("dbs", "Top source addresses")}</figure>
 </div></div>`;
+}
+/* ---- Hover / focus / tap readout on the connections chart. One tooltip
+   group lives inside the SVG and is moved with SVG attributes only, so a
+   live refresh just rewrites its text and position. ---- */
+let tipI = -1, tipPtr = "";
+function tipX(i) { return 40 + (i + 0.5) * 945 / DBK; }
+function tipDot() {
+  if (tipI < 0 || !$("ddot")) return;
+  const v = dstate.line ? dstate.line[tipI] || 0 : 0;
+  $("ddot").setAttribute("cy", (170 - v * 150).toFixed(1));
+}
+function tipDraw() {
+  const g = $("dtip"), k = dstate.bk;
+  if (!g) return;
+  g.classList.toggle("hide", tipI < 0 || !k);
+  if (tipI < 0 || !k) return;
+  const i = tipI, x = tipX(i), f = k.t0 + i * k.bw, n = k.b[i];
+  $("dguide").setAttribute("x1", x.toFixed(1)); $("dguide").setAttribute("x2", x.toFixed(1));
+  $("ddot").setAttribute("cx", x.toFixed(1)); tipDot();
+  $("dtipt").textContent = hm(f) + " to " + hm(f + k.bw);
+  $("dtipn").textContent = n + (n === 1 ? " connection" : " connections") + (n ? "  ·  " + DPROTO.map((p, j) => p + " " + k.bp[i][j]).filter((t, j) => k.bp[i][j]).join("  ") : "");
+  let w = 160;
+  try { w = Math.max($("dtipt").getComputedTextLength(), $("dtipn").getComputedTextLength()) + 20; } catch (e) { /* not laid out yet */ }
+  $("dtipbg").setAttribute("width", w.toFixed(1));
+  /* keep the box inside the plot: right of the guide, or left when it would overflow */
+  let bx = x + 12; if (bx + w > 985) bx = x - 12 - w; bx = Math.max(40, bx);
+  $("dtipb").setAttribute("transform", "translate(" + bx.toFixed(1) + " 24)");
+  $("dtipl").textContent = $("dtipt").textContent + ", " + $("dtipn").textContent;
+}
+function tipShow(i) { tipI = i; tipDraw(); }
+function tipBind() {
+  const svg = $("dline");
+  if (!svg) return;
+  tipI = -1;
+  const at = e => { const m = svg.getScreenCTM(); if (!m) return -1; const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse()); return Math.min(DBK - 1, Math.max(0, Math.floor((p.x - 40) / (945 / DBK)))); };
+  svg.addEventListener("pointerdown", e => { tipPtr = e.pointerType; });
+  svg.addEventListener("pointermove", e => { if (e.pointerType !== "touch") tipShow(at(e)); });
+  svg.addEventListener("pointerleave", e => { if (e.pointerType !== "touch" && !svg.contains(document.activeElement)) tipShow(-1); });
+  /* touch: the first tap on a bucket shows its readout, a second tap drills down */
+  svg.addEventListener("click", e => { const i = at(e); if (tipPtr === "touch" && i !== tipI) { e.stopPropagation(); e.preventDefault(); tipShow(i); } tipPtr = ""; }, true);
+  for (let i = 0; i < DBK; i++) {
+    const h = $("dhit" + i);
+    h.addEventListener("focus", () => tipShow(i));
+    h.addEventListener("blur", () => setTimeout(() => { if (!svg.contains(document.activeElement) && !svg.matches(":hover")) tipShow(-1); }, 0));
+    h.addEventListener("keydown", e => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault(); $("dhit" + Math.min(DBK - 1, Math.max(0, i + (e.key === "ArrowRight" ? 1 : -1)))).focus();
+    });
+  }
 }
 function hm(t) { return new Date(t).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"}); }
 /* Drill down from a Dashboard chart part to Activity with matching filters */
@@ -246,7 +296,13 @@ function dashUpdate() {
     const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
     $("dpath").setAttribute("d", d);
     $("darea").setAttribute("d", d + ` L${pts[DBK - 1][0].toFixed(1)} 170 L${pts[0][0].toFixed(1)} 170 Z`);
+    tipDot();
   });
+  /* per bucket protocol counts for the hover readout */
+  const bp = b.map(() => DPROTO.map(() => 0));
+  conn.forEach(r => { const k = DPROTO.indexOf(r.proto); if (k >= 0) bp[Math.min(DBK - 1, Math.max(0, Math.floor((Date.parse(r.ts) - t0) / bw)))][k]++; });
+  dstate.bk = {b, bp, t0, bw};
+  tipDraw();
   for (let i = 0; i < DBK; i++) {
     const h = $("dhit" + i), f = t0 + i * bw;
     h.dataset.from = String(f); h.dataset.to = String(f + bw);
