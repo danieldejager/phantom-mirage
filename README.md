@@ -45,6 +45,18 @@ and alert retention, then for the admin password at a hidden prompt (never
 as an option). It prints the certificate's SHA-256 fingerprint: compare
 it with what your browser shows on first visit.
 
+For local NTP, setup configures the time service the sensor actually runs:
+chrony (the default on Ubuntu 26.04) or systemd-timesyncd. It points that
+service at one NTP server on your network (a private address or a local
+name such as `ntp.lan`) with no internet fallback. For chrony it renames
+the distribution's internet pool files in `/etc/chrony/sources.d` to
+`*.pm-disabled` and keeps a one time backup `chrony.conf.pm-backup` if it
+had to comment out `pool` or `server` lines. Setup prints which service it
+configured. To put the distribution settings back, run
+`sudo /usr/bin/python3 -I /usr/lib/phantom-mirage/console/pm-console-setup.py restore-time`
+(the uninstaller does this too). Servers handed out by DHCP are not
+changed.
+
 To open it from your PC, tunnel the port over SSH:
 
 ```sh
