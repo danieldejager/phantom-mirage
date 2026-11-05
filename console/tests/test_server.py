@@ -577,5 +577,61 @@ class DecoySettings(DecoyStopStart):
         self.assertNotIn("innerHTML = e", js)
 
 
+class DecoyReserved(DecoyStopStart):
+    """Network and broadcast addresses of the block: listed, flagged, no
+    controls, and refused by the console before the helper is asked."""
+
+    def test_rows_flagged(self):
+        st, j = self.c.req("GET", "/api/decoys")
+        got = {r["ip"]: r["reserved"] for r in j["decoys"]}
+        self.assertEqual(got["10.9.0.8"], "network")
+        self.assertEqual(got["10.9.0.15"], "broadcast")
+        self.assertEqual([ip for ip, v in got.items() if v], ["10.9.0.8", "10.9.0.15"])
+        self.assertEqual(len([ip for ip in got if ip.startswith("10.9.0.")]), 8)
+
+    def test_direct_call_refused(self):
+        for op, args in (("stop", {"ip": "10.9.0.8"}), ("start", {"ip": "10.9.0.15"}),
+                         ("delete", {"ip": "10.9.0.8"}),
+                         ("add", {"decoy": {"ip": "10.9.0.15", "personality": None,
+                                            "defaults": {"tcp": "reset", "udp": "closed", "icmp": "open"},
+                                            "ports": []}})):
+            with self.subTest(op=op):
+                n = len(self.h.reqs)
+                st, j = self.change(op, args)
+                self.assertEqual((st, j["error"]["code"]), (400, "E_ADDRESS_RESERVED"), j)
+                self.assertIn("address of the decoy block", j["error"]["message"])
+                self.assertEqual(len(self.h.reqs), n)
+
+    def test_rule_matches_helper(self):
+        import importlib.machinery, importlib.util, ipaddress
+        path = os.path.join(os.path.dirname(pmstore.__file__), "..", "decoyd", "pm-decoyd.py")
+        ld = importlib.machinery.SourceFileLoader("pm_decoyd_rule", path)
+        spec = importlib.util.spec_from_loader(ld.name, ld)
+        hm = importlib.util.module_from_spec(spec)
+        ld.exec_module(hm)
+        for block in ("10.211.55.240/29", "10.0.0.0/30", "10.0.0.0/31", "10.0.0.5/32", "10.0.0.0/24"):
+            nets = pmstore.parse_networks(block)
+            for a in list(nets[0])[:6] + list(nets[0])[-2:]:
+                ip = str(a)
+                try:
+                    hm.check_ip(ip, "f", nets, set())
+                    helper = False
+                except hm.Err as e:
+                    helper = e.code == "E_ADDRESS_RESERVED"
+                with self.subTest(block=block, ip=ip):
+                    self.assertEqual(bool(pmstore.reserved_address(ip, nets)), helper)
+        self.assertEqual(pmstore.reserved_address("10.211.55.240", pmstore.parse_networks("10.211.55.240/29")), "network")
+        self.assertEqual(pmstore.reserved_address("10.211.55.247", pmstore.parse_networks("10.211.55.240/29")), "broadcast")
+        self.assertIsNone(pmstore.reserved_address("10.0.0.1", pmstore.parse_networks("10.0.0.0/31")))
+
+    def test_ui_reserved_and_icons(self):
+        with open(os.path.join(os.path.dirname(pmstore.__file__), "static", "console.js")) as f:
+            js = f.read()
+        for want in ('network: "network address"', 'broadcast: "broadcast address"', "x.reserved ?",
+                     'aria-label="Stop decoy ${ex}"', 'aria-label="Start decoy ${ex}"', "ssi stop", "ssi start",
+                     "if (resv || !h"):
+            self.assertIn(want, js)
+
+
 if __name__ == "__main__":
     unittest.main()

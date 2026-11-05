@@ -360,6 +360,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         op, args, pw = data.get("op"), data.get("args"), data.get("password")
         if op not in decoyclient.CHANGE_OPS or not isinstance(args, dict) or set(data) - {"op", "args", "password"}:
             return self.err(400, "bad request")
+        ip = args.get("ip")
+        if ip is None and isinstance(args.get("decoy"), dict):
+            ip = args["decoy"].get("ip")
+        kind = pmstore.reserved_address(ip, pmstore.parse_networks(
+            pmstore.read_default().get("NETWORK", ""))) if isinstance(ip, str) else None
+        if kind:
+            field = "args.ip" if "ip" in args else "decoy.ip"
+            pmstore.audit(user, "decoy-" + op, "%s refused E_ADDRESS_RESERVED" % re.sub(r'[^0-9.]', "", ip)[:15], ok=False)
+            return self.send_json(400, {"ok": False, "error": {
+                "code": "E_ADDRESS_RESERVED", "field": field,
+                "message": "%s is the %s address of the decoy block and cannot be a decoy" % (ip, kind)}})
         src = self.source()
         key = "decoy-reauth:" + user
         until = a.lockout.locked_until(key, src)
@@ -372,9 +383,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             pmstore.audit(user, "decoy-" + op, "wrong password", ok=False)
             return self.err(403, "password is wrong")
         a.lockout.success(key, src)
-        ip = args.get("ip")
-        if ip is None and isinstance(args.get("decoy"), dict):
-            ip = args["decoy"].get("ip")
         target = re.sub(r'[^0-9.]', "", str(ip))[:15] if ip is not None else "all"
         pmstore.audit(user, "decoy-" + op, "requested %s" % target)
         r = decoyclient.call(op, args, user)

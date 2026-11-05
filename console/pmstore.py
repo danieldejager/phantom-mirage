@@ -192,6 +192,37 @@ def parse_decoys(conf=None):
     return {"templates": tmpl, "binds": binds}
 
 
+def parse_networks(net):
+    """NETWORK as the decoy helper reads it: one or more IPv4 blocks
+    separated by spaces. Bad entries are skipped."""
+    out = []
+    for w in str(net or "").split():
+        try:
+            out.append(ipaddress.IPv4Network(w, strict=False))
+        except ValueError:
+            pass
+    return out
+
+
+def reserved_address(ip, nets):
+    """'network' or 'broadcast' when the decoy helper refuses ip as the first
+    or last address of its block (only blocks /30 and wider, the same rule as
+    check_ip in pm-decoyd), else None. /31 and /32 have no reserved address."""
+    try:
+        a = ipaddress.IPv4Address(ip)
+    except ValueError:
+        return None
+    owner = [n for n in nets if a in n]
+    if not owner or owner[0].prefixlen > 30:
+        return None
+    n = owner[0]
+    if a == n.network_address:
+        return "network"
+    if a == n.broadcast_address:
+        return "broadcast"
+    return None
+
+
 def decoy_list(last_touch):
     d = parse_decoys()
     dflt = read_default()
@@ -208,8 +239,7 @@ def decoy_list(last_touch):
     if net and "default" in d.get("templates", {}):
         t = d["templates"]["default"]
         bound = {r["ip"] for r in rows}
-        try:
-            n = ipaddress.ip_network(net, strict=False)
+        for n in parse_networks(net):
             if n.num_addresses <= 256:
                 for a in n:
                     s = str(a)
@@ -220,8 +250,10 @@ def decoy_list(last_touch):
                                  "ports": t.get("ports", []),
                                  "port_states": t.get("port_states", []),
                                  "default": t.get("default", {}), "last": last_touch.get(s)})
-        except ValueError:
-            pass
+                    bound.add(s)
+    nets = parse_networks(net)
+    for r in rows:
+        r["reserved"] = reserved_address(r["ip"], nets)
     def order(r):
         try:
             return (0, int(ipaddress.ip_address(r["ip"])))

@@ -145,7 +145,7 @@ function Decoys() {
   return `<h2>Decoys</h2><div class="row"><span class="note">Block ${esc(d.network || "(not set)")} on ${esc(d.interface || "?")} · from /etc/phantom-mirage/phantom-mirage.conf</span></div>${d.error ? `<p class="bad">${esc(d.error)}</p>` : ""}
 ${dd.error ? `<p class="note u-mb12" id="dunavail">Stop, Start and decoy settings are unavailable: ${esc(dd.error)}</p>` : ""}
 <div class="tw"><table><tr><th></th><th>Address</th><th>State</th><th>Template</th><th>Personality</th><th>Open ports</th><th>Last touched</th><th></th></tr>
-${d.decoys.map((x, i) => `<tr><td><button class="gear" data-act="decoy" data-id="${i}" title="Decoy settings for ${esc(x.ip)}" aria-label="Decoy settings for ${esc(x.ip)}">\u2699</button></td><td>${esc(x.ip)}</td><td>${stateCell(x.ip)}</td><td>${esc(x.template)}</td><td>${esc(x.personality)}</td><td class="wr">${esc(x.ports.join(", ") || "none")}</td><td>${when(x.last)}</td><td>${ssButton(x.ip)}</td></tr>`).join("") || '<tr><td colspan="8" class="note">No decoys configured</td></tr>'}</table></div>
+${d.decoys.map((x, i) => `<tr${x.reserved ? ' class="resv"' : ""}><td>${x.reserved ? "" : `<button class="gear" data-act="decoy" data-id="${i}" title="Decoy settings for ${esc(x.ip)}" aria-label="Decoy settings for ${esc(x.ip)}">\u2699</button>`}</td><td>${esc(x.ip)}</td><td>${stateCell(x.ip, x.reserved)}</td><td>${esc(x.template)}</td><td>${esc(x.personality)}</td><td class="wr">${esc(x.ports.join(", ") || "none")}</td><td>${when(x.last)}</td><td>${ssButton(x.ip, x.reserved)}</td></tr>`).join("") || '<tr><td colspan="8" class="note">No decoys configured</td></tr>'}</table></div>
 <p class="note">Changes are checked by the sensor before they apply and need your password each time. The address block is set on the sensor with <code>sudo phantom-mirage-setup</code> and cannot be changed here.</p>`;
 }
 /* ---- decoy settings panel (gear): personality, default actions and
@@ -153,7 +153,7 @@ ${d.decoys.map((x, i) => `<tr><td><button class="gear" data-act="decoy" data-id=
 let ED = null;
 async function openDecoy(i) {
   const x = data.decoys.decoys[i];
-  if (!x) return;
+  if (!x || x.reserved) return;
   const h = hstate(x.ip), p = await api("/api/personalities");
   let opt = null, why = "";
   if (!h) why = (data.dd && data.dd.error) || "the decoy helper did not answer";
@@ -237,16 +237,22 @@ function edSave() {
   change(e.op, args);
 }
 function hstate(ip) { const dd = data.dd || {}; return dd.map ? dd.map[ip] : null; }
-function stateCell(ip) {
+const RESV = {network: "network address", broadcast: "broadcast address"};
+function stateCell(ip, resv) {
+  if (resv) return `<span class="note">${esc(RESV[resv] || resv)}</span>`;
   const h = hstate(ip);
   if (!h) return '<span class="note">unknown</span>';
   if (h.source === "main_conf") return '<span class="note">main config</span>';
   return h.state === "stopped" ? '<span class="bad">stopped</span>' : '<span class="ok">running</span>';
 }
-function ssButton(ip) {
+const ICON_STOP = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 3h10v10H3z"/></svg>', ICON_START = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path fill="currentColor" d="M4 2.5v11l9.5-5.5z"/></svg>';
+function ssButton(ip, resv) {
   const h = hstate(ip);
-  if (!h || h.source === "main_conf") return "";
-  return h.state === "stopped" ? `<button data-act="ss" data-op="start" data-ip="${esc(ip)}">Start</button>` : `<button data-act="ss" data-op="stop" data-ip="${esc(ip)}">Stop</button>`;
+  if (resv || !h || h.source === "main_conf") return "";
+  const ex = esc(ip);
+  return h.state === "stopped"
+    ? `<button class="ssi start" data-act="ss" data-op="start" data-ip="${ex}" title="Start decoy ${ex}" aria-label="Start decoy ${ex}">${ICON_START}</button>`
+    : `<button class="ssi stop" data-act="ss" data-op="stop" data-ip="${ex}" title="Stop decoy ${ex}" aria-label="Stop decoy ${ex}">${ICON_STOP}</button>`;
 }
 function ssDialog(op, ip) {
   const warn = op === "stop"
