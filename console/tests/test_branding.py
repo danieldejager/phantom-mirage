@@ -186,6 +186,7 @@ class TestLoginPage(unittest.TestCase):
     def test_no_external_urls(self):
         files = [fp for fp in glob.glob(os.path.join(STATIC, "**", "*"), recursive=True) if os.path.isfile(fp)]
         files.append(os.path.join(REPO, "docs", "assets", "phantom-mirage-mark.svg"))
+        files.append(os.path.join(REPO, "docs", "assets", "mirage-wordmark.svg"))
         for fp in files:
             if fp.endswith((".png", ".woff2")) or fp.endswith("Aldrich-OFL.txt"):   # binary / licence text, never fetched
                 continue
@@ -377,10 +378,10 @@ class TestWordmark(unittest.TestCase):
         self.assertIn('<div class="nbrand brand"><span class="mwm" role="img" aria-label="Mirage"></span></div>', t)
 
     def test_svg_asset(self):
-        svg = open(os.path.join(STATIC, "mirage-wordmark.svg"), encoding="utf-8").read()
+        svg = open(os.path.join(REPO, "docs", "assets", "mirage-wordmark.svg"), encoding="utf-8").read()
         self.assertTrue(svg.startswith('<svg xmlns="http://www.w3.org/2000/svg"'))
         self.assertIn('fill="currentColor"', svg)
         self.assertNotRegex(svg, r'(?i)<script|<text|<image|href=|\bon[a-z]+=|font')
         self.assertIn("mirage-wordmark.svg", pmc.STATIC_FILES)
-        self.assertIn("console/static/mirage-wordmark.svg", open(os.path.join(REPO, "debian", "rules"), encoding="utf-8").read())
+        self.assertIn("docs/assets/mirage-wordmark.svg", open(os.path.join(REPO, "debian", "rules"), encoding="utf-8").read())
         self.assertIn("static/mirage-wordmark.svg", open(os.path.join(REPO, ".github", "workflows", "build.yml")).read())
