@@ -1,0 +1,37 @@
+flowchart TD
+  A(["Request received (decoy op)"]) --> B{"Peer uid is<br/>phantom-mirage-console?"}
+  B -- no --> X1["E_PEER, nothing written"]
+  B -- yes --> C{"Envelope, replay,<br/>lock within 25 s?"}
+  C -- no --> X2["E_BAD_JSON / E_REPLAY / E_BUSY ...<br/>nothing written"]
+  C -- yes --> RJ["Recover an interrupted address block<br/>change if netchange.journal exists"]
+  RJ --> W["Queue: wait out the rest of the 10 s gap<br/>since the last reload (at most 10 s)"]
+  W --> CF{"decoys.conf hash<br/>matches store?"}
+  CF -- no --> X5["E_CONFLICT (not for reset_all):<br/>message says sudo rm decoys.json"]
+  CF -- yes --> D{"Op and field<br/>validation ok?"}
+  D -- no --> X3["E_INVALID_* / E_ADDRESS_* / E_CONFLICT,<br/>nothing written"]
+  D -- yes --> E["Render decoys.conf.new"]
+  E --> F{"--verify-config<br/>passes?"}
+  F -- no --> X4["Delete .new, E_VERIFY_FAILED,<br/>live config untouched"]
+  F -- yes --> G["Keep .prev, rename<br/>.new to decoys.conf"]
+  G --> SA{"Sensor active?"}
+  SA -- no --> J0["Write decoys.json, ok,<br/>reloaded:false, applies at next start"]
+  SA -- yes --> H["systemctl reload phantom-mirage"]
+  H --> I{"rc 0, active and<br/>MainPID unchanged<br/>after 3 s?"}
+  I -- yes --> J["Write decoys.json,<br/>ok, reloaded:true"]
+  I -- no --> K["Put the old decoys.conf back FIRST<br/>(RestartPreventExitStatus=78)"]
+  K --> L["systemctl restart phantom-mirage"]
+  L --> M{"Active within 20 s?"}
+  M -- yes --> N["E_RELOAD_FAILED_ROLLED_BACK,<br/>old decoys serving"]
+  M -- no --> O["E_ROLLBACK_FAILED,<br/>sensor DOWN, see journal"]
+  classDef bad fill:#fde2e2,stroke:#b00
+  classDef good fill:#e3f6e3,stroke:#060
+  classDef warn fill:#fff4d6,stroke:#a60
+  class X1,X2,X3,X4,X5,N warn
+  class O bad
+  class J,J0 good
+  subgraph LEG["Legend"]
+    LG1["Green: change applied"]:::good
+    LG2["Amber: refused or rolled back, sensor still serving"]:::warn
+    LG3["Red: sensor down, manual action needed"]:::bad
+    LG4["All boxes run inside the root helper,<br/>behind the socket trust boundary"]
+  end

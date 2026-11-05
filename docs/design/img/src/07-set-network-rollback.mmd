@@ -1,0 +1,29 @@
+flowchart TD
+  A(["set_network passed every check<br/>and --verify-config"]) --> B["Keep .prev of /etc/default/phantom-mirage,<br/>decoys.conf, decoys.json, farpd file if marked"]
+  B --> J["Write netchange.journal<br/>(list of files)"]
+  J --> C{"All files replaced?"}
+  C -- "no (OSError)" --> R0["Restore every file, remove journal,<br/>E_INTERNAL, nothing changed"]
+  C -- yes --> SA{"Sensor was active?"}
+  SA -- no --> OK0["Remove journal, record applied_not_running,<br/>reload firewall then restart farpd if active,<br/>ok, sensor left stopped"]
+  SA -- yes --> DR["daemon-reload if a unit<br/>needs it"]
+  DR --> D["systemctl restart phantom-mirage"]
+  D --> E{"rc 0, active within 20 s,<br/>still active after 3 s?"}
+  E -- yes --> OK1["Remove journal, record applied,<br/>reload firewall then restart farpd if active<br/>(failure is a warning), ok"]
+  E -- no --> F["Restore EVERY file first<br/>(old block, old decoys, old store),<br/>remove journal"]
+  F --> G["systemctl restart phantom-mirage"]
+  G --> H{"Active within 20 s?"}
+  H -- yes --> N["Record rolled_back, reload firewall then<br/>restart farpd if active,<br/>E_RESTART_FAILED_ROLLED_BACK"]
+  H -- no --> O["Record rollback_failed, same aux step,<br/>E_ROLLBACK_FAILED, sensor DOWN"]
+  K(["Helper killed mid swap"]) --> KR["Next helper start or next change:<br/>journal found, put back .prev files,<br/>record interrupted, restart sensor if active"]
+  classDef bad fill:#fde2e2,stroke:#b00
+  classDef good fill:#e3f6e3,stroke:#060
+  classDef warn fill:#fff4d6,stroke:#a60
+  class R0,N,KR warn
+  class O bad
+  class OK0,OK1 good
+  subgraph LEG["Legend"]
+    LG1["Green: new block applied"]:::good
+    LG2["Amber: rolled back or recovered, old block in place"]:::warn
+    LG3["Red: sensor down, manual action needed"]:::bad
+    LG4["Every box runs in the root helper behind the socket trust boundary.<br/>Arrows: order of steps, labelled with the outcome.<br/>Outcome records go to netchange.last, read by netinfo as last_change."]
+  end

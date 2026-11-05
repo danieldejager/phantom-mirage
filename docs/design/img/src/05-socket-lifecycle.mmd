@@ -1,0 +1,22 @@
+stateDiagram-v2
+  [*] --> Listening: boot, pm-decoyd.socket enabled
+  Listening: systemd holds /run/phantom-mirage-decoyd.sock<br/>no helper process running
+  Listening --> Starting: console connects
+  Starting: systemd starts pm-decoyd.service<br/>passes listening fd (Accept=no)
+  Starting --> Recovering
+  Recovering: if netchange.journal exists, put back the .prev files<br/>it lists, record "interrupted", restart the sensor if running
+  Recovering --> Serving
+  Serving: helper accepts, one request at a time,<br/>one request per connection, flock serialises changes
+  Serving --> Serving: next connection within idle window
+  Serving --> Exiting: 30 s with no connection
+  Serving --> Failed: helper crash
+  Exiting: helper exits 0, socket stays with systemd
+  Exiting --> Listening
+  Failed: unit marked failed, socket stays,<br/>next connect starts a fresh helper
+  Failed --> Listening
+  note right of Listening
+    Legend: boxes are states of the helper,
+    arrows are transitions caused by systemd or the console.
+    The socket (trust boundary, 0660 root:phantom-mirage-console)
+    persists in every state.
+  end note

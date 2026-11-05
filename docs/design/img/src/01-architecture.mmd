@@ -1,0 +1,53 @@
+flowchart TB
+  subgraph B["Admin browser (untrusted input)"]
+    BR["Browser<br/>console UI"]
+  end
+  subgraph C["Console trust zone: user phantom-mirage-console, low privilege"]
+    CON["pm-console.py + decoyclient.py<br/>HTTPS on 127.0.0.1 only<br/>session, CSRF, password re-entry, reserved check"]
+    CST[("/var/lib/phantom-mirage/console<br/>console state, audit, lockout")]
+  end
+  subgraph H["Helper trust zone: root, socket activated"]
+    SOCK{{"pm-decoyd.socket<br/>/run/phantom-mirage-decoyd.sock<br/>root:phantom-mirage-console 0660"}}
+    HLP["pm-decoyd (python3 -I, stdlib)<br/>SO_PEERCRED, validate, render,<br/>verify, swap, reload or restart, roll back"]
+    JS[("/var/lib/phantom-mirage/decoys.json<br/>overrides, root 0600")]
+    SVC[("/usr/share/phantom-mirage/decoy-services.json<br/>25 services, plain port actions")]
+  end
+  subgraph E["Sensor config (root owned)"]
+    MAIN[("/etc/phantom-mirage/phantom-mirage.conf<br/>hand edited + one include line")]
+    DC[("/etc/phantom-mirage/decoys.conf<br/>generated, root 0644, plus .prev")]
+    DEF[("/etc/default/phantom-mirage<br/>NETWORK, INTERFACE (set_network writes)")]
+    FD[("/etc/default/farpd<br/>written only if it carries the setup marker")]
+    DB[("/etc/phantom-mirage/columbo-v1.db<br/>sha256 pinned")]
+  end
+  subgraph S["Sensor zone"]
+    SD["systemd PID 1"]
+    PM["phantom-mirage.service"]
+    FARP["farpd.service<br/>answers ARP for whole NETWORK"]
+    FW["phantom-mirage-firewall.service"]
+  end
+  BR -- "1 HTTPS POST /api/decoyd/change<br/>cookie, X-CSRF-Token, password" --> CON
+  CON -- "2 audit requested / applied / refused" --> CST
+  CON -- "3 one JSON line per connection<br/>AF_UNIX" --> SOCK
+  SOCK -- "4 activates, fd 3" --> HLP
+  HLP -- "5 read" --> DB
+  HLP -- "5 read" --> SVC
+  HLP -- "5 read, set_network writes" --> DEF
+  HLP -- "set_network only" --> FD
+  HLP -- "6 write after health check" --> JS
+  HLP -- "7 write .new, verify, keep .prev, rename" --> DC
+  MAIN -. "include" .-> DC
+  HLP -- "8 systemctl reload (decoy ops)<br/>restart (set_network)" --> SD
+  SD -- "9 HUP or restart" --> PM
+  SD -- "set_network: restart if active" --> FARP
+  SD -- "set_network: reload if active" --> FW
+  HLP -- "10 JSON reply" --> CON
+  classDef priv fill:#fde2e2,stroke:#b00
+  classDef low fill:#e2f0fd,stroke:#036
+  class HLP,SOCK priv
+  class CON low
+  subgraph LEG["Legend"]
+    L1["Red: runs as root"]:::priv
+    L2["Blue: low privilege"]:::low
+    L3[("Cylinder: file on disk")]
+    L4["Solid arrow: data flow, numbered in order<br/>Dotted arrow: include<br/>Box border: trust boundary"]
+  end

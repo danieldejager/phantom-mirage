@@ -1,0 +1,29 @@
+flowchart TB
+  subgraph B["Admin browser"]
+    PG["Pages: Dashboard, Decoys, Alerts, Activity, Settings"]
+    PROF["Profile menu: theme, change password, sign out"]
+    ST["Static assets with ?v=content hash"]
+  end
+  subgraph C["Console: phantom-mirage-console"]
+    API["pm-console.py<br/>session cookie, X-CSRF-Token on every POST"]
+    TZ["GET /api/timezones<br/>POST /api/settings timezone"]
+    PW["POST /api/password<br/>current + new, destroy all sessions"]
+    DASH["Dashboard KPIs and charts<br/>drill sets Activity filters"]
+    ACT["Activity filters: source, decoy, protocol, event, window"]
+  end
+  PG --> API
+  PROF --> PW
+  PROF --> API
+  ST -->|"index.html: Cache-Control no-store<br/>other assets: no-cache + ETag"| API
+  API --> TZ
+  API --> PW
+  API --> DASH
+  API --> ACT
+  DASH -->|"click or keyboard"| ACT
+  classDef low fill:#e2f0fd,stroke:#036
+  class API,TZ,PW,DASH,ACT low
+  subgraph LEG["Legend"]
+    L1["Blue: low privilege console only. Nothing here is the decoy helper."]:::low
+    L2["Theme choice stays in localStorage only; it is never sent to the server."]
+    L3["NTP setup from the console is not built and is on hold."]
+  end
