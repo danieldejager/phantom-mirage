@@ -77,10 +77,10 @@ td.wr{white-space:normal;max-width:420px;word-break:break-word}
 .splash{display:flex;flex-direction:column;align-items:center;text-align:center;padding:20px 12px 16px;margin:auto}
 .slegal{margin:14px 0 18px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--tm)}
 .sfoot{margin-top:18px;font-size:12px;color:var(--tm)}.sfoot p{margin:2px 0}
-.hlegal{margin-left:4px}.wm{color:var(--t)}
+.hlegal{display:block;flex:none;height:68px;width:auto;aspect-ratio:3.7568;margin-left:8px}.wm{color:var(--t)}
 .afoot{padding:8px 16px;border-top:1px solid var(--b);background:var(--p);text-align:center}
-/* keep the company wordmark on screen at phone widths; the mark itself scales down */
-@media(max-width:380px){.hlegal.ptw{height:26px}}
+/* narrow header: scale the whole supplied mark, do not crop it */
+@media(max-width:420px){.hlegal{height:auto;width:min(230px,calc(100vw - 112px))}}
 .themetg{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;font-size:12px}.themetg .ti{font-size:14px;line-height:1}.themetg:hover{background:var(--h);filter:brightness(1.1)}.themetg:focus-visible{outline:2px solid var(--a);outline-offset:1px}
 /* MIRAGE wordmark: vector trace of the README logo lettering (triangular A), drawn in the
    current text colour through a same-origin SVG mask so it follows both themes. */
@@ -101,10 +101,6 @@ button.ssi{padding:4px 8px;line-height:0}button.ssi svg{vertical-align:middle}bu
 .netcard{margin-bottom:18px}.netrow{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-end}.netrow .v{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:18px}.netbtn{margin-left:auto}
 .warnbox{border:1px solid var(--twarn);border-left-width:4px;border-radius:6px;padding:10px 12px;margin:10px 0;font-size:13px;line-height:1.45}
 #nhint{min-height:1.2em;margin:4px 0}
-/* Phantom Technologies wordmark: original wide squared PHANTOM over a smaller
-   tracked TECHNOLOGIES line. A same-origin SVG mask painted with the theme
-   text colour, so it is silver-white on carbon and near-black on light. */
-.ptw{display:inline-block;height:34px;aspect-ratio:4.308;background:currentColor;color:var(--t);-webkit-mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat;mask:url(/static/phantom-technologies-wordmark.svg) center/contain no-repeat}
 /* MIRAGE wordmark centred in the sidebar pane */
 .nbrand{justify-content:center}
 
