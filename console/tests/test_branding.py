@@ -206,7 +206,7 @@ class TestLoginPage(unittest.TestCase):
     def test_font_same_origin(self):
         css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
         urls = re.findall(r'url\(\s*["\']?([^"\')]+)', css)
-        self.assertEqual(urls, ["/static/fonts/Aldrich-Regular.woff2"] + ["/static/mirage-wordmark.svg"] * 2 + ["/static/phantom-technologies-wordmark.svg"] * 2)
+        self.assertEqual(urls, ["/static/fonts/Aldrich-Regular.woff2"] + ["/static/mirage-wordmark.svg"] * 2)
         self.assertIn("font-family:Aldrich", css)
         self.assertNotRegex(css, r'(?i)jetbrains|rajdhani')
         with open(os.path.join(STATIC, "fonts", "Aldrich-Regular.woff2"), "rb") as f:
@@ -369,91 +369,13 @@ class TestNoCompanySuffix(unittest.TestCase):
             self.assertNotIn(self.SUFFIX.lower(), s.lower())
 
 
-def _subpath_boxes(d):
-    boxes = []
-    for part in re.findall(r"M[^Z]*Z", d):
-        nums = [float(n) for n in re.findall(r"[-+]?\d*\.?\d+", part)]
-        xs, ys = nums[0::2], nums[1::2]
-        boxes.append((min(xs), min(ys), max(xs), max(ys)))
-    return boxes
-
-
-def _clusters(d, pad=1.0):
-    """Group overlapping subpaths into letters, left to right."""
-    groups = []
-    for b in sorted(_subpath_boxes(d), key=lambda b: b[0]):
-        if groups and b[0] <= groups[-1][2] + pad:
-            g = groups[-1]
-            groups[-1] = (min(g[0], b[0]), min(g[1], b[1]), max(g[2], b[2]), max(g[3], b[3]))
-        else:
-            groups.append(b)
-    return groups
-
-
-def _shoelace(poly):
-    a = 0.0
-    for i, (x, y) in enumerate(poly):
-        x2, y2 = poly[(i + 1) % len(poly)]
-        a += x * y2 - x2 * y
-    return a / 2.0
-
-
-def _polys(d):
-    """Subpath point lists from an M/L/Z path."""
-    polys = []
-    for part in re.findall(r"M[^Z]*Z", d):
-        nums = [float(n) for n in re.findall(r"[-+]?\d*\.?\d+", part)]
-        polys.append(list(zip(nums[0::2], nums[1::2])))
-    return polys
-
-
-def _assert_open_triangular_a(d, box):
-    """PHANTOM's A matches the MIRAGE A: two strokes, joined at the top, open at the bottom, no bar."""
-    x0, y0, x1, y1 = box
-    legs = []
-    for poly in _polys(d):
-        xs = [p[0] for p in poly]
-        ys = [p[1] for p in poly]
-        if min(xs) >= x0 - 0.5 and max(xs) <= x1 + 0.5 and min(ys) >= y0 - 0.5 and max(ys) <= y1 + 0.5:
-            legs.append(poly)
-    if len(legs) != 2:
-        raise AssertionError("open A should be two strokes, got %d" % len(legs))
-    if _shoelace(legs[0]) * _shoelace(legs[1]) <= 0:
-        raise AssertionError("open A strokes must both be solid, not a cut-out hole")
-
-    def xs_at(poly, y):
-        hit = [p[0] for p in poly if abs(p[1] - y) < 0.2]
-        if len(hit) < 2:
-            raise AssertionError("A stroke is not cut flat at y=%s" % y)
-        return min(hit), max(hit)
-
-    tops = [xs_at(p, y0) for p in legs]
-    bots = [xs_at(p, y1) for p in legs]
-    tops.sort()
-    bots.sort()
-    # apex is one joined flat, not two separated peaks and not a closed delta
-    if tops[0][1] < tops[1][0] - 0.5:
-        raise AssertionError("A apex is split")
-    gap = bots[1][0] - bots[0][1]
-    if gap < 0.35 * (x1 - x0):
-        raise AssertionError("A bottom is not open (gap %s)" % gap)
-    # no third shape, so there is no crossbar and no base between the feet
-    if len(legs[0]) != 4 or len(legs[1]) != 4:
-        raise AssertionError("A strokes are not simple quads")
-
-
-def _gap_ratio(groups):
-    widths = sorted(g[2] - g[0] for g in groups)
-    gaps = sorted(groups[i + 1][0] - groups[i][2] for i in range(len(groups) - 1))
-    return gaps[len(gaps) // 2] / widths[len(widths) // 2]
-
-
 class TestWordmark(unittest.TestCase):
     def test_header_and_sidebar(self):
         t = login_page()
         head = re.search(r'<header>.*?</header>', t, re.S).group(0)
         self.assertIn('<span class="ptile"><img src="/static/phantom-mirage-mark-dark.png" width="34" height="34"', head)
-        self.assertIn('<span class="hlegal ptw" role="img" aria-label="Phantom Technologies"></span>', head)
+        self.assertIn('<img class="hlegal" src="/static/phantom-technologies-wordmark.svg" width="255" height="68" alt="Phantom Technologies">', head)
+        self.assertNotIn("ptw", head)
         self.assertNotIn(">Phantom Technologies<", head)
         self.assertNotIn('class="wm"', head)
         self.assertNotIn("Mirage", head)
@@ -467,70 +389,52 @@ class TestWordmark(unittest.TestCase):
         self.assertIn('<span class="mwm swm" role="img" aria-label="Mirage"></span>', brand)
         self.assertEqual(brand.count("ptile"), 1)
         self.assertNotIn("ptw", brand)
+        self.assertNotIn("phantom-technologies-wordmark", brand)
         self.assertNotIn('class="slegal"', brand)
 
     def test_sidebar_wordmark_centred(self):
         css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
         self.assertIn(".nbrand{justify-content:center}", css)
 
-    def test_company_wordmark_svg(self):
-        svg = open(os.path.join(REPO, "docs", "assets", "phantom-technologies-wordmark.svg"), encoding="utf-8").read()
-        self.assertTrue(svg.startswith('<svg xmlns="http://www.w3.org/2000/svg"'))
-        self.assertIn('fill="currentColor"', svg)
-        self.assertIn('aria-label="Phantom Technologies"', svg)
-        self.assertIn("<title>Phantom Technologies</title>", svg)
-        self.assertIn("Original squared lettering", svg)   # filled paths, nothing loaded at runtime
-        self.assertIn("open triangular A", svg)
-        self.assertNotIn("hollow triangular", svg)
-        self.assertNotIn("DejaVu", svg)
-        self.assertNotRegex(svg, r'(?i)<script|<text|<image|href=|\bon[a-z]+=|font|gradient|filter=')
-        w, h = map(float, re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg).groups())
-        css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
-        ratio = float(re.search(r"\.ptw\{[^}]*aspect-ratio:([\d.]+)", css).group(1))
-        self.assertAlmostEqual(w / h, ratio, delta=0.01)
-        self.assertGreater(w / h, 3.2)    # wide and low, not the old single-line strip
-        self.assertLess(w / h, 6.0)
-        phantom = re.search(r'id="phantom" d="([^"]*)"', svg).group(1)
-        tech = re.search(r'id="technologies" d="([^"]*)"', svg).group(1)
-        pg, tg = _clusters(phantom), _clusters(tech)
-        self.assertEqual(len(pg), 7)      # PHANTOM
-        self.assertEqual(len(tg), 12)     # TECHNOLOGIES
-        _assert_open_triangular_a(phantom, pg[2])
-        self.assertLess(max(g[3] for g in pg), min(g[1] for g in tg))   # second line sits below
-        ph, th = max(g[3] for g in pg) - min(g[1] for g in pg), max(g[3] for g in tg) - min(g[1] for g in tg)
-        self.assertLess(th, ph * 0.7)
-        self.assertGreater(th, ph * 0.4)
-        pw = max(g[2] for g in pg) - min(g[0] for g in pg)
-        tw = max(g[2] for g in tg) - min(g[0] for g in tg)
-        self.assertAlmostEqual(pw, tw, delta=pw * 0.04)   # tracked line matches the width
-        self.assertGreater(_gap_ratio(tg), _gap_ratio(pg) + 0.25)   # TECHNOLOGIES is letter-spaced
-        rule = re.search(r"(?<![\w.-])\.ptw\{[^}]*\}", css).group(0)
-        self.assertIn("color:var(--t)", rule)
-        self.assertNotIn("gradient", rule)
-        self.assertIn(".ptw{display:inline-block;height:34px;", css)
-        self.assertNotIn(".sptw{", css)
-        self.assertIn(".swm{height:22px;", css)
-        self.assertNotIn(".hlegal{display:none}", css)
-        self.assertIn("@media(max-width:380px){.hlegal.ptw{height:26px}}", css)
-        self.assertIn("mask:url(/static/phantom-technologies-wordmark.svg)", css)
-        self.assertIn("phantom-technologies-wordmark.svg", pmc.STATIC_FILES)
-        self.assertIn("docs/assets/phantom-technologies-wordmark.svg", open(os.path.join(REPO, "debian", "rules"), encoding="utf-8").read())
-        self.assertIn("static/phantom-technologies-wordmark.svg", open(os.path.join(REPO, ".github", "workflows", "build.yml")).read())
-
-    def test_wordmark_matches_generator(self):
+    def test_supplied_artwork_and_frame(self):
+        import hashlib
         import importlib.util
+        orig_path = os.path.join(REPO, "docs", "assets", "phantom-technologies-original.svg")
+        framed_path = os.path.join(REPO, "docs", "assets", "phantom-technologies-wordmark.svg")
+        orig = open(orig_path, "rb").read()
+        framed = open(framed_path, "rb").read()
+        self.assertEqual(len(orig), 14082)
+        self.assertEqual(hashlib.sha256(orig).hexdigest(),
+                         "d34024a284e3c1dfa5c62e64dc4ee9c889e806c2f75a1b660303dade4648664b")
+        self.assertEqual(orig.count(b"<path "), 19)
+        self.assertEqual(orig.count(b"<rect "), 1)
+        self.assertIn(b'fill="#050505"', orig)
+        self.assertIn(b'fill="#ffffff"', orig)
+        self.assertIn(b'fill="#00E5FF"', orig)
+        self.assertNotIn(b"<text", orig.lower())
+        self.assertNotIn(b"<script", orig.lower())
+        self.assertNotIn(b"<image", orig.lower())
         spec = importlib.util.spec_from_file_location(
-            "make_wordmark", os.path.join(REPO, "docs", "brand", "source", "make_wordmark.py"))
+            "frame_supplied_wordmark",
+            os.path.join(REPO, "docs", "brand", "source", "frame_supplied_wordmark.py"))
         gen = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(gen)
-        width, polys = gen.letter_a()
-        self.assertGreater(width, 110.0)  # MIRAGE A is wider than the old squared A
-        self.assertEqual(len(polys), 2)
-        self.assertGreater(gen._area(polys[0]) * gen._area(polys[1]), 0)
-        phantom, tech, _pw, _ph, _tracking = gen.build()
-        svg = open(os.path.join(REPO, "docs", "assets", "phantom-technologies-wordmark.svg"), encoding="utf-8").read()
-        self.assertIn(gen.path_d(phantom), svg)
-        self.assertIn(gen.path_d(tech), svg)
+        self.assertEqual(gen.frame(orig), framed)
+        self.assertNotIn(b'viewBox="0 0 1400 200"', framed)
+        self.assertIn(b'viewBox="14.130397727272726 44.54545454545455 456.87180397727275 121.62357954545455"', framed)
+        # glyph geometry is the original; only the root canvas changed
+        self.assertEqual(orig.split(b"<rect ", 1)[1], framed.split(b"<rect ", 1)[1])
+        self.assertFalse(os.path.exists(os.path.join(REPO, "docs", "brand", "source", "make_wordmark.py")))
+        css = open(os.path.join(STATIC, "console.css"), encoding="utf-8").read()
+        self.assertNotIn("mask:url(/static/phantom-technologies-wordmark.svg)", css)
+        self.assertNotIn(".ptw{", css)
+        self.assertIn(".hlegal{display:block;flex:none;height:68px;", css)
+        self.assertIn("@media(max-width:420px){.hlegal{height:auto;width:min(230px,calc(100vw - 112px))}}", css)
+        self.assertIn(".swm{height:22px;", css)
+        self.assertIn("phantom-technologies-wordmark.svg", pmc.STATIC_FILES)
+        rules = open(os.path.join(REPO, "debian", "rules"), encoding="utf-8").read()
+        self.assertIn("docs/assets/phantom-technologies-wordmark.svg", rules)
+        self.assertIn("static/phantom-technologies-wordmark.svg", open(os.path.join(REPO, ".github", "workflows", "build.yml")).read())
 
     def test_svg_asset(self):
         svg = open(os.path.join(REPO, "docs", "assets", "mirage-wordmark.svg"), encoding="utf-8").read()
