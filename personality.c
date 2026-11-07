@@ -899,27 +899,26 @@ tcp_personality_options(struct tcp_con *con, struct tcp_hdr *tcp,
 					timestamp = rand_uint32(honeyd_rand);
 				}
 
-				//Assign timestamps on the basis of the Nmap T values
-				//	IE: 0 means value is zero, 1 means anything else
-				if( options->options[i].TSval == '1' )
-				{
+				/* Nmap '1' means non-zero and '0' means zero. The
+				 * default option block stores a NUL, not those
+				 * characters. After the peer has sent a timestamp,
+				 * a later segment with TSval 0 is dropped and the
+				 * client resets (ubuntu2404). Keep our clock and
+				 * echo the peer. An explicit '0' stays zero. */
+				if (options->options[i].TSval == '1' ||
+				    (options->options[i].TSval != '0' && con->sawtimestamp))
 					opt.opt_data.timestamp[0] = timestamp;
-				}
 				else
-				{
 					opt.opt_data.timestamp[0] = 0;
-				}
-				if( options->options[i].TSecr == '1' )
-				{
-					opt.opt_data.timestamp[1] = timestamp;
-				}
-				else
-				{
+				if (options->options[i].TSecr == '0')
 					opt.opt_data.timestamp[1] = 0;
-				}
+				else if (con->sawtimestamp)
+					opt.opt_data.timestamp[1] = con->echotimestamp;
+				else if (options->options[i].TSecr == '1')
+					opt.opt_data.timestamp[1] = timestamp;
+				else
+					opt.opt_data.timestamp[1] = 0;
 
-				/*if (con->sawtimestamp)
-					opt.opt_data.timestamp[1] = con->echotimestamp;*/
 				SET(p, &opt, TCP_OPT_TIMESTAMP, 2 + 4 + 4);
 				break;
 			case 'N':
