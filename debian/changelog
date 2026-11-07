@@ -1,3 +1,17 @@
+phantom-mirage (1.7.0-7) unstable; urgency=medium
+
+  * Service scripts keep running when ProtectHostname refuses sethostname.
+    The UTS namespace is already private; any other error still stops the
+    script (GitHub #325).
+  * ubuntu2404 echoes the peer TCP timestamp, so a Linux client does not
+    reset the connection (GitHub #324).
+  * A second privilege drop no longer aborts a service script when
+    setgroups is refused and no extra group remains (GitHub #323).
+  * This package is the master tree since 1.7.0-6, including the console,
+    decoy and time-service changes already merged there.
+
+ -- Daniel de Jager <ddejager@dandejager.com>  Sun, 08 Nov 2026 00:30:00 +1100
+
 phantom-mirage (1.7.0-6) unstable; urgency=medium
 
   * Default decoy template now opens TCP ports, so decoys answer SYNs
