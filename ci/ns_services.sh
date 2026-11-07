@@ -37,9 +37,19 @@ interp() { case $1 in *.sh) echo sh;; *.pl) echo perl;; *.py) echo python3;; esa
 
 W=$(mktemp -d /var/tmp/hdsvc.XXXXXX); chmod 1777 $W
 conf=$W/svc.conf
+# The build-tree daemon is started with -p nmap-os-db, which has
+# "Linux 2.6.32" and not ubuntu2404. HD_SYSTEMD=1 appends this block
+# to the packaged config, and pm-start loads only columbo-v1.db.
+# That database has ubuntu2404. An unknown personality makes the
+# reload fail and the daemon exit, so every script then looks unanswered.
+if [ "${HD_SYSTEMD:-0}" = 1 ]; then
+  persona=ubuntu2404
+else
+  persona="Linux 2.6.32"
+fi
 {
   echo 'create default'; echo 'set default default tcp action reset'
-  echo 'create svc'; echo 'set svc personality "Linux 2.6.32"'
+  echo 'create svc'; echo "set svc personality \"$persona\""
   echo 'set svc default tcp action reset'
   for i in "${!S[@]}"; do
     echo "add svc tcp port $((3000 + i)) \"$(interp ${S[$i]}) ${S[$i]} \$ipsrc \$sport \$ipdst \$dport\""

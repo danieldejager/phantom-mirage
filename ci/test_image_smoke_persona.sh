@@ -28,4 +28,15 @@ if grep -q '^Fingerprint Linux 2.6.32$' fingerprints/columbo-v1.db; then
 	echo "columbo-v1.db now contains Linux 2.6.32; the rewrite is stale" >&2
 	exit 1
 fi
+# ci/ns_services.sh under HD_SYSTEMD=1 appends into that same packaged
+# config. It has to name ubuntu2404 there and keep the nmap name for
+# the build-tree daemon.
+grep -q 'persona=ubuntu2404' ci/ns_services.sh || {
+	echo "systemd ns_services no longer uses the columbo personality" >&2
+	exit 1
+}
+grep -q 'persona="Linux 2.6.32"' ci/ns_services.sh || {
+	echo "build-tree ns_services no longer uses the nmap personality" >&2
+	exit 1
+}
 echo "image-smoke-persona OK"
