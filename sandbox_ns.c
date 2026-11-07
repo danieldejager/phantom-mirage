@@ -187,9 +187,28 @@ ns_run(struct ns_req *req, char *strs, int fd_io, int fd_err, int have_ns)
 		}
 		if (sethostname("phantom-mirage-script",
 		    strlen("phantom-mirage-script")) == -1) {
-			syslog(LOG_ERR, "sandbox: hostname for %s: %m",
+			/*
+			 * unshare(CLONE_NEWUTS) already succeeded, so this
+			 * process cannot rename the host. EPERM is what
+			 * systemd ProtectHostname=yes does: its seccomp
+			 * filter returns EPERM for sethostname and is
+			 * inherited across the new UTS namespace. The
+			 * unit's bounding set and the pm-script-ns profile
+			 * are not the refusal (the profile allows
+			 * sys_admin, and a new user namespace can still
+			 * rename when that filter is absent). Keep the
+			 * script; the name stays the one we inherited.
+			 * Any other errno means the setup is not the one
+			 * we understand, so fail closed.
+			 */
+			if (errno != EPERM) {
+				syslog(LOG_ERR, "sandbox: hostname for %s: %m",
+				    execcmd);
+				_exit(EXIT_FAILURE);
+			}
+			syslog(LOG_NOTICE, "sandbox: hostname for %s "
+			    "unchanged (%m); UTS namespace is private",
 			    execcmd);
-			_exit(EXIT_FAILURE);
 		}
 		sandbox_script_private_tmp = 1;
 

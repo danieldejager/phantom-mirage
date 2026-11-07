@@ -1,7 +1,11 @@
 /*
- * PM-SCR-242: ns_run() ignored the result of sethostname(2) in the new
- * UTS namespace (CWE-252) and went on to run the script with the host's
- * hostname. It must fail closed, like the mount(2) before it.
+ * PM-SCR-242: ns_run() used to ignore sethostname(2). The call is only
+ * reached after unshare(CLONE_NEWUTS) succeeded, so the UTS namespace is
+ * already private. EPERM (systemd ProtectHostname=yes installs a seccomp
+ * filter that returns EPERM, and that filter is inherited) must not skip
+ * the script: the name stays the inherited one, and the script still
+ * cannot rename the host. Any other errno must still fail closed, before
+ * sandbox_script_root().
  *
  * sandbox_ns.c is compiled in with sethostname() replaced by a stub that
  * fails with EPERM. The rest of sandbox_ns.c's callees are stubs too:
@@ -33,7 +37,9 @@ fake_sethostname(const char *name, size_t len)
 	(void)name;
 	(void)len;
 	(void)!write(marker[1], "H", 1);
-	errno = EPERM;
+	errno = getenv("NS_SETHOSTNAME_ERRNO") != NULL &&
+	    strcmp(getenv("NS_SETHOSTNAME_ERRNO"), "EINVAL") == 0 ?
+	    EINVAL : EPERM;
 	return (-1);
 }
 
@@ -110,16 +116,44 @@ main(int argc, char **argv)
 		    "(status %#x)\n", status);
 		return (1);
 	}
-	if (reached) {
-		fprintf(stderr, "FAIL: script set up after sethostname "
-		    "failed\n");
+	if (!reached) {
+		fprintf(stderr, "FAIL: EPERM from sethostname skipped the "
+		    "script (status %#x)\n", status);
+		return (1);
+	}
+	printf("ns_sethostname: EPERM continues\n");
+
+	/* A different errno is not ProtectHostname. Fail closed. */
+	if (setenv("NS_SETHOSTNAME_ERRNO", "EINVAL", 1) == -1)
+		return (2);
+	if (pipe(marker) == -1)
+		return (2);
+	called = reached = 0;
+	if ((pid = fork()) == -1)
+		return (2);
+	if (pid == 0) {
+		close(marker[0]);
+		ns_run(&req.r, req.s, devnull, devnull, 1);
+		_exit(0);
+	}
+	close(marker[1]);
+	while (waitpid(pid, &status, 0) == -1 && errno == EINTR)
+		;
+	while ((n = read(marker[0], seen, sizeof(seen))) > 0)
+		for (j = 0; j < n; j++) {
+			called |= seen[j] == 'H';
+			reached |= seen[j] == 'R';
+		}
+	if (!called || reached) {
+		fprintf(stderr, "FAIL: EINVAL sethostname called=%d "
+		    "reached=%d status=%#x\n", called, reached, status);
 		return (1);
 	}
 	if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_FAILURE) {
-		fprintf(stderr, "FAIL: ns_run did not exit with failure "
+		fprintf(stderr, "FAIL: EINVAL did not exit failure "
 		    "(status %#x)\n", status);
 		return (1);
 	}
-	printf("ns_sethostname: ok\n");
+	printf("ns_sethostname: EINVAL fails closed\n");
 	return (0);
 }
