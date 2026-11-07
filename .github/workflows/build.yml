@@ -160,6 +160,7 @@ jobs:
             python3 python3-dpkt diffutils iproute2 ethtool nftables >/dev/null
           python3 ci/test_webserver.py
           PATH=/usr/sbin:/sbin:$PATH ci/test_decoy_tcp.sh
+          ci/test_script_droppriv.sh
           ci/test_check_attestations.sh
           python3 ci/test_scripts.py
           ci/test_check_default.sh
@@ -202,7 +203,7 @@ jobs:
           shellcheck --version | head -2
           # SC1007 (a= b=), SC1090/SC2010/SC2034: intentional patterns
           shellcheck -s sh -S warning -e SC1007,SC1090,SC2010,SC2034 \
-            release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh ci/test_install_rollback.sh console/pm-firewall ci/test_decoy_tcp.sh debian/mkconf.sh install-from-source.sh ci/test_install_from_source.sh ci/test_setup_confirm.sh ci/test_decoys_include.sh ci/test_decoyd_socket.sh
+            release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh ci/test_install_rollback.sh console/pm-firewall ci/test_decoy_tcp.sh debian/mkconf.sh install-from-source.sh ci/test_install_from_source.sh ci/test_setup_confirm.sh ci/test_decoys_include.sh ci/test_decoyd_socket.sh ci/test_script_droppriv.sh ci/test_image_smoke_persona.sh
       - name: Default personality file pinned sha256 + parse check (#150)
         run: |
           (cd fingerprints && sha256sum -c columbo-v1.db.sha256)
@@ -223,6 +224,7 @@ jobs:
           sh ci/test_install_rollback.sh && dash ci/test_install_rollback.sh
           sh ci/test_install_from_source.sh && dash ci/test_install_from_source.sh
           sh ci/test_setup_confirm.sh && dash ci/test_setup_confirm.sh
+          sh ci/test_image_smoke_persona.sh && dash ci/test_image_smoke_persona.sh
 
   sanitizers:
     name: Debian 13 / ASan + UBSan
@@ -1018,7 +1020,10 @@ jobs:
           ro="--read-only --tmpfs /run --tmpfs /tmp --tmpfs /root/.config --security-opt no-new-privileges"
           docker run --rm $caps $ro phantom-mirage:ci --version
           docker run --rm $caps $ro phantom-mirage:ci --verify-config
-          docker run --rm $caps $ro -v "$PWD/ci/smoke.conf:/etc/phantom-mirage/phantom-mirage.conf:ro" phantom-mirage:ci --verify-config
+          # ci/smoke.conf names "Linux 2.6.32" from nmap-os-db. The image
+          # loads columbo-v1.db (ubuntu2404, not that nmap fingerprint).
+          sed 's/Linux 2.6.32/ubuntu2404/' ci/smoke.conf > /tmp/smoke-image.conf
+          docker run --rm $caps $ro -v /tmp/smoke-image.conf:/etc/phantom-mirage/phantom-mirage.conf:ro phantom-mirage:ci --verify-config
           # A broken config must stop the entrypoint before the daemon starts
           printf 'create x\nset x personality "Nope"\n' > /tmp/bad.conf
           if docker run --rm $caps $ro -v /tmp/bad.conf:/etc/phantom-mirage/phantom-mirage.conf:ro phantom-mirage:ci; then

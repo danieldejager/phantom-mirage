@@ -1,4 +1,5 @@
-# PM-SCR-115 (setgroups failure must abort cmd_droppriv) and
+# PM-SCR-115 (setgroups failure aborts when extra groups remain;
+# a second drop with the list already reduced returns) and
 # PM-SCR-118 (fix_permissions modes, file types and symbolic links)
 # pyextend.c is only built with ./configure --with-python
 if ! grep -q '^#define HAVE_PYTHON 1' config.h; then
