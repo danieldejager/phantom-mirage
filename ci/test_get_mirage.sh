@@ -57,10 +57,10 @@ touch "$t/authok"
 #    older "Latest" release listed first by the API is not picked
 mkrel v1.7.0-3; mkrel v1.7.0-4
 cat > "$t/releases.json" <<'J'
-[{"tag_name":"v1.7.0","draft":false,"prerelease":false,"published_at":"2026-10-22T05:59:53Z"},
- {"tag_name":"v1.7.0-5","draft":true,"prerelease":false,"published_at":null},
- {"tag_name":"v1.7.0-4","draft":false,"prerelease":true,"published_at":"2026-10-22T23:04:33Z"},
- {"tag_name":"v1.7.0-3","draft":false,"prerelease":true,"published_at":"2026-10-22T21:38:34Z"}]
+[{"tag_name":"v1.7.0","draft":false,"prerelease":false,"published_at":"2026-10-22T05:59:53Z","assets":[{"name":"SHA256SUMS"}]},
+ {"tag_name":"v1.7.0-5","draft":true,"prerelease":false,"published_at":null,"assets":[{"name":"SHA256SUMS"}]},
+ {"tag_name":"v1.7.0-4","draft":false,"prerelease":true,"published_at":"2026-10-22T23:04:33Z","assets":[{"name":"SHA256SUMS"}]},
+ {"tag_name":"v1.7.0-3","draft":false,"prerelease":true,"published_at":"2026-10-22T21:38:34Z","assets":[{"name":"SHA256SUMS"}]}]
 J
 gm -i veth-h -n 10.77.0.248/29
 [ $rc = 0 ] || fail "prerelease rc=$rc"
@@ -96,7 +96,7 @@ gm --stable -i eth0
 [ $rc = 0 ] && grep -q 'phantom-mirage_1.7.0_ubuntu26.04_arm64.run -i eth0$' "$t/sudo.log" || fail "--stable"
 gm --prerelease
 [ $rc = 0 ] && grep -q '1.7.0-4_ubuntu26.04_arm64.run$' "$t/sudo.log" || fail "--prerelease"
-echo '[{"tag_name":"v2.0.0-1","draft":false,"prerelease":true,"published_at":"2026-10-22T05:59:53Z"}]' > "$t/rel.json"
+echo '[{"tag_name":"v2.0.0-1","draft":false,"prerelease":true,"published_at":"2026-10-22T05:59:53Z","assets":[{"name":"SHA256SUMS"}]}]' > "$t/rel.json"
 cp "$t/releases.json" "$t/releases.bak"; cp "$t/rel.json" "$t/releases.json"
 gm --stable
 [ $rc != 0 ] && grep -q 'no published stable release found' "$t/o" || fail "--stable without stable release"
@@ -118,4 +118,23 @@ gm --tag v1.7.0-3
 rm "$t/pub"; echo "good $(sha256sum < "$t/rel/v1.7.0-3/SHA256SUMS" | cut -d' ' -f1)" > "$t/rel/v1.7.0-3/SHA256SUMS.sig"
 echo k > "$t/local.pub"; PM_SIGNING_PUBKEY=$t/local.pub gm --tag v1.7.0-3
 [ $rc = 0 ] && grep -q 'SHA256SUMS signature OK' "$t/o" || fail "PM_SIGNING_PUBKEY"
+
+# 9. A newer release with no assets is not an automatic install target.
+#    mark-1 is that release: not a prerelease, published after v1.7.0,
+#    and empty. --tag can still name it and then fail closed.
+cp "$t/releases.json" "$t/releases.bak"
+cat > "$t/releases.json" <<'J'
+[{"tag_name":"v1.7.0","draft":false,"prerelease":false,"published_at":"2026-10-22T05:59:53Z","assets":[{"name":"SHA256SUMS"}]},
+ {"tag_name":"mark-1","draft":false,"prerelease":false,"published_at":"2026-11-07T11:22:07Z","assets":[]},
+ {"tag_name":"v1.7.0-4","draft":false,"prerelease":true,"published_at":"2026-10-22T23:04:33Z","assets":[{"name":"SHA256SUMS"}]},
+ {"tag_name":"v9.9.9-9","draft":false,"prerelease":true,"published_at":"2026-12-01T00:00:00Z","assets":[]}]
+J
+gm --stable -i eth0
+[ $rc = 0 ] && grep -q 'phantom-mirage_1.7.0_ubuntu26.04_arm64.run -i eth0$' "$t/sudo.log" || fail "assetless mark-1 selected as stable"
+gm
+[ $rc = 0 ] && grep -q '1.7.0-4_ubuntu26.04_arm64.run$' "$t/sudo.log" || fail "assetless prerelease selected"
+mkdir -p "$t/rel/mark-1"
+gm --tag mark-1
+[ $rc != 0 ] && grep -q 'release mark-1 has no .run' "$t/o" || fail "--tag mark-1 did not fail closed"
+[ ! -e "$t/sudo.log" ] || fail "sudo called for assetless --tag"
 echo "test_get_mirage: all passed"

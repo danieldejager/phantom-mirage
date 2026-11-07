@@ -204,7 +204,7 @@ jobs:
           shellcheck --version | head -2
           # SC1007 (a= b=), SC1090/SC2010/SC2034: intentional patterns
           shellcheck -s sh -S warning -e SC1007,SC1090,SC2010,SC2034 \
-            release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh ci/test_install_rollback.sh console/pm-firewall ci/test_decoy_tcp.sh debian/mkconf.sh install-from-source.sh ci/test_install_from_source.sh ci/test_setup_confirm.sh ci/test_decoys_include.sh ci/test_decoyd_socket.sh ci/test_script_droppriv.sh ci/test_image_smoke_persona.sh ci/test_columbo_connect.sh
+            release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh ci/test_install_rollback.sh console/pm-firewall ci/test_decoy_tcp.sh debian/mkconf.sh install-from-source.sh ci/test_install_from_source.sh ci/test_setup_confirm.sh ci/test_decoys_include.sh ci/test_decoyd_socket.sh ci/test_script_droppriv.sh ci/test_image_smoke_persona.sh ci/test_columbo_connect.sh ci/test_release_matrix.sh
       - name: Default personality file pinned sha256 + parse check (#150)
         run: |
           (cd fingerprints && sha256sum -c columbo-v1.db.sha256)
@@ -226,6 +226,7 @@ jobs:
           sh ci/test_install_from_source.sh && dash ci/test_install_from_source.sh
           sh ci/test_setup_confirm.sh && dash ci/test_setup_confirm.sh
           sh ci/test_image_smoke_persona.sh && dash ci/test_image_smoke_persona.sh
+          sh ci/test_release_matrix.sh && dash ci/test_release_matrix.sh
 
   sanitizers:
     name: Debian 13 / ASan + UBSan
@@ -729,6 +730,77 @@ jobs:
             src/lintian.txt
           if-no-files-found: error
 
+  deb-arm64:
+    name: Debian 13 / arm64 .deb package
+    needs: gate
+    # Same trigger as the amd64 .deb job: a push of the release commit
+    # must produce the arm64 installer, not only a heavy/manual run.
+    # The debian:13 container on a native arm64 runner is not a
+    # systemd-as-PID-1 host. Service start, AppArmor and the seccomp
+    # allowlist stay in the Ubuntu systemd jobs and the arm64
+    # --sandbox-daemon job.
+    if: github.event_name != 'schedule' || needs.gate.outputs.heavy == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    container:
+      image: debian:13
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src/phantom-mirage
+
+      - name: Install packaging tools and build-deps
+        working-directory: src/phantom-mirage
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential devscripts equivs
+          mk-build-deps -i -r -t 'apt-get -y --no-install-recommends' debian/control
+
+      - name: dpkg-buildpackage -us -uc -b
+        working-directory: src/phantom-mirage
+        run: dpkg-buildpackage -us -uc -b
+
+      - name: Install the arm64 .deb
+        working-directory: src
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get install -y ./phantom-mirage_*.deb ./phantom-mirage-common_*.deb
+          want=$(sed -n 's/^AC_INIT(\[phantom-mirage\], \[\([^]]*\)\]).*/\1/p' phantom-mirage/configure.ac)
+          phantom-mirage --version 2>&1 | tee version.txt
+          grep -qx "Phantom Mirage I $want (based on Honeyd)" version.txt
+          deb=$(cd phantom-mirage && dpkg-parsechangelog -S Version)
+          test "$(dpkg-query -W -f='${Version}' phantom-mirage)" = "$deb"
+          test "$(dpkg --print-architecture)" = arm64
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd
+          systemd-analyze verify /usr/lib/systemd/system/phantom-mirage.service
+
+      - name: Build the debian13 arm64 .run
+        working-directory: src
+        run: |
+          v=$(cd phantom-mirage && dpkg-parsechangelog -S Version)
+          mkdir -p debs run
+          for f in phantom-mirage_*.deb phantom-mirage-common_*.deb; do
+            cp "$f" "debs/$(echo "$f" | sed -E "s/^([a-z-]+)_[^_]+_([a-z0-9]+)\.deb$/\1_${v}_debian13_\2.deb/")"
+          done
+          sh phantom-mirage/release/make-run.sh debs debian13 arm64 run
+          ls -l run
+          rc=0; PM_OS_RELEASE=/dev/null sh run/*.run > wrong.txt 2>&1 || rc=$?
+          cat wrong.txt; test $rc != 0 && grep -q 'is for debian13' wrong.txt
+
+      - name: Upload arm64 .run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phantom-mirage-run-debian13-arm64
+          path: src/run/*.run
+          if-no-files-found: error
+
+      - name: Upload arm64 .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phantom-mirage-deb-arm64
+          path: src/debs/*.deb
+          if-no-files-found: error
+
   systemd:
     name: Ubuntu 24.04 / ${{ matrix.arch }} .deb under systemd
     needs: gate
@@ -759,6 +831,33 @@ jobs:
             build-essential devscripts equivs
           sudo mk-build-deps -i -r -t 'apt-get -y --no-install-recommends' debian/control
           dpkg-buildpackage -us -uc -b
+
+      - name: Build the ubuntu24.04 .run
+        working-directory: src
+        run: |
+          v=$(cd phantom-mirage && dpkg-parsechangelog -S Version)
+          mkdir -p debs run
+          for f in phantom-mirage_*.deb phantom-mirage-common_*.deb; do
+            cp "$f" "debs/$(echo "$f" | sed -E "s/^([a-z-]+)_[^_]+_([a-z0-9]+)\.deb$/\1_${v}_ubuntu24.04_\2.deb/")"
+          done
+          sh phantom-mirage/release/make-run.sh debs ubuntu24.04 ${{ matrix.arch }} run
+          (cd run && sha256sum *.run | tee SHA256SUMS)
+          . /etc/os-release
+          test "$ID$VERSION_ID" = ubuntu24.04
+
+      - name: Upload ubuntu24.04 .run
+        uses: actions/upload-artifact@v4
+        with:
+          name: phantom-mirage-run-ubuntu24.04-${{ matrix.arch }}
+          path: src/run/
+          if-no-files-found: error
+
+      - name: Upload ubuntu24.04 .debs
+        uses: actions/upload-artifact@v4
+        with:
+          name: phantom-mirage_ubuntu24.04_${{ matrix.arch }}
+          path: src/debs/*.deb
+          if-no-files-found: error
 
       - name: Install it
         working-directory: src
@@ -824,6 +923,94 @@ jobs:
       - name: Journal
         if: always()
         run: sudo journalctl -u phantom-mirage --no-pager | tail -n 200
+
+  ubuntu24-run:
+    name: Ubuntu 24.04 / ${{ matrix.arch }} .run install
+    needs: [gate, systemd]
+    if: needs.gate.outputs.heavy == 'true' && needs.systemd.result == 'success'
+    # Real runner, systemd as PID 1. The .run built above is the installer
+    # a sensor would download. Sandbox and AppArmor already ran in the
+    # systemd job against these same .debs; this job does not repeat that
+    # and does not treat a mocked unit as a kernel result.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            os: ubuntu-24.04
+          - arch: arm64
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: phantom-mirage-run-ubuntu24.04-${{ matrix.arch }}
+          path: run
+
+      - name: veth pair (host veth-h 10.77.0.1/24, netns client 10.77.0.2/24)
+        run: |
+          sudo ip netns add client
+          sudo ip link add veth-h type veth peer name veth-c
+          sudo ip link set veth-c netns client
+          sudo ip addr add 10.77.0.1/24 dev veth-h
+          sudo ip link set veth-h up
+          sudo ip netns exec client ip addr add 10.77.0.2/24 dev veth-c
+          sudo ip netns exec client ip link set veth-c up
+          sudo ip netns exec client ip link set lo up
+          sudo ip netns exec client ping -c1 -W2 10.77.0.1
+
+      - name: Fresh .run install
+        run: |
+          set -o pipefail
+          . /etc/os-release
+          test "$ID$VERSION_ID" = ubuntu24.04
+          dpkg --print-architecture | grep -qx '${{ matrix.arch }}'
+          printf '%s\n' e2e-sensor admin 8443 browser UTC 30 'E2e-console-pass-1' 'E2e-console-pass-1' > ans.txt
+          sudo PM_TEST_STDIN=1 sh run/*.run --yes -i veth-h -n 10.77.0.248/29 < ans.txt 2>&1 | tee new1.txt
+          grep -q 'SHA-256 fingerprint' new1.txt
+          grep -q 'no previous install found' new1.txt
+
+      - name: Services active; restart and reload; decoy answers ping
+        run: |
+          sleep 3
+          for s in phantom-mirage farpd phantom-mirage-console phantom-mirage-firewall; do
+            systemctl is-active --quiet $s
+            systemctl is-enabled --quiet $s
+          done
+          sudo systemctl restart phantom-mirage
+          sudo systemctl reload phantom-mirage
+          systemctl is-active --quiet phantom-mirage
+          sudo ip netns exec client ping -c3 -W3 10.77.0.248 | tee ping.txt
+          grep -q ' 0% packet loss' ping.txt
+          curl -sfk --max-time 5 https://127.0.0.1:8443/api/health
+          printf '%s\n' 'E2e-console-pass-1' | python3 ci/console_login.py 8443 admin
+
+      - name: Re-run the .run over the new install
+        run: |
+          set -o pipefail
+          sudo sh run/*.run --yes -i veth-h -n 10.77.0.248/29 < /dev/null 2>&1 | tee new2.txt
+          v=$(sed -n '1s/^[^ ]* (\([^)]*\)).*/\1/p' debian/changelog | sed 's/\./\\./g')
+          test -n "$v"
+          grep -E "install.sh: old version removed cleanly: .*phantom-mirage=$v" new2.txt
+          grep -q 'kept the web console admin account' new2.txt
+          sleep 3
+          systemctl is-active --quiet phantom-mirage
+          printf '%s\n' 'E2e-console-pass-1' | python3 ci/console_login.py 8443 admin
+
+      - name: phantom-mirage-uninstall --yes
+        run: |
+          sudo phantom-mirage-uninstall --yes
+          for p in phantom-mirage phantom-mirage-common; do
+            st=$(dpkg-query -W -f='${db:Status-Abbrev}' $p 2>/dev/null || true)
+            case $st in ''|un*|pn*) ;; *) echo "$p still installed: $st" >&2; exit 1 ;; esac
+          done
+          if systemctl cat phantom-mirage.service >/dev/null 2>&1; then echo 'unit still present' >&2; exit 1; fi
+
+      - name: Journal
+        if: always()
+        run: sudo journalctl -u phantom-mirage -u farpd -u phantom-mirage-console -u phantom-mirage-firewall --no-pager | tail -n 80
 
   arm64:
     name: Debian 13 / arm64 --sandbox-daemon
