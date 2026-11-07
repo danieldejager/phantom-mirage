@@ -161,6 +161,7 @@ jobs:
           python3 ci/test_webserver.py
           PATH=/usr/sbin:/sbin:$PATH ci/test_decoy_tcp.sh
           ci/test_script_droppriv.sh
+          ci/test_columbo_connect.sh
           ci/test_check_attestations.sh
           python3 ci/test_scripts.py
           ci/test_check_default.sh
@@ -203,7 +204,7 @@ jobs:
           shellcheck --version | head -2
           # SC1007 (a= b=), SC1090/SC2010/SC2034: intentional patterns
           shellcheck -s sh -S warning -e SC1007,SC1090,SC2010,SC2034 \
-            release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh ci/test_install_rollback.sh console/pm-firewall ci/test_decoy_tcp.sh debian/mkconf.sh install-from-source.sh ci/test_install_from_source.sh ci/test_setup_confirm.sh ci/test_decoys_include.sh ci/test_decoyd_socket.sh ci/test_script_droppriv.sh ci/test_image_smoke_persona.sh
+            release/*.sh debian/scripts/* ci/test_get_mirage.sh ci/test_make_run.sh ci/test_install_rollback.sh console/pm-firewall ci/test_decoy_tcp.sh debian/mkconf.sh install-from-source.sh ci/test_install_from_source.sh ci/test_setup_confirm.sh ci/test_decoys_include.sh ci/test_decoyd_socket.sh ci/test_script_droppriv.sh ci/test_image_smoke_persona.sh ci/test_columbo_connect.sh
       - name: Default personality file pinned sha256 + parse check (#150)
         run: |
           (cd fingerprints && sha256sum -c columbo-v1.db.sha256)
