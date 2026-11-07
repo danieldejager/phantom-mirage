@@ -1,4 +1,5 @@
-# PM-SCR-242: unchecked sethostname in ns_run (sandbox_ns.c)
+# PM-SCR-242: sethostname EPERM (ProtectHostname) still runs the script;
+# any other errno fails closed before the script root is set up.
 # PM-SCR-252: without user namespaces the skip is printed here, as
 # droppriv_perms does; PM-SCR-253: the harness requires that the fake
 # sethostname was called, so an earlier failure in ns_run fails the test
