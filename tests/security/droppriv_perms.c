@@ -1,7 +1,9 @@
 /*
  * PM-SCR-115: cmd_droppriv() only noted a setgroups() failure and went
  * on, so a subsystem could keep its supplementary groups. Run as non
- * root, setgroups() fails with EPERM and cmd_droppriv() must exit.
+ * root, setgroups() fails with EPERM. If any supplementary group is not
+ * the target gid, cmd_droppriv() must exit. If the list is already only
+ * that gid (the script child, after the daemon dropped), it must return.
  *
  * PM-SCR-118: pyextend_webserver_fix_permissions() created graphs/
  * with mode 0722, skipped every regular file (st_mode & S_IFLNK is true
@@ -17,12 +19,43 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <grp.h>
+#include <pwd.h>
 
 void cmd_droppriv(uid_t, gid_t);
 pid_t __real_fork(void);	/* fork is wrapped by cc_daemon */
 void pyextend_webserver_fix_permissions(const char *, uid_t, gid_t);
 
 static int fail;
+
+/* 1 when some supplementary group is not gid (or the list cannot be read). */
+static int
+suppl_dirty(gid_t gid)
+{
+	gid_t *g;
+	int n, i;
+
+	n = getgroups(0, NULL);
+	if (n < 0)
+		return (1);
+	if (n == 0)
+		return (0);
+	g = calloc((size_t)n, sizeof(*g));
+	if (g == NULL)
+		return (1);
+	if (getgroups(n, g) != n) {
+		free(g);
+		return (1);
+	}
+	for (i = 0; i < n; i++) {
+		if (g[i] != gid) {
+			free(g);
+			return (1);
+		}
+	}
+	free(g);
+	return (0);
+}
 
 static void
 check_mode(const char *path, mode_t want)
@@ -47,18 +80,61 @@ main(void)
 	int status, fd;
 	pid_t pid;
 
-	/* PM-SCR-115 */
+	/* PM-SCR-115, and the script-child re-entry after a drop */
 	if (geteuid() == 0) {
-		printf("droppriv: skipped, needs a non root user\n");
-	} else if ((pid = __real_fork()) == 0) {
-		cmd_droppriv(getuid(), getgid());
-		_exit(0);		/* returned: groups not dropped */
-	} else {
+		struct passwd *pw = getpwnam("nobody");
+		uid_t uid = pw != NULL ? pw->pw_uid : 65534;
+		gid_t gid = pw != NULL ? pw->pw_gid : 65534;
+		gid_t extra[2];
+
+		/* Groups already only the target: the second drop returns. */
+		if ((pid = __real_fork()) == 0) {
+			if (setgroups(1, &gid) == -1 ||
+			    setresgid(gid, gid, gid) == -1 ||
+			    setresuid(uid, uid, uid) == -1)
+				_exit(2);
+			cmd_droppriv(uid, gid);
+			_exit(0);
+		}
 		waitpid(pid, &status, 0);
-		printf("droppriv as non root: %s\n",
+		printf("droppriv re-entry: %s\n",
+		    WIFEXITED(status) && WEXITSTATUS(status) == 0 ?
+		    "continued" : "aborted");
+		if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+			fail = 1;
+
+		/* An extra supplementary group that setgroups cannot clear. */
+		extra[0] = gid;
+		extra[1] = gid == 0 ? 1 : 0;
+		if ((pid = __real_fork()) == 0) {
+			if (setgroups(2, extra) == -1 ||
+			    setresgid(gid, gid, gid) == -1 ||
+			    setresuid(uid, uid, uid) == -1)
+				_exit(2);
+			cmd_droppriv(uid, gid);
+			_exit(0);		/* returned: extra group kept */
+		}
+		waitpid(pid, &status, 0);
+		printf("droppriv extra group: %s\n",
 		    WIFEXITED(status) && WEXITSTATUS(status) != 0 ?
 		    "aborted" : "continued");
 		if (!WIFEXITED(status) || WEXITSTATUS(status) == 0)
+			fail = 1;
+	} else if ((pid = __real_fork()) == 0) {
+		cmd_droppriv(getuid(), getgid());
+		_exit(0);
+	} else {
+		int dirty = suppl_dirty(getgid());
+
+		waitpid(pid, &status, 0);
+		printf("droppriv as non root (extra groups=%d): %s\n", dirty,
+		    WIFEXITED(status) && WEXITSTATUS(status) != 0 ?
+		    "aborted" : "continued");
+		if (!WIFEXITED(status))
+			fail = 1;
+		else if (dirty && WEXITSTATUS(status) == 0)
+			fail = 1;
+		else if (!dirty && WEXITSTATUS(status) != 0)
 			fail = 1;
 	}
 

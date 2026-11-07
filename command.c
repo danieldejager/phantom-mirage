@@ -488,6 +488,47 @@ cmd_environment(struct template *tmpl, struct tuple *hdr)
 	strlcat(error, errline, sizeof(error)); \
 } while (0)
 
+#ifdef HAVE_SETGROUPS
+/*
+ * setgroups() failed. A privileged caller must be able to set the list,
+ * so that is always fatal (PM-SCR-115: do not keep extra supplementary
+ * groups). An unprivileged caller — the service-script child, which
+ * calls cmd_droppriv() again after the daemon has already dropped —
+ * gets EPERM even when the list is already only the target gid. That
+ * second call is fine. Any other supplementary group is not: we could
+ * not drop it, so fail closed.
+ */
+static int
+droppriv_groups_dirty(gid_t gid)
+{
+	gid_t *groups;
+	int n, i;
+
+	if (geteuid() == 0)
+		return (1);
+	n = getgroups(0, NULL);
+	if (n < 0)
+		return (1);
+	if (n == 0)
+		return (0);
+	groups = calloc((size_t)n, sizeof(*groups));
+	if (groups == NULL)
+		return (1);
+	if (getgroups(n, groups) != n) {
+		free(groups);
+		return (1);
+	}
+	for (i = 0; i < n; i++) {
+		if (groups[i] != gid) {
+			free(groups);
+			return (1);
+		}
+	}
+	free(groups);
+	return (0);
+}
+#endif
+
 /* Drop the privileges and verify that they got dropped */
 
 void
@@ -503,7 +544,7 @@ cmd_droppriv(uid_t uid, gid_t gid)
 
 	/* Lower privileges: supplementary groups, then gid, then uid */
 #ifdef HAVE_SETGROUPS
-	if (setgroups(1, &gid) == -1) {
+	if (setgroups(1, &gid) == -1 && droppriv_groups_dirty(gid)) {
 		SETERROR((errline, sizeof(errline),
 			     "%s: setgroups(%d) failed\n", __func__, gid));
 		goto error;

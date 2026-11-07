@@ -196,6 +196,11 @@ A(geteuid)
 #ifdef __NR_getgid
 A(getgid)
 #endif
+/* cmd_droppriv() reads the list when setgroups() fails in a script
+ * child that the daemon has already dropped (PM-SCR-115). */
+#ifdef __NR_getgroups
+A(getgroups)
+#endif
 #ifdef __NR_getitimer
 A(getitimer)
 #endif
