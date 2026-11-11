@@ -228,6 +228,49 @@ jobs:
           sh ci/test_image_smoke_persona.sh && dash ci/test_image_smoke_persona.sh
           sh ci/test_release_matrix.sh && dash ci/test_release_matrix.sh
 
+  get-mirage:
+    name: Ubuntu 26.04 / get-mirage --stable
+    # Real Ubuntu 26.04 runner (systemd is PID 1). The script under test
+    # is this commit; the packages are the public mark-1 release. No gh
+    # and no token: the job proves a fresh install can use curl alone.
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No gh and no token
+        run: |
+          if command -v gh >/dev/null; then sudo mv "$(command -v gh)" /tmp/gh.hidden; fi
+          ! command -v gh
+
+      - name: veth pair (host veth-h 10.77.0.1/24, netns client 10.77.0.2/24)
+        run: |
+          sudo ip netns add client
+          sudo ip link add veth-h type veth peer name veth-c
+          sudo ip link set veth-c netns client
+          sudo ip addr add 10.77.0.1/24 dev veth-h
+          sudo ip link set veth-h up
+          sudo ip netns exec client ip addr add 10.77.0.2/24 dev veth-c
+          sudo ip netns exec client ip link set veth-c up
+          sudo ip netns exec client ip link set lo up
+
+      - name: Install Latest (mark-1) and start the service
+        run: |
+          set -o pipefail
+          printf '%s\n' e2e-sensor admin 8443 browser UTC 30 'E2e-console-pass-1' 'E2e-console-pass-1' > ans.txt
+          sudo PM_TEST_STDIN=1 sh release/get-mirage.sh --stable --yes -i veth-h -n 10.77.0.248/29 < ans.txt | tee install.txt
+          grep -q 'release mark-1:' install.txt
+          grep -q 'SHA256SUMS signature OK' install.txt
+          sleep 3
+          systemctl is-active --quiet phantom-mirage
+          systemctl is-active --quiet farpd
+          sudo ip netns exec client ping -c3 -W3 10.77.0.248 | tee ping.txt
+          grep -q ' 0% packet loss' ping.txt
+
+      - name: Journal
+        if: always()
+        run: sudo journalctl -u phantom-mirage -u farpd --no-pager | tail -n 40
+
   sanitizers:
     name: Debian 13 / ASan + UBSan
     needs: gate

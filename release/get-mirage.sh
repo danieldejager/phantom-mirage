@@ -1,32 +1,26 @@
 #!/bin/sh
-# Download and install the newest Phantom Mirage release (#110).
-# Run as your normal user (gh must be logged in; no token is stored):
+# Install Phantom Mirage on Ubuntu 26.04 (amd64 or arm64). No gh account.
 #
-#   gh api -H 'Accept: application/vnd.github.raw' \
-#     repos/danieldejager/phantom-mirage/contents/release/get-mirage.sh | sh
-#   sh get-mirage.sh [--tag TAG | --stable | --prerelease] [install.sh options, e.g. -i eth0 -n CIDR]
-#   (with "| sh", pass options as: ... | sh -s -- --stable -i eth0)
+#   curl -fsSL https://raw.githubusercontent.com/danieldejager/phantom-mirage/master/release/get-mirage.sh | sudo sh -s -- --stable
+#   sudo sh get-mirage.sh --stable --yes -i eth0 -n 192.0.2.248/29
 #
-# Picks the most recently published non-draft release that has assets
-# (by published_at, prereleases included; the API order and the Latest
-# flag are ignored). A release with no files, such as mark-1, is not an
-# install target. --stable is the newest non-prerelease that has assets.
-# --tag TAG names one release even when it has no files. --prerelease
-# states the default explicitly. Then the .run for this distro
-# (/etc/os-release) and arch (dpkg --print-architecture), checks it
-# against the release's SHA256SUMS and runs it with sudo.
+# --stable uses GitHub's Latest release (mark-1). A release with no files
+# is skipped. --tag names one release and does not substitute another.
+# --prerelease is the newest published release that has files, including
+# prereleases. Extra arguments are passed to the .run installer.
 #
-# Signature (#121): if release/SHA256SUMS.pub (a cosign public key) is
-# committed on the default branch (or PM_SIGNING_PUBKEY names a local
-# copy), the release must carry SHA256SUMS.sig and it must verify with
-# cosign verify-blob, or nothing is installed. Without the key the
-# checksums are used alone and a warning says they are unsigned. Everything is inside main() so a truncated
-# "| sh" download runs nothing.
+# The release SHA256SUMS.sig is a cosign sign-blob signature: ECDSA P-256
+# over the SHA-256 of SHA256SUMS. openssl dgst -sha256 -verify checks that
+# same signature. Checksums and the signature are always required.
+# Everything is inside main() so a truncated "| sh" download runs nothing.
 main() {
 	set -eu
 	REPO=danieldejager/phantom-mirage
+	API=https://api.github.com/repos/$REPO
+	RAW=https://raw.githubusercontent.com/$REPO/master/release/SHA256SUMS.pub
 	say() { echo "get-mirage: $*"; }
 	die() { echo "get-mirage: $*" >&2; exit 1; }
+
 	tag= channel=prerelease
 	while [ $# -gt 0 ]; do
 		case $1 in
@@ -38,54 +32,115 @@ main() {
 			*) break ;;
 		esac
 	done
-	command -v gh >/dev/null 2>&1 || die "gh (GitHub CLI) is not installed"
-	if ! gh auth status >/dev/null 2>&1; then
-		echo "get-mirage: run gh auth login first" >&2
-		exit 1
+
+	if [ "$(id -u)" != 0 ] && [ -z "${PM_GET_MIRAGE_TEST:-}" ]; then
+		die "run as root: curl -fsSL https://raw.githubusercontent.com/$REPO/master/release/get-mirage.sh | sudo sh -s -- --stable"
 	fi
-	arch=$(dpkg --print-architecture) || die "dpkg --print-architecture failed"
+
 	osr=${PM_OS_RELEASE:-/etc/os-release}
 	[ -r "$osr" ] || die "$osr not found"
+	# shellcheck disable=SC1090
 	distro=$(. "$osr" && echo "${ID:-}${VERSION_ID:-}")
-	if [ -z "$tag" ]; then
-		# Zero assets is not an installable release. --tag still names it.
-		usable='((.assets // []) | length) > 0'
-		if [ "$channel" = prerelease ]; then
-			sel="select((.draft | not) and $usable)"
-		else
-			sel="select((.draft | not) and (.prerelease | not) and $usable)"
+	pretty=$(. "$osr" && echo "${PRETTY_NAME:-$distro}")
+	[ "$distro" = ubuntu26.04 ] || die "this installer is for Ubuntu 26.04; this system is $pretty"
+	arch=$(dpkg --print-architecture) || die "dpkg --print-architecture failed"
+	case $arch in
+		amd64|arm64) ;;
+		*) die "this installer is for amd64 or arm64; this system is $arch" ;;
+	esac
+
+	if [ -z "${PM_GET_MIRAGE_TEST:-}" ]; then
+		need=
+		command -v curl >/dev/null 2>&1 || need="$need curl"
+		command -v jq >/dev/null 2>&1 || need="$need jq"
+		command -v openssl >/dev/null 2>&1 || need="$need openssl"
+		command -v base64 >/dev/null 2>&1 || need="$need coreutils"
+		[ -f /etc/ssl/certs/ca-certificates.crt ] || need="$need ca-certificates"
+		if [ -n "$need" ]; then
+			say "installing$need"
+			apt-get update
+			# shellcheck disable=SC2086
+			DEBIAN_FRONTEND=noninteractive apt-get install -y $need
 		fi
-		tag=$(gh api "repos/$REPO/releases" --jq "[.[] | $sel] | sort_by(.published_at) | last | .tag_name // empty") || die "could not list releases"
-		[ -n "$tag" ] || die "no published $( [ "$channel" = stable ] && echo 'stable ')release found"
 	fi
-	assets=$(gh api "repos/$REPO/releases/tags/$tag" --jq '.assets[].name') || die "release $tag not found"
+	command -v curl >/dev/null 2>&1 || die "curl is not installed"
+	command -v jq >/dev/null 2>&1 || die "jq is not installed"
+	command -v openssl >/dev/null 2>&1 || die "openssl is not installed"
+
+	fetch() { # url [output]
+		hdr="Accept: application/vnd.github+json"
+		tok=${GH_TOKEN:-${GITHUB_TOKEN:-}}
+		if [ -n "$tok" ]; then
+			if [ $# -ge 2 ]; then
+				curl -fsSL --max-time 60 -H "$hdr" -H "Authorization: Bearer $tok" -o "$2" "$1"
+			else
+				curl -fsSL --max-time 60 -H "$hdr" -H "Authorization: Bearer $tok" "$1"
+			fi
+		else
+			if [ $# -ge 2 ]; then
+				curl -fsSL --max-time 60 -H "$hdr" -o "$2" "$1"
+			else
+				curl -fsSL --max-time 60 -H "$hdr" "$1"
+			fi
+		fi
+	}
+	fetch "$API" /dev/null || die "cannot reach https://api.github.com (check DNS and outbound HTTPS)"
+
+	assets_of() { # json -> names, one per line
+		printf '%s' "$1" | jq -r '(.assets // [])[].name'
+	}
+	has_files() { # json
+		[ "$(printf '%s' "$1" | jq -r '(.assets // []) | length')" -gt 0 ]
+	}
+
+	if [ -z "$tag" ]; then
+		if [ "$channel" = stable ]; then
+			latest=$(fetch "$API/releases/latest") || die "could not read the Latest release"
+			if has_files "$latest"; then
+				tag=$(printf '%s' "$latest" | jq -r '.tag_name // empty')
+			else
+				say "Latest release has no files; looking for an older stable release"
+				list=$(fetch "$API/releases") || die "could not list releases"
+				tag=$(printf '%s' "$list" | jq -r '[.[] | select((.draft | not) and (.prerelease | not) and ((.assets // []) | length) > 0)] | sort_by(.published_at) | last | .tag_name // empty')
+			fi
+			[ -n "$tag" ] || die "no published stable release with files"
+		else
+			list=$(fetch "$API/releases") || die "could not list releases"
+			tag=$(printf '%s' "$list" | jq -r '[.[] | select((.draft | not) and ((.assets // []) | length) > 0)] | sort_by(.published_at) | last | .tag_name // empty')
+			[ -n "$tag" ] || die "no published release with files"
+		fi
+	fi
+	case $tag in
+		*[!A-Za-z0-9._-]*) die "release tag contains unexpected characters: $tag" ;;
+	esac
+	rel=$(fetch "$API/releases/tags/$tag") || die "release $tag not found"
+	assets=$(assets_of "$rel")
 	run=$(printf '%s\n' "$assets" | grep -E "^phantom-mirage_[^_]+_${distro}_${arch}\.run\$" | sort -V | tail -n 1 || true)
 	[ -n "$run" ] || die "release $tag has no .run for $distro/$arch (assets: $(printf '%s ' $assets))"
 	printf '%s\n' "$assets" | grep -qx SHA256SUMS || die "release $tag has no SHA256SUMS"
+	printf '%s\n' "$assets" | grep -qx SHA256SUMS.sig || die "release $tag has no SHA256SUMS.sig; refusing an unsigned release"
 	say "release $tag: $run"
+
 	tmp=$(mktemp -d)
 	trap 'rm -rf "$tmp"' EXIT INT TERM HUP
-	gh release download "$tag" -R "$REPO" -D "$tmp" -p "$run" -p SHA256SUMS || die "download failed"
+	base="https://github.com/$REPO/releases/download/$tag"
+	fetch "$base/$run" "$tmp/$run" || die "download of $run failed"
+	fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" || die "download of SHA256SUMS failed"
+	fetch "$base/SHA256SUMS.sig" "$tmp/SHA256SUMS.sig" || die "download of SHA256SUMS.sig failed"
+	if [ -n "${PM_SIGNING_PUBKEY:-}" ]; then
+		cp "$PM_SIGNING_PUBKEY" "$tmp/SHA256SUMS.pub" || die "cannot read $PM_SIGNING_PUBKEY"
+	else
+		fetch "$RAW" "$tmp/SHA256SUMS.pub" || die "could not download the signing key"
+	fi
+	[ -s "$tmp/SHA256SUMS.pub" ] || die "signing key is empty"
 	(cd "$tmp" && grep -E "[ *]${run}\$" SHA256SUMS > run.sum) || die "$run is not listed in SHA256SUMS"
 	(cd "$tmp" && sha256sum -c run.sum) || die "checksum mismatch for $run; not installing"
-	pub=
-	if [ -n "${PM_SIGNING_PUBKEY:-}" ]; then
-		cp "$PM_SIGNING_PUBKEY" "$tmp/SHA256SUMS.pub" || die "cannot read $PM_SIGNING_PUBKEY"; pub=1
-	elif gh api -H 'Accept: application/vnd.github.raw' "repos/$REPO/contents/release/SHA256SUMS.pub" > "$tmp/SHA256SUMS.pub" 2>/dev/null && [ -s "$tmp/SHA256SUMS.pub" ]; then
-		pub=1
-	fi
-	if [ -n "$pub" ]; then
-		printf '%s\n' "$assets" | grep -qx SHA256SUMS.sig || die "release $tag has no SHA256SUMS.sig but a signing key is published; refusing an unsigned release"
-		command -v cosign >/dev/null 2>&1 || die "cosign is needed to verify SHA256SUMS.sig (https://docs.sigstore.dev/cosign/system_config/installation/)"
-		gh release download "$tag" -R "$REPO" -D "$tmp" -p SHA256SUMS.sig || die "download of SHA256SUMS.sig failed"
-		cosign verify-blob --key "$tmp/SHA256SUMS.pub" --signature "$tmp/SHA256SUMS.sig" --insecure-ignore-tlog=true "$tmp/SHA256SUMS" >/dev/null 2>&1 || die "SHA256SUMS signature does not verify; not installing"
-		say "SHA256SUMS signature OK"
-	else
-		say "warning: SHA256SUMS is unsigned (no release/SHA256SUMS.pub published yet); the checksum proves integrity, not who made the release"
-	fi
-	say "checksum OK; running: sudo sh $run $*"
-	rc=0
-	sudo sh "$tmp/$run" "$@" || rc=$?
-	return $rc
+	base64 -d < "$tmp/SHA256SUMS.sig" > "$tmp/sig.bin" 2>/dev/null || die "SHA256SUMS.sig is not a signature"
+	[ -s "$tmp/sig.bin" ] || die "SHA256SUMS.sig is empty"
+	openssl dgst -sha256 -verify "$tmp/SHA256SUMS.pub" -signature "$tmp/sig.bin" "$tmp/SHA256SUMS" >/dev/null \
+		|| die "SHA256SUMS signature does not verify; not installing"
+	say "SHA256SUMS signature OK"
+	say "checksum OK; running: sh $run $*"
+	sh "$tmp/$run" "$@"
 }
 main "$@"

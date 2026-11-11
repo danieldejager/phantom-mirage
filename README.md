@@ -86,6 +86,17 @@ sudo phantom-mirage-uninstall
 Installation:
 -------------
 
+On Ubuntu 26.04 (amd64 or arm64), one command downloads the Latest release,
+checks its signature, and installs it. No GitHub account:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/danieldejager/phantom-mirage/master/release/get-mirage.sh | sudo sh -s -- --stable
+```
+
+A downloaded copy is the same command: `sudo sh get-mirage.sh --stable`.
+Add `--yes -i eth0 -n 192.0.2.248/29` to choose the interface and address
+without prompts. This is Ubuntu 26.04 only.
+
 Phantom Mirage depends on several libraries:
 
  - libevent  - event notification

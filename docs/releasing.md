@@ -18,9 +18,15 @@ SHA256SUMS is made locally over the other 8 files.
 The .debs and .run files must come from a run on the release commit, and
 `debian/changelog` must already carry `<ver>`.
 
-`get-mirage.sh` picks the `.run` from `/etc/os-release` and
-`dpkg --print-architecture`. A release with no files is skipped.
-`mark-1` is that kind of release. `--tag` can still name it.
+`get-mirage.sh` is fetched from master, not from the release assets:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/danieldejager/phantom-mirage/master/release/get-mirage.sh | sudo sh -s -- --stable
+```
+
+`--stable` selects GitHub's Latest release. A release with no files is
+skipped. `--tag` can still name one. The script then downloads that
+release's `.run`, `SHA256SUMS` and `SHA256SUMS.sig`.
 
 Ubuntu 24.04 is not a Mark 1 installer. The heavy systemd jobs run on
 Ubuntu 24.04 GitHub runners, which is the runner image, not a shipped
