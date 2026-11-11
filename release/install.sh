@@ -7,8 +7,8 @@
 #   sudo sh install.sh --yes -i IF -n CIDR   (unattended: --yes lets setup
 #                                           start services without a terminal)
 #
-# Verifies SHA256SUMS, picks the .debs for this distro (ubuntu24.04,
-# ubuntu26.04 or debian13) and architecture (dpkg --print-architecture),
+# Verifies SHA256SUMS, picks the .debs for this distro (ubuntu26.04 or
+# debian13) and architecture (dpkg --print-architecture),
 # purges any installed Phantom Mirage or honeyd first via
 # phantom-mirage-uninstall
 # (keeping /etc/default/phantom-mirage, the web console's admin account,
@@ -30,7 +30,7 @@ say() { echo "install.sh: $*"; }
 arch=$(dpkg --print-architecture)
 . "${PM_TEST_ROOT:-}/etc/os-release"
 distro=$ID$VERSION_ID
-case $distro in ubuntu24.04|ubuntu26.04|debian13) ;; *) say "warning: $PRETTY_NAME is not a tested distro (ubuntu24.04, ubuntu26.04, debian13)" ;; esac
+case $distro in ubuntu26.04|debian13) ;; *) say "warning: $PRETTY_NAME is not a tested distro (ubuntu26.04, debian13)" ;; esac
 
 pick() {	# pick NAME ARCH: newest matching .deb, distro-tagged names first
 	f=$(ls -1 2>/dev/null | grep -E "^$1_[^_]+_${distro}_$2\.deb\$" | sort -V | tail -n 1)

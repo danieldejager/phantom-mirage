@@ -1,54 +1,33 @@
 # Release assets: where each file comes from
 
-A prerelease has 19 assets. The packages come from runs on the release
-commit. The scripts come from the repo. SHA256SUMS is made locally over
-the other 18 files.
-
-`build` on a push produces the Debian 13 packages (amd64 on the usual
-runner, arm64 on a native arm64 runner in a Debian 13 container). The
-Ubuntu 24.04 packages come from the heavy Ubuntu 24.04 systemd jobs in
-that same workflow (schedule, `workflow_dispatch`, or a pull request
-labelled `full-ci`). The Ubuntu 26.04 packages come from the manual
-`ubuntu-26.04` workflow, or from that pull-request label.
+Mark 1 installers are Ubuntu 26.04 only, amd64 and arm64. A Mark 1
+prerelease has 9 assets. The packages come from one `ubuntu-26.04`
+workflow run on the release commit (manual dispatch, or a pull request
+labelled `full-ci` or `ci-ubuntu-26.04`). The scripts come from the repo.
+SHA256SUMS is made locally over the other 8 files.
 
 | Asset | Source | Artifact / path |
 |---|---|---|
-| `phantom-mirage_<ver>_debian13_amd64.deb` | `build` (push), job ".deb" | `phantom-mirage-deb`: `phantom-mirage_<ver>_amd64.deb`, renamed |
-| `phantom-mirage_<ver>_debian13_arm64.deb` | `build` (push), job "arm64 .deb" | `phantom-mirage-deb-arm64`: `phantom-mirage_<ver>_arm64.deb`, renamed |
-| `phantom-mirage-common_<ver>_debian13_all.deb` | `build` (push) | `phantom-mirage-deb`: `phantom-mirage-common_<ver>_all.deb`, renamed. The arm64 job builds the same `Architecture: all` package; publish one copy |
-| `phantom-mirage_<ver>_debian13_{amd64,arm64}.run` | `build` (push) | `phantom-mirage-run-debian13` and `phantom-mirage-run-debian13-arm64` |
-| `phantom-mirage_<ver>_ubuntu24.04_{amd64,arm64}.deb` | `build` heavy systemd job | `phantom-mirage_ubuntu24.04_<arch>` |
-| `phantom-mirage-common_<ver>_ubuntu24.04_all.deb` | `build` heavy systemd job | `phantom-mirage_ubuntu24.04_<arch>` (same file for both arches; publish one copy) |
-| `phantom-mirage_<ver>_ubuntu24.04_{amd64,arm64}.run` | `build` heavy systemd job | `phantom-mirage-run-ubuntu24.04-<arch>` |
 | `phantom-mirage_<ver>_ubuntu26.04_{amd64,arm64}.deb` | `ubuntu-26.04` | `phantom-mirage_ubuntu26.04_<arch>` |
-| `phantom-mirage-common_<ver>_ubuntu26.04_all.deb` | `ubuntu-26.04` | `phantom-mirage_ubuntu26.04_<arch>` (same file for both arches) |
+| `phantom-mirage-common_<ver>_ubuntu26.04_all.deb` | `ubuntu-26.04` | `phantom-mirage_ubuntu26.04_<arch>` (same file for both arches; publish one copy) |
 | `phantom-mirage_<ver>_ubuntu26.04_{amd64,arm64}.run` | `ubuntu-26.04` | `phantom-mirage-run-ubuntu26.04-<arch>` |
 | `install.sh`, `get-mirage.sh` | repo | `release/` |
 | `phantom-mirage-uninstall` | repo | `debian/scripts/` |
-| `SHA256SUMS` | local | `sha256sum` over the other 18 files |
+| `SHA256SUMS` | local | `sha256sum` over the other 8 files |
 
-The .debs and .run files in a release must come from runs on the release
-commit, and `debian/changelog` must already carry `<ver>`.
+The .debs and .run files must come from a run on the release commit, and
+`debian/changelog` must already carry `<ver>`.
 
-## What is supported
+`get-mirage.sh` picks the `.run` from `/etc/os-release` and
+`dpkg --print-architecture`. A release with no files is skipped.
+`mark-1` is that kind of release. `--tag` can still name it.
 
-Release installers exist for these Linux systems, both as a `.deb` and as
-a `.run` that refuses any other distro or processor:
+Ubuntu 24.04 is not a Mark 1 installer. The heavy systemd jobs run on
+Ubuntu 24.04 GitHub runners, which is the runner image, not a shipped
+distro name. `install.sh` warns on anything other than `ubuntu26.04` or
+`debian13`.
 
-| System | amd64 | arm64 | How it is tested |
-|---|---|---|---|
-| Debian 13 | yes | yes | Package build and install inside a Debian 13 container. amd64 runs on the usual runner. arm64 runs on a native arm64 runner, still in a container, so it is not a systemd-as-PID-1 host. The arm64 daemon's seccomp allowlist is the separate `--sandbox-daemon` job on that same runner |
-| Ubuntu 24.04 | yes | yes | Real runner, systemd as PID 1: packaged unit, AppArmor, service scripts, then the `.run` fresh install, restart, reload, upgrade and uninstall |
-| Ubuntu 26.04 | yes | yes | Real runner, systemd as PID 1, including upgrade from an older published `.run` |
-
-`get-mirage.sh` selects the `.run` from `/etc/os-release` (`ID` +
-`VERSION_ID`) and `dpkg --print-architecture`. Automatic selection skips
-a release that has no files. `mark-1` is such a release: it is not a
-prerelease and it is newer than `v1.7.0`, but it is not an install
-target. `--tag` can still name it.
-
-Native Windows and native macOS are not supported. A Mac is a supported
-place to run one of the Linux systems above in a virtual machine, which
-is how the Ubuntu 26.04 arm64 installer is used. Arch Linux has source
-build instructions in the README only; there is no Arch package and no
-`.run`.
+Debian packages and the container image are not Mark 1 assets. CI still
+builds the Debian 13 amd64 `.deb` for development, and a `v*` tag still
+starts `.github/workflows/publish.yml`. Neither belongs in the Mark 1
+download set. A Mark 1 tag that is not `v*` does not start that workflow.
