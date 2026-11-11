@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install Phantom Mirage on Ubuntu 26.04 (amd64 or arm64). No gh account.
 #
-#   curl -fsSL https://raw.githubusercontent.com/danieldejager/phantom-mirage/master/release/get-mirage.sh | sudo sh -s -- --stable
+#   curl -fsSL https://github.com/danieldejager/phantom-mirage/releases/latest/download/get-mirage.sh | sudo sh -s -- --stable
 #   sudo sh get-mirage.sh --stable --yes -i eth0 -n 192.0.2.248/29
 #
 # --stable uses GitHub's Latest release (mark-1). A release with no files
@@ -17,7 +17,7 @@ main() {
 	set -eu
 	REPO=danieldejager/phantom-mirage
 	API=https://api.github.com/repos/$REPO
-	RAW=https://raw.githubusercontent.com/$REPO/master/release/SHA256SUMS.pub
+	PUB=$API/contents/release/SHA256SUMS.pub
 	say() { echo "get-mirage: $*"; }
 	die() { echo "get-mirage: $*" >&2; exit 1; }
 
@@ -34,7 +34,7 @@ main() {
 	done
 
 	if [ "$(id -u)" != 0 ] && [ -z "${PM_GET_MIRAGE_TEST:-}" ]; then
-		die "run as root: curl -fsSL https://raw.githubusercontent.com/$REPO/master/release/get-mirage.sh | sudo sh -s -- --stable"
+		die "run as root: curl -fsSL https://github.com/$REPO/releases/latest/download/get-mirage.sh | sudo sh -s -- --stable"
 	fi
 
 	osr=${PM_OS_RELEASE:-/etc/os-release}
@@ -130,7 +130,12 @@ main() {
 	if [ -n "${PM_SIGNING_PUBKEY:-}" ]; then
 		cp "$PM_SIGNING_PUBKEY" "$tmp/SHA256SUMS.pub" || die "cannot read $PM_SIGNING_PUBKEY"
 	else
-		fetch "$RAW" "$tmp/SHA256SUMS.pub" || die "could not download the signing key"
+		tok=${GH_TOKEN:-${GITHUB_TOKEN:-}}
+		if [ -n "$tok" ]; then
+			curl -fsSL --max-time 60 -H "Accept: application/vnd.github.raw" -H "Authorization: Bearer $tok" -o "$tmp/SHA256SUMS.pub" "$PUB" || die "could not download the signing key"
+		else
+			curl -fsSL --max-time 60 -H "Accept: application/vnd.github.raw" -o "$tmp/SHA256SUMS.pub" "$PUB" || die "could not download the signing key"
+		fi
 	fi
 	[ -s "$tmp/SHA256SUMS.pub" ] || die "signing key is empty"
 	(cd "$tmp" && grep -E "[ *]${run}\$" SHA256SUMS > run.sum) || die "$run is not listed in SHA256SUMS"

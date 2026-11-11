@@ -18,10 +18,10 @@ SHA256SUMS is made locally over the other 8 files.
 The .debs and .run files must come from a run on the release commit, and
 `debian/changelog` must already carry `<ver>`.
 
-`get-mirage.sh` is fetched from master, not from the release assets:
+`get-mirage.sh` is downloaded from the Latest release, not from a branch:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/danieldejager/phantom-mirage/master/release/get-mirage.sh | sudo sh -s -- --stable
+curl -fsSL https://github.com/danieldejager/phantom-mirage/releases/latest/download/get-mirage.sh | sudo sh -s -- --stable
 ```
 
 `--stable` selects GitHub's Latest release. A release with no files is

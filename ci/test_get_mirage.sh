@@ -46,7 +46,7 @@ body() {
 				sep=,
 			done
 			printf ']}\n' ;;
-		https://raw.githubusercontent.com/danieldejager/phantom-mirage/master/release/SHA256SUMS.pub)
+		https://api.github.com/repos/danieldejager/phantom-mirage/contents/release/SHA256SUMS.pub)
 			cat "$MOCK/pub" ;;
 		https://github.com/danieldejager/phantom-mirage/releases/download/*)
 			rest=${url#https://github.com/danieldejager/phantom-mirage/releases/download/}
