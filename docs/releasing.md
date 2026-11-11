@@ -1,21 +1,33 @@
 # Release assets: where each file comes from
 
-A prerelease has 12 assets. Two workflow runs on the same master commit
-produce all the packages: the automatic `build` push run and one manual
-`ubuntu-26.04` run (workflow_dispatch). The scripts come from the repo.
-SHA256SUMS is made locally over the other 11 files.
+Mark 1 installers are Ubuntu 26.04 only, amd64 and arm64. A Mark 1
+prerelease has 9 assets. The packages come from one `ubuntu-26.04`
+workflow run on the release commit (manual dispatch, or a pull request
+labelled `full-ci` or `ci-ubuntu-26.04`). The scripts come from the repo.
+SHA256SUMS is made locally over the other 8 files.
 
 | Asset | Source | Artifact / path |
 |---|---|---|
-| `phantom-mirage_<ver>_debian13_amd64.deb` | `build` (push), job ".deb" | `phantom-mirage-deb`: `phantom-mirage_<ver>_amd64.deb`, renamed |
-| `phantom-mirage-common_<ver>_debian13_all.deb` | `build` (push) | `phantom-mirage-deb`: `phantom-mirage-common_<ver>_all.deb`, renamed |
-| `phantom-mirage_<ver>_debian13_amd64.run` | `build` (push) | `phantom-mirage-run-debian13` |
-| `phantom-mirage_<ver>_ubuntu26.04_{amd64,arm64}.deb` | `ubuntu-26.04` (manual) | `phantom-mirage_ubuntu26.04_<arch>` |
-| `phantom-mirage-common_<ver>_ubuntu26.04_all.deb` | `ubuntu-26.04` (manual) | `phantom-mirage_ubuntu26.04_<arch>` (same file for both arches) |
-| `phantom-mirage_<ver>_ubuntu26.04_{amd64,arm64}.run` | `ubuntu-26.04` (manual) | `phantom-mirage-run-ubuntu26.04-<arch>` |
+| `phantom-mirage_<ver>_ubuntu26.04_{amd64,arm64}.deb` | `ubuntu-26.04` | `phantom-mirage_ubuntu26.04_<arch>` |
+| `phantom-mirage-common_<ver>_ubuntu26.04_all.deb` | `ubuntu-26.04` | `phantom-mirage_ubuntu26.04_<arch>` (same file for both arches; publish one copy) |
+| `phantom-mirage_<ver>_ubuntu26.04_{amd64,arm64}.run` | `ubuntu-26.04` | `phantom-mirage-run-ubuntu26.04-<arch>` |
 | `install.sh`, `get-mirage.sh` | repo | `release/` |
 | `phantom-mirage-uninstall` | repo | `debian/scripts/` |
-| `SHA256SUMS` | local | `sha256sum` over the other 11 files |
+| `SHA256SUMS` | local | `sha256sum` over the other 8 files |
 
-The .debs and .run files in a release must come from runs on the release
-commit, and `debian/changelog` must already carry `<ver>`.
+The .debs and .run files must come from a run on the release commit, and
+`debian/changelog` must already carry `<ver>`.
+
+`get-mirage.sh` picks the `.run` from `/etc/os-release` and
+`dpkg --print-architecture`. A release with no files is skipped.
+`mark-1` is that kind of release. `--tag` can still name it.
+
+Ubuntu 24.04 is not a Mark 1 installer. The heavy systemd jobs run on
+Ubuntu 24.04 GitHub runners, which is the runner image, not a shipped
+distro name. `install.sh` warns on anything other than `ubuntu26.04` or
+`debian13`.
+
+Debian packages and the container image are not Mark 1 assets. CI still
+builds the Debian 13 amd64 `.deb` for development, and a `v*` tag still
+starts `.github/workflows/publish.yml`. Neither belongs in the Mark 1
+download set. A Mark 1 tag that is not `v*` does not start that workflow.

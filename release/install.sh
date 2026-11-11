@@ -8,8 +8,9 @@
 #                                           start services without a terminal)
 #
 # Verifies SHA256SUMS, picks the .debs for this distro (ubuntu26.04 or
-# debian13) and architecture (dpkg --print-architecture), purges any
-# installed Phantom Mirage or honeyd first via phantom-mirage-uninstall
+# debian13) and architecture (dpkg --print-architecture),
+# purges any installed Phantom Mirage or honeyd first via
+# phantom-mirage-uninstall
 # (keeping /etc/default/phantom-mirage, the web console's admin account,
 # certificate, settings and alerts, and the JSON event log, which are
 # stashed in /var/backups/phantom-mirage.keep and put back afterwards),

@@ -7,9 +7,11 @@
 #   sh get-mirage.sh [--tag TAG | --stable | --prerelease] [install.sh options, e.g. -i eth0 -n CIDR]
 #   (with "| sh", pass options as: ... | sh -s -- --stable -i eth0)
 #
-# Picks the most recently published non-draft release (by published_at,
-# prereleases included; the API order and the Latest flag are ignored),
-# or with --stable the newest non-prerelease, or --tag TAG. --prerelease
+# Picks the most recently published non-draft release that has assets
+# (by published_at, prereleases included; the API order and the Latest
+# flag are ignored). A release with no files, such as mark-1, is not an
+# install target. --stable is the newest non-prerelease that has assets.
+# --tag TAG names one release even when it has no files. --prerelease
 # states the default explicitly. Then the .run for this distro
 # (/etc/os-release) and arch (dpkg --print-architecture), checks it
 # against the release's SHA256SUMS and runs it with sudo.
@@ -46,8 +48,13 @@ main() {
 	[ -r "$osr" ] || die "$osr not found"
 	distro=$(. "$osr" && echo "${ID:-}${VERSION_ID:-}")
 	if [ -z "$tag" ]; then
-		sel='select(.draft | not)'
-		[ "$channel" = prerelease ] || sel='select((.draft | not) and (.prerelease | not))'
+		# Zero assets is not an installable release. --tag still names it.
+		usable='((.assets // []) | length) > 0'
+		if [ "$channel" = prerelease ]; then
+			sel="select((.draft | not) and $usable)"
+		else
+			sel="select((.draft | not) and (.prerelease | not) and $usable)"
+		fi
 		tag=$(gh api "repos/$REPO/releases" --jq "[.[] | $sel] | sort_by(.published_at) | last | .tag_name // empty") || die "could not list releases"
 		[ -n "$tag" ] || die "no published $( [ "$channel" = stable ] && echo 'stable ')release found"
 	fi
