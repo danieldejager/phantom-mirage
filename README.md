@@ -200,8 +200,10 @@ skipped, the command to run next is printed and the exit code is 0.
 `phantom-mirage-setup` then prints the interface, subnet, gateway and
 /29 it will use, says that farpd will claim those 8 addresses on the LAN,
 and asks `[Y/n]` before it enables or starts anything, on every run
-(re-runs too). Without a terminal it writes the config but starts
-nothing, unless you pass `--yes` to setup (for unattended installs, e.g.
+(re-runs too), including when the install was piped into sudo. With no
+terminal at all it enables and starts with the defaults. The one-line
+install does that; `--yes` starts without asking even on a terminal
+(for unattended installs, e.g.
 `sudo phantom-mirage-setup --yes -i eth1 -n 10.0.0.248/29`).
 
 ```sh
