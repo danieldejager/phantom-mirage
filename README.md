@@ -97,6 +97,35 @@ the package:
 curl -fsSL https://github.com/danieldejager/phantom-mirage/releases/latest/download/get-mirage.sh | sudo sh -s -- --stable
 ```
 
+That command is a pipe, so the script is its input. It installs the
+packages, runs setup, and leaves the services running. You do not run a
+second command.
+
+When you are at a terminal, the questions (sensor name, console admin
+password, and whether to start) are asked there. When there is no
+terminal, setup does not ask: the sensor name is `mirage`, the console
+admin user is `admin`, and a generated password is written for root only
+to `/etc/phantom-mirage/initial-admin.txt`. The password is not printed.
+
+Either way the command ends with a short summary: the services that are
+running, the console at `https://127.0.0.1:8443`, and where the admin
+login is. These units are enabled and running:
+
+- `phantom-mirage.service`
+- `phantom-mirage-firewall.service`
+- `phantom-mirage-console.service`
+- `pm-decoyd.socket`
+- `pm-decoyd.service`
+- `farpd.service`, when `farpd` is installed
+
+The console answers on this sensor only. From your PC:
+
+```sh
+ssh -L 8443:127.0.0.1:8443 <user>@<this sensor>
+```
+
+Then open `https://localhost:8443`.
+
 Or download the script first, then run it:
 
 ```sh

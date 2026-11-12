@@ -15,9 +15,11 @@ chrony the distribution's internet pool files are set aside (renamed
 *.pm-disabled) and chrony.conf is backed up once as chrony.conf.pm-backup;
 restore-time puts them back.
 
-The admin password is only ever read at a hidden prompt; it is never
-accepted as an option. Test-only: PM_TEST_STDIN=1 reads the answers
-(including the password, twice) from stdin lines instead of the terminal.
+The admin password is never accepted as an option. On a terminal it is
+read at a hidden prompt. With no terminal, setup generates one and writes
+it to a root-only file (the path is printed; the password is not).
+Test-only: PM_TEST_STDIN=1 reads the answers (including the password,
+twice) from stdin lines instead of the terminal.
 """
 import getpass
 import grp
@@ -25,6 +27,7 @@ import ipaddress
 import os
 import pwd
 import re
+import secrets
 import subprocess
 import sys
 
@@ -54,7 +57,26 @@ def die(msg, code=1):
 
 
 def interactive():
-    return TEST or (sys.stdin.isatty() and sys.stdout.isatty())
+    """True when a person can answer. The one-line install is a pipe, so
+    stdin is the script; the keyboard is /dev/tty."""
+    if TEST:
+        return True
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        return True
+    try:
+        tty = os.open("/dev/tty", os.O_RDWR)
+    except OSError:
+        return False
+    try:
+        os.dup2(tty, 0)
+        os.dup2(tty, 1)
+        os.dup2(tty, 2)
+    finally:
+        os.close(tty)
+    sys.stdin = open(0, "r", closefd=False)
+    sys.stdout = open(1, "w", buffering=1, closefd=False)
+    sys.stderr = open(2, "w", buffering=1, closefd=False)
+    return True
 
 
 def ask(prompt, default=None, check=None):
@@ -174,6 +196,56 @@ def owner():
         return pwd.getpwnam(USER).pw_uid, grp.getgrnam(USER).gr_gid
     except KeyError:
         return None
+
+
+def admin_file():
+    return os.environ.get("PM_ADMIN_FILE", "/etc/phantom-mirage/initial-admin.txt")
+
+
+def write_initial_admin(user, pw):
+    """Root-only file. The password is not printed and is not logged."""
+    path = admin_file()
+    os.makedirs(os.path.dirname(path), mode=0o755, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        if os.geteuid() == 0:
+            os.fchown(fd, 0, 0)
+        os.write(fd, ("username: %s\npassword: %s\n" % (user, pw)).encode())
+    finally:
+        os.close(fd)
+    say("console: admin login for %s is in %s (root only; the password is not printed)" % (user, path))
+
+
+def forget_initial_admin():
+    try:
+        os.remove(admin_file())
+    except OSError:
+        pass
+
+
+def save_first_run(cfg, vals, pw):
+    os.makedirs(pmstore.STATE_DIR, mode=0o770, exist_ok=True)
+    cfg.update(sensor_name=vals["sensor_name"], port=int(vals["port"]),
+               time_source=vals["time_source"], ntp_server=vals["ntp_server"],
+               timezone=vals["timezone"],
+               alert_retention_days=int(vals["alert_retention_days"]))
+    pmstore.save_config(cfg)
+    h = pmauth.hash_password(pw)
+    pmstore.save_admin(vals["admin_user"], h)
+    pmauth.Lockout(pmstore.path("lockout.json")).reset()
+    pmstore.audit("setup", "first-run", "sensor %s, admin %s, port %s, time %s, hash %s" % (
+        cfg["sensor_name"], vals["admin_user"], cfg["port"], cfg["time_source"],
+        pmauth.hash_scheme(h)))
+    fp = ensure_cert(cfg["sensor_name"])
+    apply_time(cfg, False)
+    fix_perms()
+    say("console: admin %s set (password stored as a salted %s hash)" % (
+        vals["admin_user"], pmauth.hash_scheme(h)))
+    say("console certificate SHA-256 fingerprint: " + fp)
 
 
 def fix_perms():
@@ -417,8 +489,45 @@ def first_run(argv):
         if o.get("time_source") == "ntp" and "ntp_server" not in o:
             die("--time-source ntp needs --ntp-server ADDRESS (an NTP host on your network); "
                 "there is no default", 2)
-        say("console: NOT set up (no terminal). Run on the sensor: sudo phantom-mirage-setup --console")
-        return 3
+        vals = {
+            "sensor_name": o.get("sensor_name") or "mirage",
+            "admin_user": o.get("admin_user") or "admin",
+            "port": str(o.get("port") or 8443),
+            "time_source": o.get("time_source") or "browser",
+            "timezone": o.get("timezone") or "UTC",
+            "alert_retention_days": str(o.get("alert_retention_days") or 90),
+            "ntp_server": o.get("ntp_server") or "",
+        }
+        if vals["time_source"] != "ntp":
+            vals["ntp_server"] = ""
+        for key, chk in (("sensor_name", chk_name), ("admin_user", chk_user),
+                         ("port", chk_port), ("time_source", chk_ts),
+                         ("timezone", chk_tz), ("alert_retention_days", chk_ret)):
+            err = chk(vals[key])
+            if err:
+                die("%s: %s" % (key.replace("_", "-"), err), 2)
+        if vals["time_source"] == "ntp":
+            err = chk_ntp(vals["ntp_server"])
+            if err:
+                die("ntp-server: " + err, 2)
+        pw = None
+        for _ in range(5):
+            cand = secrets.token_urlsafe(18)
+            if not pmauth.password_problem(cand, vals["admin_user"]):
+                pw = cand
+                break
+        if not pw:
+            die("could not generate an admin password")
+        if dry:
+            say("dry run: console would be set up for sensor %s, admin %s, https://127.0.0.1:%s"
+                % (vals["sensor_name"], vals["admin_user"], vals["port"]))
+            say("dry run: admin login for %s would be written to %s" % (vals["admin_user"], admin_file()))
+            apply_time(vals, True)
+            return 0
+        save_first_run(cfg, vals, pw)
+        write_initial_admin(vals["admin_user"], pw)
+        del pw
+        return 0
     checks = [("sensor_name", "Sensor name (required)", None, chk_name),
               ("admin_user", "Admin username", (adm or {}).get("username") or "", chk_user),
               ("port", "Console port (on 127.0.0.1 only)", cfg.get("port", 8443), chk_port),
@@ -458,29 +567,16 @@ def first_run(argv):
             % (vals["sensor_name"], vals["admin_user"], vals["port"]))
         apply_time(vals, True)
         return 0
-    os.makedirs(pmstore.STATE_DIR, mode=0o770, exist_ok=True)
-    cfg.update(sensor_name=vals["sensor_name"], port=int(vals["port"]),
-               time_source=vals["time_source"], ntp_server=vals["ntp_server"],
-               timezone=vals["timezone"], alert_retention_days=int(vals["alert_retention_days"]))
-    pmstore.save_config(cfg)
-    h = pmauth.hash_password(pw)
+    save_first_run(cfg, vals, pw)
+    forget_initial_admin()
     del pw
-    pmstore.save_admin(vals["admin_user"], h)
-    pmauth.Lockout(pmstore.path("lockout.json")).reset()
-    pmstore.audit("setup", "first-run", "sensor %s, admin %s, port %s, time %s, hash %s" % (
-        cfg["sensor_name"], vals["admin_user"], cfg["port"], cfg["time_source"], pmauth.hash_scheme(h)))
-    fp = ensure_cert(cfg["sensor_name"])
-    apply_time(cfg, False)
-    fix_perms()
-    say("console: admin %s set (password stored as a salted %s hash)" % (vals["admin_user"], pmauth.hash_scheme(h)))
-    say("console certificate SHA-256 fingerprint: " + fp)
     return 0
 
 
 def reset_admin(argv):
     if argv:
         parse(argv)  # rejects password flags
-    if not TEST and not (sys.stdin.isatty() and sys.stdout.isatty()):
+    if not interactive():
         die("--reset-admin must be run from the sensor's terminal")
     if os.geteuid() != 0 and not TEST:
         die("must be run as root")

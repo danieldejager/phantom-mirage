@@ -188,4 +188,17 @@ PM_SIGNING_PUBKEY=$t/pub2 gm --tag v1.7.0-3
 sign "$t/rel/v1.7.0-3"
 GH_TOKEN=dummy-not-a-secret gm --tag v1.7.0-3
 [ $rc = 0 ] && grep -q 'Authorization: Bearer dummy-not-a-secret' "$t/curl.log" || fail "token not sent"
+
+# 13. no controlling terminal: do not die on /dev/tty (open returns ENXIO;
+# [ -r /dev/tty ] would still be true). id is stubbed so the root check passes.
+mkdir -p "$t/bin-root"
+printf '#!/bin/sh\necho 0\n' > "$t/bin-root/id"
+chmod +x "$t/bin-root/id"
+rc=0
+setsid sh -c 'unset PM_GET_MIRAGE_TEST; PATH="$1:$PATH"; exec sh "$2" --tag v1.7.0-3 -i eth0' \
+	sh "$t/bin-root" "$src/release/get-mirage.sh" < /dev/null > "$t/o" 2>&1 || rc=$?
+[ $rc = 0 ] || fail "no-tty rc=$rc"
+! grep -q 'cannot open /dev/tty' "$t/o" || fail "tty open error"
+! grep -q 'continuing on this terminal' "$t/o" || fail "claimed a terminal"
+grep -q 'phantom-mirage_1.7.0-3_ubuntu26.04_arm64.run -i eth0$' "$t/run.log" || fail "no-tty did not run the installer"
 echo "test_get_mirage: all passed"

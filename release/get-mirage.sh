@@ -146,6 +146,15 @@ main() {
 		|| die "SHA256SUMS signature does not verify; not installing"
 	say "SHA256SUMS signature OK"
 	say "checksum OK; running: sh $run $*"
-	sh "$tmp/$run" "$@"
+	# The script itself arrived on stdin. Questions are asked on the
+	# terminal when this process has one. [ -r /dev/tty ] is not enough:
+	# the device node is mode 0666, and open() returns ENXIO when there
+	# is no controlling terminal.
+	if [ -z "${PM_GET_MIRAGE_TEST:-}" ] && (: </dev/tty) 2>/dev/null; then
+		say "continuing on this terminal"
+		sh "$tmp/$run" "$@" < /dev/tty
+	else
+		sh "$tmp/$run" "$@"
+	fi
 }
 main "$@"

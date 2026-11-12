@@ -24,9 +24,13 @@
 #
 # Before it enables or starts anything it prints the interface, subnet,
 # gateway and /29 it will use (and that farpd claims those 8 addresses on
-# the LAN over ARP) and asks [Y/n] on the terminal, on every run. Without
-# a terminal it writes the config but starts nothing, unless --yes (-y)
-# is given: the explicit opt in for unattended installs, e.g.
+# the LAN over ARP) and asks [Y/n] on a terminal. The one-line install is
+# a pipe, so its standard input is the script; questions are read from
+# /dev/tty when that terminal exists. With no terminal it does not ask:
+# it uses the defaults, writes the console admin login to a root-only
+# file, and enables and starts the sensor, farpd when it is installed,
+# the console firewall, the web console, and the decoy helper.
+# --yes (-y) starts without asking, e.g.
 #   sudo phantom-mirage-setup --yes -i eth1 -n 10.0.0.248/29
 set -eu
 
@@ -40,7 +44,7 @@ if [ "${PM_TESTING:-}" = 1 ]; then
 	DEFAULT=${PM_DEFAULT:-$DEFAULT} FDEFAULT=${PM_FDEFAULT:-$FDEFAULT}
 fi
 
-usage() { sed -n '2,32s/^# \{0,1\}//p' "$0"; exit "${1:-0}"; }
+usage() { sed -n '2,33s/^# \{0,1\}//p' "$0"; exit "${1:-0}"; }
 die() { echo "phantom-mirage-setup: $*" >&2; exit 1; }
 say() { echo "phantom-mirage-setup: $*"; }
 
@@ -181,13 +185,29 @@ console_start() {
 	systemctl restart phantom-mirage-firewall
 	pm_enable phantom-mirage-console
 	systemctl restart phantom-mirage-console
-	# per decoy settings helper: socket only, the helper starts on demand
 	systemctl enable --now pm-decoyd.socket || say "warning: could not enable pm-decoyd.socket (per decoy settings stay read only)"
+	pm_enable pm-decoyd
+	systemctl restart pm-decoyd || say "warning: could not start pm-decoyd (per decoy settings stay read only)"
+}
+finish_summary() {
+	echo
+	say "services running:"
+	for _u in phantom-mirage phantom-mirage-firewall phantom-mirage-console pm-decoyd.socket pm-decoyd ${FARPD:+farpd}; do
+		if systemctl is-active --quiet "$_u" 2>/dev/null; then
+			say "  $_u"
+		fi
+	done
 	_port=$(sed -n 's/.*"port":[[:space:]]*\([0-9][0-9]*\).*/\1/p' /var/lib/phantom-mirage/console/console.json 2>/dev/null | head -n 1)
 	_port=${_port:-8443}
-	say "console: https://127.0.0.1:$_port on this sensor only (firewalled on every other interface)."
-	say "console: from your PC run  ssh -L $_port:127.0.0.1:$_port <user>@<this sensor>  then open https://localhost:$_port"
-	say "console: to remove Phantom Mirage and all console data run  sudo phantom-mirage-uninstall  (asks first)"
+	say "console: https://127.0.0.1:$_port"
+	_user=$(sed -n 's/.*"username":[[:space:]]*"\([^"]*\)".*/\1/p' /var/lib/phantom-mirage/console/admin.json 2>/dev/null | head -n 1)
+	_file=/etc/phantom-mirage/initial-admin.txt
+	if [ -f "$_file" ]; then
+		say "admin login: user ${_user:-admin}, password file $_file (root only)"
+	elif [ -n "$_user" ]; then
+		say "admin login: user $_user (the password entered at the prompt)"
+	fi
+	say "console: https://127.0.0.1:$_port answers on this sensor only. From your PC: ssh -L $_port:127.0.0.1:$_port <user>@<this sensor>"
 }
 sensor_name() {
 	sed -n 's/.*"sensor_name":[[:space:]]*"\([A-Za-z0-9._-]*\)".*/\1/p' /var/lib/phantom-mirage/console/console.json 2>/dev/null | head -n 1
@@ -209,8 +229,9 @@ pm_enable() {
 	return 0
 }
 
-# Ask before enabling or starting anything (every run, re-runs too).
-# $1 is the plan already printed. Without a terminal, only --yes starts.
+# Ask before enabling or starting anything when a person is at a terminal.
+# $1 is the plan already printed. A pipe is not a terminal: with no
+# /dev/tty the one-line install starts with the defaults.
 confirm_start() {
 	if [ -n "$YES" ]; then
 		say "--yes given: starting without asking"
@@ -222,18 +243,27 @@ confirm_start() {
 		read -r _a || _a=n
 		case $_a in ''|y|Y|yes|YES) return 0 ;; esac
 		say "not starting anything (answered no); the config is written"
-	else
-		say "not starting anything: no terminal to confirm (pass --yes to start without asking); the config is written"
+		exit 0
 	fi
-	say "to start it, run on a terminal: sudo phantom-mirage-setup"
-	exit 0
+	say "no terminal: enabling and starting with the defaults"
+	return 0
 }
+
+# The one-line install is piped into sh, so stdin is the script. The
+# person's keyboard is still /dev/tty when this process has a controlling
+# terminal. [ -r /dev/tty ] is true even when open() returns ENXIO.
+# Tests set PM_TESTING=1 and must not take over the terminal.
+if [ ! -t 0 ] && [ "${PM_TESTING:-}" != 1 ] && (: </dev/tty) 2>/dev/null; then
+	say "the install was piped; continuing on this terminal"
+	exec < /dev/tty
+fi
 
 console_setup
 if [ -n "$CONLY" ]; then
 	[ -n "$DRY" ] && exit 0
 	[ -n "$CONSOLE_OK" ] && confirm_start "start the phantom-mirage-firewall and phantom-mirage-console services now"
 	console_start
+	finish_summary
 	exit 0
 fi
 
@@ -428,7 +458,7 @@ systemctl --no-pager --lines=10 status phantom-mirage || true
 systemctl --no-pager --lines=5 status farpd 2>/dev/null || true
 first=${NET%/*}
 say "farpd: $farpd_state"
-echo
+finish_summary
 if grep -q '^[[:space:]]*set default default icmp action open' /etc/phantom-mirage/phantom-mirage.conf 2>/dev/null && [ -n "$FARPD" ]; then
 	echo "Test: from another machine on this LAN run 'ping -c3 $first' (logs: journalctl -u phantom-mirage -f)"
 else
