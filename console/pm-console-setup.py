@@ -93,13 +93,47 @@ def _remember_tty(fd):
         os.close(fd_out)
 
 
+def _parent_sudo_rs():
+    """True when an ancestor is the sudo-rs binary (Ubuntu 26.04's sudo)."""
+    pid = os.getppid()
+    for _ in range(8):
+        if pid <= 1:
+            break
+        try:
+            exe = os.readlink("/proc/%d/exe" % pid)
+        except OSError:
+            break
+        base = os.path.basename(exe)
+        if base == "sudo" or base.startswith("sudo"):
+            try:
+                with open(exe, "rb") as f:
+                    blob = f.read(4_000_000)
+            except OSError:
+                blob = b""
+            return b"sudo-rs" in blob
+        try:
+            nxt = None
+            with open("/proc/%d/status" % pid) as f:
+                for line in f:
+                    if line.startswith("PPid:"):
+                        nxt = int(line.split()[1])
+                        break
+            if nxt is None:
+                break
+            pid = nxt
+        except (OSError, ValueError):
+            break
+    return False
+
+
 def _keyboard():
     """The pty sudo created for this command, in the foreground.
 
-    sudo and sudo-rs (Ubuntu 26.04) deliver keystrokes to that pty, but
-    the monitor process keeps the foreground. A read from the background
-    never completes, which is the hang after the first answer. Taking
-    the foreground makes the answers arrive on /dev/tty.
+    sudo and sudo-rs deliver keystrokes to that pty. sudo-rs keeps its
+    monitor in the foreground, so taking the foreground signals this
+    process group; that signal has to be ignored or the process stops
+    and the next question never appears. Classic sudo stops forwarding
+    keystrokes if the signal is ignored, so it is left alone.
     """
     global _kbd_fd
     if _kbd_fd is not None:
@@ -108,14 +142,13 @@ def _keyboard():
         fd = os.open("/dev/tty", os.O_RDWR)
     except OSError:
         return None
+    if _parent_sudo_rs():
+        signal.signal(signal.SIGTTIN, signal.SIG_IGN)
+        signal.signal(signal.SIGTTOU, signal.SIG_IGN)
     try:
         os.tcsetpgrp(fd, os.getpgrp())
     except OSError:
         pass
-    # If the foreground could not be taken, a read must return an error
-    # instead of stopping the process. A stopped read is the hang.
-    signal.signal(signal.SIGTTIN, signal.SIG_IGN)
-    signal.signal(signal.SIGTTOU, signal.SIG_IGN)
     _kbd_fd = fd
     _remember_tty(fd)
     return fd

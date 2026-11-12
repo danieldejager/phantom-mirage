@@ -255,14 +255,28 @@ confirm_start() {
 	exit 0
 }
 
-# Console setup records the keyboard it actually read (piped sudo does
-# not deliver keystrokes on /dev/tty). The later [Y/n] uses that fact
-# and asks through the same listener, still on this process's stdout,
-# which sudo copies to the screen.
+# Console setup takes the foreground on sudo's pty, which is where the
+# typed answers arrive, and records that a keyboard was found. The
+# later [Y/n] asks the same way. The prompt is written to this
+# process's stderr, which sudo copies to the screen.
 PM_HAVE_TTY=
 if [ "${PM_TESTING:-}" != 1 ]; then
 	PM_TTY_FILE=$(mktemp)
 	export PM_TTY_FILE
+	# sudo-rs (Ubuntu 26.04) signals the whole process group when the
+	# questions take the foreground. Classic sudo must not ignore that
+	# signal: it then stops delivering what was typed.
+	_p=$$
+	_i=0
+	while [ "$_i" -lt 8 ]; do
+		_p=$(awk '/^PPid:/{print $2; exit}' /proc/"$_p"/status 2>/dev/null || echo 1)
+		[ "$_p" -gt 1 ] || break
+		if [ -r /proc/"$_p"/exe ] && grep -a -q -m 1 sudo-rs /proc/"$_p"/exe 2>/dev/null; then
+			trap '' TTOU TTIN
+			break
+		fi
+		_i=$((_i + 1))
+	done
 fi
 
 console_setup
