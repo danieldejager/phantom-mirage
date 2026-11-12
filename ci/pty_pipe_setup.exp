@@ -1,7 +1,10 @@
 # Drive phantom-mirage-setup the way the one-liner runs: the script is
 # piped into sudo, and script(1) is the desktop terminal.
-set timeout 180
+set timeout 40
 log_user 1
+expect_before {
+    timeout { puts "\nexpect timeout\n"; exit 1 }
+}
 set iface [lindex $argv 0]
 set network [lindex $argv 1]
 set driver "/tmp/pm-pty-driver.sh"

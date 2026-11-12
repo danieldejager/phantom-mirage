@@ -90,6 +90,7 @@ def open_user_tty():
     separate terminal (setup then uses its defaults)."""
     ctty = _controlling_rdev()
     pid = os.getppid()
+    seen_sudo = False
     for _ in range(8):
         if pid <= 1:
             break
@@ -97,19 +98,24 @@ def open_user_tty():
             comm = open("/proc/%d/comm" % pid).read().strip()
         except OSError:
             comm = ""
-        # Only sudo's stdout. A shell in between often has stderr on some
-        # other pts, which is not the keyboard.
-        if comm == "sudo" or comm.startswith("sudo."):
-            for n in (1, 2):
+        is_sudo = comm == "sudo" or comm.startswith("sudo.")
+        if is_sudo:
+            seen_sudo = True
+        # sudo's own stdout is usually the keyboard. If this sudo only has
+        # the inner pty, the terminal that started sudo (script, or the
+        # desktop) is the next process up.
+        if is_sudo or seen_sudo:
+            for n in (1, 2, 0):
                 t = _fd_tty(pid, n)
                 if not t:
                     continue
                 try:
-                    if os.stat(t).st_rdev == ctty:
+                    if ctty is not None and os.stat(t).st_rdev == ctty:
                         continue
                     return os.open(t, os.O_RDWR | os.O_NOCTTY)
                 except OSError:
                     pass
+        if seen_sudo and not is_sudo:
             break
         try:
             ppid = None
