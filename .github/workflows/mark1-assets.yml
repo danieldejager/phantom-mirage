@@ -1,0 +1,133 @@
+name: mark-1 assets
+
+# Builds the Ubuntu 26.04 packages from commit 65beed2f for a later
+# mark-1 update. Does not publish a release. Unchanged release files
+# are taken from the current mark-1 download and checked by hash.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/mark1-assets.yml
+
+permissions:
+  contents: read
+
+jobs:
+  pkg:
+    name: Ubuntu 26.04 / ${{ matrix.arch }} package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            os: ubuntu-26.04
+          - arch: arm64
+            os: ubuntu-26.04-arm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 65beed2f581e83a69abe94df00c52035cfd0b521
+
+      - name: Build the architecture package
+        env:
+          # Commit time of 65beed2f, so archive timestamps are fixed.
+          SOURCE_DATE_EPOCH: "1794451864"
+        run: |
+          set -eu
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential devscripts equivs
+          sudo mk-build-deps -i -r -t 'apt-get -y --no-install-recommends' debian/control
+          dpkg-buildpackage -us -uc -b
+          arch=$(dpkg --print-architecture)
+          test "$arch" = "${{ matrix.arch }}"
+          ver=$(dpkg-parsechangelog -S Version)
+          test "$ver" = 1.7.0-7
+          mkdir -p release-out
+          deb=../phantom-mirage_${ver}_${arch}.deb
+          test -f "$deb"
+          out=release-out/phantom-mirage_${ver}_ubuntu26.04_${arch}.deb
+          cp "$deb" "$out"
+          tmp=$(mktemp -d)
+          dpkg-deb -x "$out" "$tmp"
+          grep -q 'no terminal: enabling and starting with the defaults' "$tmp/usr/sbin/phantom-mirage-setup"
+          grep -q 'PM_DECOYD_IDLE=0' "$tmp/usr/lib/systemd/system/pm-decoyd.service"
+          grep -q 'initial-admin.txt' "$tmp/usr/lib/phantom-mirage/console/pm-console-setup.py"
+
+      - name: Build the .run around the published common package
+        run: |
+          set -eu
+          ver=1.7.0-7
+          arch=${{ matrix.arch }}
+          common=phantom-mirage-common_${ver}_ubuntu26.04_all.deb
+          curl -fsSL -o "release-out/$common" \
+            "https://github.com/danieldejager/phantom-mirage/releases/download/mark-1/$common"
+          echo "dc910a226eed5062074df925493bc45f324614711a10b893c7c61ca787659d6d  $common" | (cd release-out && sha256sum -c)
+          sh release/make-run.sh release-out ubuntu26.04 "$arch" release-out
+          test -f "release-out/phantom-mirage_${ver}_ubuntu26.04_${arch}.run"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mark1-${{ matrix.arch }}
+          path: |
+            release-out/phantom-mirage_1.7.0-7_ubuntu26.04_${{ matrix.arch }}.deb
+            release-out/phantom-mirage_1.7.0-7_ubuntu26.04_${{ matrix.arch }}.run
+          if-no-files-found: error
+
+  sums:
+    name: SHA256SUMS
+    needs: pkg
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 65beed2f581e83a69abe94df00c52035cfd0b521
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mark1-*
+          path: dist
+          merge-multiple: true
+
+      - name: Assemble the full mark-1 set
+        run: |
+          set -eu
+          cd dist
+          cp ../release/get-mirage.sh get-mirage.sh
+          cp ../release/install.sh install.sh
+          cp ../debian/scripts/phantom-mirage-uninstall phantom-mirage-uninstall
+          curl -fsSL -O https://github.com/danieldejager/phantom-mirage/releases/download/mark-1/phantom-mirage-common_1.7.0-7_ubuntu26.04_all.deb
+          printf '%s\n' \
+            'e6231a0cdb08f40e6c3a098676a182ca3c698260cd62d629194d0cae9fd60ec9  install.sh' \
+            'dc910a226eed5062074df925493bc45f324614711a10b893c7c61ca787659d6d  phantom-mirage-common_1.7.0-7_ubuntu26.04_all.deb' \
+            '46aae45dcc28b6a8763f3aa504aabdec45e3d83880f5c54b12845c6f4085874a  phantom-mirage-uninstall' \
+            > unchanged.sum
+          sha256sum -c unchanged.sum
+          echo 'f5972bc420654fdd095b922b793d9e4633eb5eb90f81493dd0eefa0a3b39e6a2  get-mirage.sh' | sha256sum -c
+          sha256sum \
+            get-mirage.sh \
+            install.sh \
+            phantom-mirage_1.7.0-7_ubuntu26.04_amd64.deb \
+            phantom-mirage_1.7.0-7_ubuntu26.04_amd64.run \
+            phantom-mirage_1.7.0-7_ubuntu26.04_arm64.deb \
+            phantom-mirage_1.7.0-7_ubuntu26.04_arm64.run \
+            phantom-mirage-common_1.7.0-7_ubuntu26.04_all.deb \
+            phantom-mirage-uninstall \
+            > SHA256SUMS
+          # Changed files only, for the download. Unchanged files stay on mark-1.
+          mkdir -p ../changed
+          cp get-mirage.sh \
+            phantom-mirage_1.7.0-7_ubuntu26.04_amd64.deb \
+            phantom-mirage_1.7.0-7_ubuntu26.04_amd64.run \
+            phantom-mirage_1.7.0-7_ubuntu26.04_arm64.deb \
+            phantom-mirage_1.7.0-7_ubuntu26.04_arm64.run \
+            SHA256SUMS \
+            ../changed/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mark1-changed
+          path: changed/
+          if-no-files-found: error
