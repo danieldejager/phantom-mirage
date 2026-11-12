@@ -27,6 +27,7 @@ import os
 import pwd
 import re
 import secrets
+import select
 import subprocess
 import sys
 import termios
@@ -56,17 +57,17 @@ def die(msg, code=1):
     sys.exit(code)
 
 
-def _controlling_tty():
+def _controlling_rdev():
+    """Device number of this process's terminal, or None.
+
+    fstat(/dev/tty) is the /dev/tty node itself, not the pty behind it.
+    /proc/self/stat field tty_nr is that pty."""
     try:
-        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
-    except OSError:
-        return ""
-    try:
-        return os.ttyname(fd)
-    except OSError:
-        return ""
-    finally:
-        os.close(fd)
+        data = open("/proc/self/stat").read()
+        n = int(data.rsplit(")", 1)[1].split()[4])
+    except (OSError, IndexError, ValueError):
+        return None
+    return n or None
 
 
 def _fd_tty(pid, n):
@@ -87,7 +88,7 @@ def open_user_tty():
     sudo's use_pty puts this process on an inner pty, so /dev/tty is not
     where keystrokes arrive. Returns an fd, or None when there is no
     separate terminal (setup then uses its defaults)."""
-    ctty = _controlling_tty()
+    ctty = _controlling_rdev()
     pid = os.getppid()
     first = True
     for _ in range(8):
@@ -100,11 +101,14 @@ def open_user_tty():
         if first or comm == "sudo" or comm.startswith("sudo."):
             for n in (1, 2, 0):
                 t = _fd_tty(pid, n)
-                if t and t != ctty:
-                    try:
-                        return os.open(t, os.O_RDWR | os.O_NOCTTY)
-                    except OSError:
-                        pass
+                if not t:
+                    continue
+                try:
+                    if os.stat(t).st_rdev == ctty:
+                        continue
+                    return os.open(t, os.O_RDWR | os.O_NOCTTY)
+                except OSError:
+                    pass
         if comm == "sudo" or comm.startswith("sudo."):
             break
         first = False
@@ -125,32 +129,145 @@ def open_user_tty():
 
 def interactive():
     """True when a person can answer. A piped sudo does not make /dev/tty
-    the keyboard; open_user_tty() finds the terminal sudo was started on."""
+    the keyboard; the questions watch that pty and the outer terminal."""
     if TEST:
         return True
-    if sys.stdin.isatty():
+    if sys.stdin.isatty() or _controlling_rdev() is not None:
         return True
     tty = open_user_tty()
     if tty is None:
         return False
-    try:
-        os.dup2(tty, 0)
-        os.dup2(tty, 1)
-        os.dup2(tty, 2)
-    finally:
-        os.close(tty)
-    sys.stdin = open(0, "r", closefd=False)
-    sys.stdout = open(1, "w", buffering=1, closefd=False)
-    sys.stderr = open(2, "w", buffering=1, closefd=False)
+    os.close(tty)
     return True
+
+
+# After the first answer, the terminal that actually delivered it.
+_kbd_fd = None
+
+
+def _remember_tty(fd):
+    global _kbd_fd
+    _kbd_fd = fd
+    path = os.environ.get("PM_TTY_FILE")
+    if not path:
+        return
+    try:
+        name = os.ttyname(fd)
+    except OSError:
+        return
+    try:
+        fd_out = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    except OSError:
+        return
+    try:
+        os.write(fd_out, (name + "\n").encode())
+    finally:
+        os.close(fd_out)
+
+
+def _tty_fds():
+    """stdin, /dev/tty, and the terminal sudo was started on, once each."""
+    found = []
+    names = set()
+
+    def add(fd):
+        try:
+            if not os.isatty(fd):
+                return
+            name = os.ttyname(fd)
+        except OSError:
+            return
+        if name in names:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            return
+        names.add(name)
+        found.append(fd)
+
+    try:
+        add(sys.stdin.fileno())
+    except (AttributeError, ValueError, OSError):
+        pass
+    try:
+        add(os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY))
+    except OSError:
+        pass
+    extra = open_user_tty()
+    if extra is not None:
+        add(extra)
+    return found
+
+
+def _line_from(fd):
+    buf = b""
+    while b"\n" not in buf and b"\r" not in buf:
+        try:
+            chunk = os.read(fd, 256)
+        except OSError:
+            raise EOFError
+        if not chunk:
+            raise EOFError
+        buf += chunk
+    raw = buf.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return raw.split(b"\n", 1)[0].decode("utf-8", "replace")
+
+
+def _read_line(prompt):
+    """Read one answer. Piped sudo may deliver keystrokes on /dev/tty or on
+    the outer terminal, depending on the sudo version, so watch both."""
+    global _kbd_fd
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    if _kbd_fd is not None:
+        return _line_from(_kbd_fd)
+    fds = _tty_fds()
+    if os.environ.get("PM_SETUP_TRACE") == "1":
+        names = []
+        for fd in fds:
+            try:
+                names.append(os.ttyname(fd))
+            except OSError:
+                names.append("?")
+        sys.stderr.write("setup-trace: listening %s\n" % " ".join(names))
+        sys.stderr.flush()
+    if not fds:
+        raise EOFError
+    bufs = {fd: b"" for fd in fds}
+    while True:
+        ready, _, _ = select.select(list(bufs), [], [])
+        for fd in ready:
+            try:
+                chunk = os.read(fd, 256)
+            except OSError:
+                continue
+            if os.environ.get("PM_SETUP_TRACE") == "1":
+                sys.stderr.write("setup-trace: read %r\n" % chunk)
+                sys.stderr.flush()
+            if not chunk:
+                continue
+            bufs[fd] += chunk
+            if b"\n" not in bufs[fd] and b"\r" not in bufs[fd]:
+                continue
+            raw = bufs[fd].replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+            _remember_tty(fd)
+            return raw.split(b"\n", 1)[0].decode("utf-8", "replace")
 
 
 def _hidden(prompt):
     """Password from the same terminal as the other prompts.
 
-    getpass opens /dev/tty first, which under piped sudo is the inner pty
-    and never receives what the person types."""
-    fd = sys.stdin.fileno()
+    The stdlib getpass opens /dev/tty first. Under piped sudo that pty is
+    often not the keyboard."""
+    global _kbd_fd
+    if _kbd_fd is None:
+        # Discover the keyboard with an empty read of the prompt's echo-off.
+        fds = _tty_fds()
+        if not fds:
+            raise EOFError
+        _kbd_fd = fds[0]
+    fd = _kbd_fd
     old = termios.tcgetattr(fd)
     new = old[:]
     new[3] &= ~termios.ECHO
@@ -158,15 +275,11 @@ def _hidden(prompt):
         termios.tcsetattr(fd, termios.TCSAFLUSH, new)
         sys.stderr.write(prompt)
         sys.stderr.flush()
-        line = sys.stdin.readline()
+        line = _line_from(fd)
     finally:
         termios.tcsetattr(fd, termios.TCSAFLUSH, old)
     sys.stderr.write("\n")
     sys.stderr.flush()
-    if not line:
-        raise EOFError
-    if line[-1] == "\n":
-        line = line[:-1]
     return line
 
 
@@ -183,7 +296,7 @@ def ask(prompt, default=None, check=None):
                 sys.stderr.write("setup-trace: asking %s\n" % shown.split(":", 1)[0])
                 sys.stderr.flush()
             try:
-                v = input(shown)
+                v = _read_line(shown)
             except EOFError:
                 die("no answer for '%s' (input ended); nothing was changed" % prompt, 2)
             if os.environ.get("PM_SETUP_TRACE") == "1":

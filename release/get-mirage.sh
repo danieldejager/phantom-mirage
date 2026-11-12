@@ -20,43 +20,6 @@ main() {
 	PUB=$API/contents/release/SHA256SUMS.pub
 	say() { echo "get-mirage: $*"; }
 	die() { echo "get-mirage: $*" >&2; exit 1; }
-	# Keyboard when stdin is the piped script. sudo's use_pty puts us on an
-	# inner pty, so /dev/tty is not where keystrokes arrive. Empty if there
-	# is no separate terminal.
-	user_tty() {
-		ctty=
-		if (: </dev/tty) 2>/dev/null; then
-			ctty=$(tty </dev/tty 2>/dev/null || true)
-			case $ctty in /dev/*) ;; *) ctty= ;; esac
-		fi
-		p=${PPID:-}
-		i=0
-		first=1
-		while [ "$i" -lt 8 ] && [ -n "$p" ] && [ "$p" != 1 ]; do
-			comm=$(cat "/proc/$p/comm" 2>/dev/null || true)
-			take=0
-			[ "$first" = 1 ] && take=1
-			case $comm in sudo|sudo.*) take=1 ;; esac
-			if [ "$take" = 1 ]; then
-				for n in 1 2 0; do
-					t=$(readlink "/proc/$p/fd/$n" 2>/dev/null || true)
-					case $t in
-						/dev/pts/*|/dev/tty[0-9]*|/dev/ttyS*|/dev/ttyUSB*)
-							if [ "$t" != "$ctty" ] && [ -r "$t" ] && [ -w "$t" ]; then
-								printf '%s\n' "$t"
-								return 0
-							fi
-							;;
-					esac
-				done
-			fi
-			case $comm in sudo|sudo.*) return 1 ;; esac
-			first=0
-			p=$(sed -n 's/^PPid:[[:space:]]*//p' "/proc/$p/status" 2>/dev/null || true)
-			i=$((i+1))
-		done
-		return 1
-	}
 
 	tag= channel=prerelease
 	while [ $# -gt 0 ]; do
@@ -183,20 +146,8 @@ main() {
 		|| die "SHA256SUMS signature does not verify; not installing"
 	say "SHA256SUMS signature OK"
 	say "checksum OK; running: sh $run $*"
-	# The script arrived on a pipe. sudo's use_pty (the Ubuntu default)
-	# then puts the installer on an inner pty that is not the keyboard, so
-	# reading /dev/tty hangs after the first prompt. The keyboard is the
-	# terminal sudo itself is using.
-	if [ -z "${PM_GET_MIRAGE_TEST:-}" ]; then
-		_ut=$(user_tty || true)
-		if [ -n "$_ut" ]; then
-			say "continuing on this terminal"
-			# One read-write fd. Separate read-only and write-only opens of
-			# the same pty make later prompts block on some systems.
-			exec <> "$_ut"
-			exec >&0 2>&0
-		fi
-	fi
+	# Leave stdin as the pipe. phantom-mirage-setup reads whichever terminal
+	# actually receives keystrokes (sudo's pty is not always that terminal).
 	sh "$tmp/$run" "$@"
 }
 main "$@"

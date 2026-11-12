@@ -249,56 +249,25 @@ confirm_start() {
 	return 0
 }
 
-# The one-line install is piped into sudo. sudo's use_pty (Ubuntu's
-# default) puts this process on an inner pty, so /dev/tty is not the
-# keyboard and reading it hangs. The keyboard is the terminal sudo is
-# using. Tests set PM_TESTING=1 and must not take over a terminal.
-user_tty() {
-	ctty=
-	if (: </dev/tty) 2>/dev/null; then
-		ctty=$(tty </dev/tty 2>/dev/null || true)
-		case $ctty in /dev/*) ;; *) ctty= ;; esac
-	fi
-	p=${PPID:-}
-	i=0
-	first=1
-	while [ "$i" -lt 8 ] && [ -n "$p" ] && [ "$p" != 1 ]; do
-		comm=$(cat "/proc/$p/comm" 2>/dev/null || true)
-		take=0
-		[ "$first" = 1 ] && take=1
-		case $comm in sudo|sudo.*) take=1 ;; esac
-		if [ "$take" = 1 ]; then
-			for n in 1 2 0; do
-				t=$(readlink "/proc/$p/fd/$n" 2>/dev/null || true)
-				case $t in
-					/dev/pts/*|/dev/tty[0-9]*|/dev/ttyS*|/dev/ttyUSB*)
-						if [ "$t" != "$ctty" ] && [ -r "$t" ] && [ -w "$t" ]; then
-							printf '%s\n' "$t"
-							return 0
-						fi
-						;;
-				esac
-			done
-		fi
-		case $comm in sudo|sudo.*) return 1 ;; esac
-		first=0
-		p=$(sed -n 's/^PPid:[[:space:]]*//p' "/proc/$p/status" 2>/dev/null || true)
-		i=$((i+1))
-	done
-	return 1
-}
-if [ ! -t 0 ] && [ "${PM_TESTING:-}" != 1 ]; then
-	_ut=$(user_tty || true)
-	if [ -n "$_ut" ]; then
+# Console setup may discover which terminal is actually receiving
+# keystrokes (piped sudo does not deliver them on /dev/tty). It records
+# the path here so the later [Y/n] question uses the same keyboard.
+if [ "${PM_TESTING:-}" != 1 ]; then
+	PM_TTY_FILE=$(mktemp)
+	export PM_TTY_FILE
+fi
+
+console_setup
+if [ -n "${PM_TTY_FILE:-}" ] && [ -s "$PM_TTY_FILE" ]; then
+	_ut=$(cat "$PM_TTY_FILE")
+	rm -f "$PM_TTY_FILE"
+	PM_TTY_FILE=
+	if [ -n "$_ut" ] && [ -c "$_ut" ]; then
 		say "the install was piped; continuing on this terminal"
-		# One read-write fd. Separate read-only and write-only opens of the
-		# same pty make later prompts block on some systems.
 		exec <> "$_ut"
 		exec >&0 2>&0
 	fi
 fi
-
-console_setup
 if [ -n "$CONLY" ]; then
 	[ -n "$DRY" ] && exit 0
 	[ -n "$CONSOLE_OK" ] && confirm_start "start the phantom-mirage-firewall and phantom-mirage-console services now"
