@@ -250,9 +250,10 @@ confirm_start() {
 }
 
 # The one-line install is piped into sh, so stdin is the script. The
-# person's keyboard is still /dev/tty. Tests set PM_TESTING=1 and must
-# not take over the terminal of the machine running them.
-if [ ! -t 0 ] && [ "${PM_TESTING:-}" != 1 ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+# person's keyboard is still /dev/tty when this process has a controlling
+# terminal. [ -r /dev/tty ] is true even when open() returns ENXIO.
+# Tests set PM_TESTING=1 and must not take over the terminal.
+if [ ! -t 0 ] && [ "${PM_TESTING:-}" != 1 ] && (: </dev/tty) 2>/dev/null; then
 	say "the install was piped; continuing on this terminal"
 	exec < /dev/tty
 fi
