@@ -1,6 +1,6 @@
 name: mark-1 assets
 
-# Builds the Ubuntu 26.04 packages from commit 0c04654 for a later
+# Builds the Ubuntu 26.04 packages from commit 66afb5f for a later
 # mark-1 update. Does not publish a release. Unchanged release files
 # are taken from the current mark-1 download and checked by hash.
 on:
@@ -29,12 +29,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 0c04654c87ab94a053e9750991cd3d8db919d033
+          ref: 66afb5fbbd04dfdf79f5fb678bb9853049a1d26c
 
       - name: Build the architecture package
         env:
-          # Commit time of 0c04654, so archive timestamps are fixed.
-          SOURCE_DATE_EPOCH: "1794486770"
+          # Commit time of 66afb5f, so archive timestamps are fixed.
+          SOURCE_DATE_EPOCH: "1794488658"
         run: |
           set -eu
           sudo apt-get update
@@ -54,6 +54,9 @@ jobs:
           tmp=$(mktemp -d)
           dpkg-deb -x "$out" "$tmp"
           grep -q 'no terminal: enabling and starting with the defaults' "$tmp/usr/sbin/phantom-mirage-setup"
+          grep -q 'read-tty' "$tmp/usr/sbin/phantom-mirage-setup"
+          grep -q 'the one-line install is starting the sensor without asking' "$tmp/usr/sbin/phantom-mirage-setup"
+          grep -q 'NETWORK=unconfigured' "$tmp/usr/sbin/phantom-mirage-setup"
           grep -q 'sudo-rs' "$tmp/usr/sbin/phantom-mirage-setup"
           grep -q 'tcsetpgrp' "$tmp/usr/lib/phantom-mirage/console/pm-console-setup.py"
           grep -q 'plain HTTP request on HTTPS port' "$tmp/usr/lib/phantom-mirage/console/pm-console.py"
@@ -87,7 +90,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 0c04654c87ab94a053e9750991cd3d8db919d033
+          ref: 66afb5fbbd04dfdf79f5fb678bb9853049a1d26c
 
       - uses: actions/download-artifact@v4
         with:
@@ -109,9 +112,10 @@ jobs:
             '46aae45dcc28b6a8763f3aa504aabdec45e3d83880f5c54b12845c6f4085874a  phantom-mirage-uninstall' \
             > unchanged.sum
           sha256sum -c unchanged.sum
-          # get-mirage.sh changed in 0c04654. The published mark-1 copy must not match.
+          # get-mirage.sh changed in 66afb5f. The copy on the live release must not match.
           got=$(sha256sum get-mirage.sh | awk '{print $1}')
-          test "$got" != f5972bc420654fdd095b922b793d9e4633eb5eb90f81493dd0eefa0a3b39e6a2
+          test "$got" != 97398aedebe72d68739a2f487839277475c98198195b6dbb6d9d76c6f0dc7639
+          grep -q PM_FROM_GET_MIRAGE get-mirage.sh
           sha256sum \
             get-mirage.sh \
             install.sh \
