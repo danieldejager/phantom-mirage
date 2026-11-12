@@ -273,10 +273,9 @@ jobs:
 
   autostart:
     name: Ubuntu 26.04 / units start on install
-    # Builds this commit and runs setup with no terminal and no --yes,
-    # which is the one-line install. Nothing in this job runs
-    # systemctl start. The package leaves units disabled; setup must
-    # enable and start them.
+    # Builds this commit and runs setup with no terminal, no answers and
+    # no --yes: the same shape as the piped one-line install. Nothing in
+    # this job runs systemctl start. Setup must enable and start the units.
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
@@ -305,12 +304,22 @@ jobs:
           sudo ip netns exec client ip link set veth-c up
           sudo ip netns exec client ip link set lo up
 
-      - name: Setup with no terminal and no --yes
+      - name: Piped setup enables and starts every unit
         run: |
-          set -o pipefail
-          sudo phantom-mirage-setup -i veth-h -n 10.77.0.248/29 < /dev/null | tee setup.txt
-          grep -q 'no terminal: enabling and starting without asking' setup.txt
-          for u in phantom-mirage phantom-mirage-console phantom-mirage-firewall pm-decoyd.socket farpd; do
+          # setsid: no controlling terminal, same as a pipe with no /dev/tty.
+          # No answers, no --yes, no systemctl start.
+          sudo setsid phantom-mirage-setup -i veth-h -n 10.77.0.248/29 < /dev/null > setup.txt
+          grep -q 'no terminal: enabling and starting with the defaults' setup.txt
+          grep -q 'https://127.0.0.1:8443' setup.txt
+          grep -q 'admin login: user admin, password file /etc/phantom-mirage/initial-admin.txt' setup.txt
+          pw=$(sudo sed -n 's/^password: //p' /etc/phantom-mirage/initial-admin.txt)
+          test -n "$pw"
+          if grep -qF "$pw" setup.txt; then
+            echo "the generated password was printed"
+            exit 1
+          fi
+          test "$(sudo stat -c '%a' /etc/phantom-mirage/initial-admin.txt)" = 600
+          for u in phantom-mirage.service phantom-mirage-firewall.service phantom-mirage-console.service pm-decoyd.socket pm-decoyd.service farpd.service; do
             systemctl is-active --quiet "$u"
             systemctl is-enabled --quiet "$u"
           done

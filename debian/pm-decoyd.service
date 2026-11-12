@@ -11,7 +11,9 @@ Type=simple
 # phantom-mirage --verify-config and reloads phantom-mirage.service. For a
 # time source change it writes its chrony or timesyncd server file and
 # restarts only that time service.
-# It exits by itself after 30 s without a connection.
+# Left alone, the helper exits after 30 s with no connection. The
+# installed unit stays up (PM_DECOYD_IDLE=0) so the console can reach it.
+Environment=PM_DECOYD_IDLE=0
 ExecStart=/usr/bin/python3 -I /usr/lib/phantom-mirage/pm-decoyd
 RuntimeDirectory=phantom-mirage-decoyd
 RuntimeDirectoryMode=0700
@@ -55,3 +57,6 @@ MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 UMask=0077
+
+[Install]
+WantedBy=multi-user.target

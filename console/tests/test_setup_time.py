@@ -206,6 +206,23 @@ class SetupNtpPrompt(unittest.TestCase):
         self.assertIn("there is no default", out)
         self.assertNotIn("server 127.0.0.1", out)
 
+    def test_unattended_writes_the_admin_file_and_not_the_log(self):
+        os.environ["PM_ADMIN_FILE"] = os.path.join(self.d, "initial-admin.txt")
+        os.environ["PM_TIME_SERVICE"] = "none"
+        rc, out, err = self.run_setup("", (), tty=False)
+        self.assertEqual(rc, 0, err)
+        self.assertIn("initial-admin.txt", out)
+        self.assertIn("password is not printed", out)
+        text = open(os.environ["PM_ADMIN_FILE"]).read()
+        self.assertIn("username: admin\n", text)
+        pw = text.split("password: ", 1)[1].strip()
+        self.assertNotIn(pw, out)
+        self.assertNotIn(pw, err)
+        self.assertEqual(os.stat(os.environ["PM_ADMIN_FILE"]).st_mode & 0o777, 0o600)
+        adm = self.m.pmstore.load_admin()
+        self.assertEqual(adm["username"], "admin")
+        self.assertTrue(self.m.pmauth.verify_password(pw, adm["hash"]))
+
     def test_non_interactive_fails_clearly(self):
         rc, out, err = self.run_setup("", ("--reconfigure", "--time-source", "ntp"), tty=False)
         self.assertEqual(rc, 2)

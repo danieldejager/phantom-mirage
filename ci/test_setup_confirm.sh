@@ -1,6 +1,7 @@
 #!/bin/sh
 # phantom-mirage-setup asks on a terminal before it enables or starts
-# anything. With no terminal (the one-line install) it enables and starts.
+# anything. With no terminal it starts with the defaults.
+# PM_TESTING=1 keeps the test from opening /dev/tty.
 # Journal lines shown on a failed start lose control chars.
 # Everything is stubbed: no root, no systemd, no network changes.
 set -eu
@@ -25,7 +26,7 @@ run() {
 		PM_DEFAULT="$t/default" PM_FDEFAULT="$t/farpd" "$@" > "$t/o" 2>&1 || rc=$?
 }
 
-# no terminal, no --yes: config written, then the sensor is enabled and started
+# no terminal, no --yes: config written, sensor enabled and started
 run sh "$setup" -i lo -n 10.0.0.248/29 < /dev/null
 [ $rc = 0 ] || fail "non-interactive rc=$rc"
 grep -q '^INTERFACE="lo"' "$t/default" || fail "config not written"
@@ -33,13 +34,14 @@ grep -q 'interface: lo' "$t/o" || fail "no interface in the plan"
 grep -q 'subnet:    10.0.0.5/24' "$t/o" || fail "no subnet in the plan"
 grep -q 'gateway:   10.0.0.1' "$t/o" || fail "no gateway in the plan"
 grep -q 'decoys:    10.0.0.248/29' "$t/o" || fail "no /29 in the plan"
-grep -q 'no terminal: enabling and starting without asking' "$t/o" || fail "no autostart message"
+grep -q 'no terminal: enabling and starting with the defaults' "$t/o" || fail "no autostart message"
 grep -q '^systemctl enable phantom-mirage$' "$t/log" || fail "sensor not enabled"
 grep -q '^systemctl restart phantom-mirage$' "$t/log" || fail "sensor not started"
+grep -q 'services running:' "$t/o" || fail "no summary"
 
-# re-run keeps the existing INTERFACE/NETWORK and starts again (still no terminal)
+# re-run keeps the existing INTERFACE/NETWORK and starts again
 run sh "$setup" < /dev/null
-grep -q 'no terminal: enabling and starting without asking' "$t/o" || fail "re-run did not autostart"
+grep -q 'no terminal: enabling and starting with the defaults' "$t/o" || fail "re-run did not autostart"
 grep -q '^systemctl restart phantom-mirage$' "$t/log" || fail "re-run did not start"
 
 # --yes: explicit opt in starts the sensor

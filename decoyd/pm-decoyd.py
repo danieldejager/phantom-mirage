@@ -1553,9 +1553,25 @@ def serve_conn(helper, conn):
         pass
 
 
+def idle_timeout():
+    """Seconds to wait for a connection, or None to wait forever.
+    PM_DECOYD_IDLE=0 keeps the installed service running."""
+    raw = os.environ.get("PM_DECOYD_IDLE")
+    if raw is None:
+        return T["idle"]
+    if raw in ("0", "none", "off"):
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return T["idle"]
+
+
 def serve(lsock, helper=None):
     helper = helper or Helper()
-    lsock.settimeout(T["idle"])
+    idle = idle_timeout()
+    if idle is not None:
+        lsock.settimeout(idle)
     while True:
         try:
             conn, _ = lsock.accept()

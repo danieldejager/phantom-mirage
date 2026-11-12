@@ -146,6 +146,12 @@ main() {
 		|| die "SHA256SUMS signature does not verify; not installing"
 	say "SHA256SUMS signature OK"
 	say "checksum OK; running: sh $run $*"
-	sh "$tmp/$run" "$@"
+	# The script itself arrived on stdin. Setup asks on the terminal.
+	if [ -z "${PM_GET_MIRAGE_TEST:-}" ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+		say "continuing on this terminal"
+		sh "$tmp/$run" "$@" < /dev/tty
+	else
+		sh "$tmp/$run" "$@"
+	fi
 }
 main "$@"
