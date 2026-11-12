@@ -57,12 +57,15 @@ partly closed: the checksums prove integrity, not who made the release.
 ## Choosing the release channel
 
 ```sh
-sh get-mirage.sh                 # default: newest published release by date, prereleases included
-sh get-mirage.sh --prerelease    # the same, stated explicitly
-sh get-mirage.sh --stable        # newest non-prerelease
-sh get-mirage.sh --tag v1.7.0-4  # exactly this release
-# piped: gh api ... | sh -s -- --stable -i eth0
+curl -fsSL https://github.com/danieldejager/phantom-mirage/releases/latest/download/get-mirage.sh | sudo sh -s -- --stable
+sudo sh get-mirage.sh --stable          # GitHub's Latest release (mark-1)
+sudo sh get-mirage.sh                   # newest release with files, prereleases included
+sudo sh get-mirage.sh --tag v1.7.0-7    # exactly this release
 ```
+
+`SHA256SUMS.sig` is the cosign sign-blob signature. `get-mirage.sh` checks
+it with `openssl dgst -sha256 -verify`, which is the same ECDSA P-256
+check. A release without that signature is refused.
 
 ## Install rollback
 

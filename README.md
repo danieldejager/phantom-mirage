@@ -83,8 +83,52 @@ them (it asks first; `--yes` skips the question):
 sudo phantom-mirage-uninstall
 ```
 
-Installation:
--------------
+How to install
+--------------
+
+Supported system: Ubuntu 26.04, 64-bit Intel/AMD (amd64) or 64-bit ARM (arm64).
+No GitHub account and no `gh` login.
+
+One command. It installs `curl`, `jq`, `openssl` and CA certificates if they
+are missing, downloads the Latest release, checks the signature, and installs
+the package:
+
+```sh
+curl -fsSL https://github.com/danieldejager/phantom-mirage/releases/latest/download/get-mirage.sh | sudo sh -s -- --stable
+```
+
+Or download the script first, then run it:
+
+```sh
+curl -fsSL -L -o get-mirage.sh https://github.com/danieldejager/phantom-mirage/releases/latest/download/get-mirage.sh
+sudo sh get-mirage.sh --stable
+```
+
+To choose the network interface and address without questions, add
+`--yes -i eth0 -n 192.0.2.248/29`.
+
+Check the download yourself:
+
+```sh
+curl -fsSL -L -O https://github.com/danieldejager/phantom-mirage/releases/latest/download/SHA256SUMS
+curl -fsSL -L -O https://github.com/danieldejager/phantom-mirage/releases/latest/download/SHA256SUMS.sig
+curl -fsSL -H "Accept: application/vnd.github.raw" -o SHA256SUMS.pub \
+  https://api.github.com/repos/danieldejager/phantom-mirage/contents/release/SHA256SUMS.pub
+base64 -d SHA256SUMS.sig > sig.bin
+openssl dgst -sha256 -verify SHA256SUMS.pub -signature sig.bin SHA256SUMS
+sha256sum -c SHA256SUMS
+```
+
+`openssl` prints `Verified OK`. `sha256sum` prints `OK` for each file.
+
+Uninstall:
+
+```sh
+sudo phantom-mirage-uninstall
+```
+
+Build from source
+-----------------
 
 Phantom Mirage depends on several libraries:
 
