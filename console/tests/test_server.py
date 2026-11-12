@@ -104,6 +104,46 @@ class Server(unittest.TestCase):
     def test_binds_loopback_only(self):
         self.assertEqual(httpd.server_address[0], "127.0.0.1")
 
+    def test_plain_http_on_https_is_quiet(self):
+        import io
+        import socket as pysock
+        pmc.Server._plain_http_seen.clear()
+        buf = io.StringIO()
+        old = sys.stderr
+        sys.stderr = buf
+        try:
+            def hit():
+                s = pysock.create_connection(("127.0.0.1", PORT), timeout=5)
+                s.sendall(b"GET / HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n")
+                s.settimeout(2)
+                data = b""
+                try:
+                    while True:
+                        chunk = s.recv(4096)
+                        if not chunk:
+                            break
+                        data += chunk
+                except pysock.timeout:
+                    pass
+                s.close()
+                return data
+            first = hit()
+            deadline = time.time() + 3
+            while "plain HTTP request" not in buf.getvalue() and time.time() < deadline:
+                time.sleep(0.05)
+            second = hit()
+            time.sleep(0.3)
+        finally:
+            sys.stderr = old
+        text = buf.getvalue()
+        self.assertIn("plain HTTP request on HTTPS port from 127.0.0.1", text)
+        self.assertIn("use https://127.0.0.1:%d" % PORT, text)
+        self.assertNotIn("Traceback", text)
+        self.assertEqual(text.count("plain HTTP request"), 1)
+        self.assertTrue(first.startswith(b"HTTP/1.1 400"), first)
+        self.assertIn(("https://127.0.0.1:%d/" % PORT).encode(), first)
+        self.assertTrue(second.startswith(b"HTTP/1.1 400"), second)
+
     def test_headers_and_cookie_flags(self):
         c = Client()
         st, _ = c.req("GET", "/")

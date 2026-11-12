@@ -25,8 +25,9 @@
 # Before it enables or starts anything it prints the interface, subnet,
 # gateway and /29 it will use (and that farpd claims those 8 addresses on
 # the LAN over ARP) and asks [Y/n] on a terminal. The one-line install is
-# a pipe, so its standard input is the script; questions are read from
-# /dev/tty when that terminal exists. With no terminal it does not ask:
+# a pipe into sudo. sudo keeps the foreground on the pty it created, so a
+# read there never completes until this program takes that foreground;
+# that is where the typed answers arrive. With no terminal it does not ask:
 # it uses the defaults, writes the console admin login to a root-only
 # file, and enables and starts the sensor, farpd when it is installed,
 # the console firewall, the web console, and the decoy helper.
@@ -44,7 +45,7 @@ if [ "${PM_TESTING:-}" = 1 ]; then
 	DEFAULT=${PM_DEFAULT:-$DEFAULT} FDEFAULT=${PM_FDEFAULT:-$FDEFAULT}
 fi
 
-usage() { sed -n '2,33s/^# \{0,1\}//p' "$0"; exit "${1:-0}"; }
+usage() { sed -n '2,34s/^# \{0,1\}//p' "$0"; exit "${1:-0}"; }
 die() { echo "phantom-mirage-setup: $*" >&2; exit 1; }
 say() { echo "phantom-mirage-setup: $*"; }
 
@@ -231,34 +232,60 @@ pm_enable() {
 
 # Ask before enabling or starting anything when a person is at a terminal.
 # $1 is the plan already printed. A pipe is not a terminal: with no
-# /dev/tty the one-line install starts with the defaults.
+# keyboard at all the one-line install starts with the defaults. Piped
+# sudo still has a keyboard; PM_HAVE_TTY asks on it without assuming
+# /dev/tty is that keyboard.
 confirm_start() {
 	if [ -n "$YES" ]; then
 		say "--yes given: starting without asking"
 		return 0
 	fi
+	_a=
 	if [ -t 0 ]; then
 		printf 'phantom-mirage-setup: %s? [Y/n] ' "$1"
-		_a=
 		read -r _a || _a=n
-		case $_a in ''|y|Y|yes|YES) return 0 ;; esac
-		say "not starting anything (answered no); the config is written"
-		exit 0
+	elif [ -n "${PM_HAVE_TTY:-}" ]; then
+		_a=$(/usr/bin/python3 -I "$CONSOLE" read-tty "phantom-mirage-setup: $1? [Y/n] ") || _a=n
+	else
+		say "no terminal: enabling and starting with the defaults"
+		return 0
 	fi
-	say "no terminal: enabling and starting with the defaults"
-	return 0
+	case $_a in ''|y|Y|yes|YES) return 0 ;; esac
+	say "not starting anything (answered no); the config is written"
+	exit 0
 }
 
-# The one-line install is piped into sh, so stdin is the script. The
-# person's keyboard is still /dev/tty when this process has a controlling
-# terminal. [ -r /dev/tty ] is true even when open() returns ENXIO.
-# Tests set PM_TESTING=1 and must not take over the terminal.
-if [ ! -t 0 ] && [ "${PM_TESTING:-}" != 1 ] && (: </dev/tty) 2>/dev/null; then
-	say "the install was piped; continuing on this terminal"
-	exec < /dev/tty
+# Console setup takes the foreground on sudo's pty, which is where the
+# typed answers arrive, and records that a keyboard was found. The
+# later [Y/n] asks the same way. The prompt is written to this
+# process's stderr, which sudo copies to the screen.
+PM_HAVE_TTY=
+if [ "${PM_TESTING:-}" != 1 ]; then
+	PM_TTY_FILE=$(mktemp)
+	export PM_TTY_FILE
+	# sudo-rs (Ubuntu 26.04) signals the whole process group when the
+	# questions take the foreground. Classic sudo must not ignore that
+	# signal: it then stops delivering what was typed.
+	_p=$$
+	_i=0
+	while [ "$_i" -lt 8 ]; do
+		_p=$(awk '/^PPid:/{print $2; exit}' /proc/"$_p"/status 2>/dev/null || echo 1)
+		[ "$_p" -gt 1 ] || break
+		if [ -r /proc/"$_p"/exe ] && grep -a -q -m 1 sudo-rs /proc/"$_p"/exe 2>/dev/null; then
+			trap '' TTOU TTIN
+			break
+		fi
+		_i=$((_i + 1))
+	done
 fi
 
 console_setup
+if [ -n "${PM_TTY_FILE:-}" ] && [ -s "$PM_TTY_FILE" ]; then
+	PM_HAVE_TTY=1
+	rm -f "$PM_TTY_FILE"
+	PM_TTY_FILE=
+	say "the install was piped; continuing on this terminal"
+fi
 if [ -n "$CONLY" ]; then
 	[ -n "$DRY" ] && exit 0
 	[ -n "$CONSOLE_OK" ] && confirm_start "start the phantom-mirage-firewall and phantom-mirage-console services now"

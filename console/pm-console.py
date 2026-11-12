@@ -10,6 +10,7 @@ import json
 import os
 import re
 import html
+import socket
 import socketserver
 import ssl
 import sys
@@ -576,6 +577,60 @@ class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
     request_queue_size = 32
+    _plain_http_seen = {}
+    _plain_http_lock = threading.Lock()
+
+    def handle_error(self, request, client_address):
+        exc = sys.exc_info()[1]
+        if isinstance(exc, ssl.SSLError):
+            self._quiet_tls(request, client_address, exc)
+            return
+        super().handle_error(request, client_address)
+
+    def _quiet_tls(self, request, client_address, exc):
+        addr = client_address[0] if client_address else "?"
+        try:
+            port = request.getsockname()[1]
+        except OSError:
+            port = 8443
+        reason = getattr(exc, "reason", "") or ""
+        text = str(exc).lower()
+        plain = reason == "HTTP_REQUEST" or "http request" in text or "http_request" in text
+        if plain:
+            self._hint_https(request, port)
+        now = time.monotonic()
+        key = (addr, "http" if plain else "tls")
+        with self._plain_http_lock:
+            if now - self._plain_http_seen.get(key, 0) < 60:
+                return
+            self._plain_http_seen[key] = now
+        if plain:
+            sys.stderr.write("console: plain HTTP request on HTTPS port from %s; "
+                             "use https://127.0.0.1:%d\n" % (addr, port))
+        else:
+            sys.stderr.write("console: TLS handshake failed from %s\n" % addr)
+        sys.stderr.flush()
+
+    def _hint_https(self, request, port):
+        # The TLS wrapper already consumed the plaintext HTTP bytes, so the
+        # hint has to be written to a duplicate of the underlying fd.
+        try:
+            raw = socket.socket(fileno=os.dup(request.fileno()))
+        except OSError:
+            return
+        body = ("This port speaks HTTPS only. Open https://127.0.0.1:%d/\n" % port).encode()
+        msg = (b"HTTP/1.1 400 Bad Request\r\n"
+               b"Content-Type: text/plain; charset=utf-8\r\n"
+               b"Connection: close\r\n"
+               b"Location: https://127.0.0.1:%d/\r\n" % port
+               + b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+               b"\r\n" + body)
+        try:
+            raw.sendall(msg)
+        except OSError:
+            pass
+        finally:
+            raw.close()
 
 
 def make_server(cfg, port=None, certfile=None, keyfile=None):
