@@ -272,12 +272,20 @@ jobs:
         run: sudo journalctl -u phantom-mirage -u farpd --no-pager | tail -n 40
 
   autostart:
-    name: Ubuntu 26.04 / units start on install
+    name: Ubuntu 26.04 / ${{ matrix.arch }} units start with no terminal
     # Builds this commit and runs setup with no terminal, no answers and
     # no --yes: the same shape as the piped one-line install. Nothing in
     # this job runs systemctl start. Setup must enable and start the units.
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            os: ubuntu-26.04
+          - arch: arm64
+            os: ubuntu-26.04-arm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
