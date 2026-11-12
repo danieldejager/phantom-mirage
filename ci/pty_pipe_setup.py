@@ -48,6 +48,7 @@ def main():
         attr[3] |= termios.ICANON | termios.ECHO | termios.ECHOE | termios.ISIG
         termios.tcsetattr(0, termios.TCSANOW, attr)
         fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
+        os.write(1, ("pty-slave %s\n" % os.ttyname(0)).encode())
         os.execvp("bash", ["bash", "-c", "cat %s | sudo bash" % driver])
     buf = b""
     step = 0
