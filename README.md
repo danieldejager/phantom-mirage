@@ -94,7 +94,7 @@ are missing, downloads the Latest release, checks the signature, and installs
 the package:
 
 ```sh
-curl -fsSL https://github.com/danieldejager/phantom-mirage/releases/latest/download/get-mirage.sh | sudo sh -s -- --stable
+curl -fsSL https://github.com/danieldejager/phantom-mirage/releases/latest/download/get-mirage.sh | sudo bash
 ```
 
 That command is a pipe, so the script is its input. It installs the
@@ -130,7 +130,7 @@ Or download the script first, then run it:
 
 ```sh
 curl -fsSL -L -o get-mirage.sh https://github.com/danieldejager/phantom-mirage/releases/latest/download/get-mirage.sh
-sudo sh get-mirage.sh --stable
+sudo bash get-mirage.sh
 ```
 
 To choose the network interface and address without questions, add

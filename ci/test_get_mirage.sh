@@ -95,7 +95,7 @@ env -u PM_GET_MIRAGE_TEST sh "$src/release/get-mirage.sh" --stable > "$t/o" 2>&1
 [ $rc = 1 ] && grep -q 'run as root' "$t/o" || fail "not-root"
 [ ! -e "$t/run.log" ] || fail "installer ran when not root"
 
-# 2. default channel: newest release with files, draft and empty skipped
+# 2. --prerelease: newest release with files, draft and empty skipped
 mkrel v1.7.0-3; mkrel v1.7.0-4
 cat > "$t/releases.json" <<'J'
 [{"tag_name":"v1.7.0","draft":false,"prerelease":false,"published_at":"2026-10-22T05:59:53Z","assets":[{"name":"SHA256SUMS"}]},
@@ -103,7 +103,7 @@ cat > "$t/releases.json" <<'J'
  {"tag_name":"v1.7.0-4","draft":false,"prerelease":true,"published_at":"2026-10-22T23:04:33Z","assets":[{"name":"SHA256SUMS"}]},
  {"tag_name":"v1.7.0-3","draft":false,"prerelease":true,"published_at":"2026-10-22T21:38:34Z","assets":[{"name":"SHA256SUMS"}]}]
 J
-gm -i veth-h -n 10.77.0.248/29
+gm --prerelease -i veth-h -n 10.77.0.248/29
 [ $rc = 0 ] || fail "prerelease rc=$rc"
 grep -q 'release v1.7.0-4:' "$t/o" || fail "prerelease not announced"
 grep -q 'SHA256SUMS signature OK' "$t/o" || fail "prerelease signature"
@@ -136,11 +136,19 @@ PM_OS_RELEASE=$t/osdeb gm --tag v1.7.0-3
 [ $rc != 0 ] && grep -q 'this installer is for Ubuntu 26.04' "$t/o" || fail "debian accepted"
 [ ! -e "$t/run.log" ] || fail "installer ran on debian"
 
-# 7. piped through sh
+# 7. piped through sh and through bash, with no flags: GitHub Latest
+mkrel mark-1
+latest_is mark-1
 rm -f "$t/run.log"
 rc=0
 sh < "$src/release/get-mirage.sh" > "$t/o" 2>&1 || rc=$?
-[ $rc = 0 ] && grep -q '1.7.0-4_ubuntu26.04_arm64.run' "$t/run.log" || fail "| sh"
+[ $rc = 0 ] && grep -Eq 'phantom-mirage_mark-1_ubuntu26.04_arm64.run[[:space:]]*$' "$t/run.log" || fail "| sh"
+grep -q 'release mark-1:' "$t/o" || fail "| sh did not announce Latest"
+rm -f "$t/run.log"
+rc=0
+bash < "$src/release/get-mirage.sh" > "$t/o" 2>&1 || rc=$?
+[ $rc = 0 ] && grep -Eq 'phantom-mirage_mark-1_ubuntu26.04_arm64.run[[:space:]]*$' "$t/run.log" || fail "| bash"
+grep -q 'release mark-1:' "$t/o" || fail "| bash did not announce Latest"
 
 # 8. --stable is GitHub Latest when that release has files
 mkrel mark-1

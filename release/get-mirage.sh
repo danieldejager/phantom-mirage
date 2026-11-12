@@ -1,13 +1,14 @@
 #!/bin/sh
 # Install Phantom Mirage on Ubuntu 26.04 (amd64 or arm64). No gh account.
 #
-#   curl -fsSL https://github.com/danieldejager/phantom-mirage/releases/latest/download/get-mirage.sh | sudo sh -s -- --stable
-#   sudo sh get-mirage.sh --stable --yes -i eth0 -n 192.0.2.248/29
+#   curl -fsSL https://github.com/danieldejager/phantom-mirage/releases/latest/download/get-mirage.sh | sudo bash
+#   sudo bash get-mirage.sh --yes -i eth0 -n 192.0.2.248/29
 #
-# --stable uses GitHub's Latest release (mark-1). A release with no files
-# is skipped. --tag names one release and does not substitute another.
-# --prerelease is the newest published release that has files, including
-# prereleases. Extra arguments are passed to the .run installer.
+# With no channel flag, and with --stable, this uses GitHub's Latest
+# release (mark-1). A release with no files is skipped. --tag names one
+# release and does not substitute another. --prerelease is the newest
+# published release that has files, including prereleases. Extra arguments
+# are passed to the .run installer.
 #
 # The release SHA256SUMS.sig is a cosign sign-blob signature: ECDSA P-256
 # over the SHA-256 of SHA256SUMS. openssl dgst -sha256 -verify checks that
@@ -21,7 +22,7 @@ main() {
 	say() { echo "get-mirage: $*"; }
 	die() { echo "get-mirage: $*" >&2; exit 1; }
 
-	tag= channel=prerelease
+	tag= channel=stable
 	while [ $# -gt 0 ]; do
 		case $1 in
 			--tag) [ $# -ge 2 ] || die "--tag needs a value"; tag=$2; shift 2 ;;
@@ -34,7 +35,7 @@ main() {
 	done
 
 	if [ "$(id -u)" != 0 ] && [ -z "${PM_GET_MIRAGE_TEST:-}" ]; then
-		die "run as root: curl -fsSL https://github.com/$REPO/releases/latest/download/get-mirage.sh | sudo sh -s -- --stable"
+		die "run as root: curl -fsSL https://github.com/$REPO/releases/latest/download/get-mirage.sh | sudo bash"
 	fi
 
 	osr=${PM_OS_RELEASE:-/etc/os-release}
