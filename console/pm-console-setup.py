@@ -178,10 +178,17 @@ def ask(prompt, default=None, check=None):
                 die("test stdin ended at: " + prompt)
             v = line.rstrip("\n")
         else:
+            shown = "%s%s: " % (prompt, " [%s]" % default if default not in (None, "") else "")
+            if os.environ.get("PM_SETUP_TRACE") == "1":
+                sys.stderr.write("setup-trace: asking %s\n" % shown.split(":", 1)[0])
+                sys.stderr.flush()
             try:
-                v = input("%s%s: " % (prompt, " [%s]" % default if default not in (None, "") else ""))
+                v = input(shown)
             except EOFError:
                 die("no answer for '%s' (input ended); nothing was changed" % prompt, 2)
+            if os.environ.get("PM_SETUP_TRACE") == "1":
+                sys.stderr.write("setup-trace: answered %s\n" % shown.split(":", 1)[0])
+                sys.stderr.flush()
         v = v.strip() or (str(default) if default is not None else "")
         err = check(v) if check else None
         if not err:

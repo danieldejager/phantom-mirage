@@ -10,6 +10,7 @@ import os
 import pty
 import select
 import sys
+import termios
 import time
 
 
@@ -33,10 +34,15 @@ def main():
     iface, network = sys.argv[1], sys.argv[2]
     driver = "/tmp/pm-pty-driver.sh"
     with open(driver, "w") as f:
-        f.write("#!/bin/sh\nexec /usr/sbin/phantom-mirage-setup -i %s -n %s\n" % (iface, network))
+        f.write("#!/bin/sh\nexport PM_SETUP_TRACE=1\nexec /usr/sbin/phantom-mirage-setup -i %s -n %s\n" % (iface, network))
     os.chmod(driver, 0o755)
     pid, fd = pty.fork()
     if pid == 0:
+        # Cooked echo, so a typed line is one line. A raw pty never delivers it.
+        attr = termios.tcgetattr(0)
+        attr[0] |= termios.ICRNL
+        attr[3] |= termios.ICANON | termios.ECHO | termios.ECHOE | termios.ISIG
+        termios.tcsetattr(0, termios.TCSANOW, attr)
         os.execvp("bash", ["bash", "-c", "cat %s | sudo bash" % driver])
     buf = b""
     step = 0

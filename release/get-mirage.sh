@@ -191,7 +191,10 @@ main() {
 		_ut=$(user_tty || true)
 		if [ -n "$_ut" ]; then
 			say "continuing on this terminal"
-			exec < "$_ut" > "$_ut" 2>&1
+			# One read-write fd. Separate read-only and write-only opens of
+			# the same pty make later prompts block on some systems.
+			exec <> "$_ut"
+			exec >&0 2>&0
 		fi
 	fi
 	sh "$tmp/$run" "$@"
