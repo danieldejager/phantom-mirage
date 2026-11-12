@@ -57,10 +57,11 @@ partly closed: the checksums prove integrity, not who made the release.
 ## Choosing the release channel
 
 ```sh
-curl -fsSL https://github.com/danieldejager/phantom-mirage/releases/latest/download/get-mirage.sh | sudo sh -s -- --stable
-sudo sh get-mirage.sh --stable          # GitHub's Latest release (mark-1)
-sudo sh get-mirage.sh                   # newest release with files, prereleases included
-sudo sh get-mirage.sh --tag v1.7.0-7    # exactly this release
+curl -fsSL https://github.com/danieldejager/phantom-mirage/releases/latest/download/get-mirage.sh | sudo bash
+sudo bash get-mirage.sh                 # GitHub's Latest release (mark-1)
+sudo bash get-mirage.sh --stable        # the same as no flag
+sudo bash get-mirage.sh --prerelease    # newest release with files, prereleases included
+sudo bash get-mirage.sh --tag v1.7.0-7  # exactly this release
 ```
 
 `SHA256SUMS.sig` is the cosign sign-blob signature. `get-mirage.sh` checks

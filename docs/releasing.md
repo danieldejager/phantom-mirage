@@ -21,12 +21,14 @@ The .debs and .run files must come from a run on the release commit, and
 `get-mirage.sh` is downloaded from the Latest release, not from a branch:
 
 ```sh
-curl -fsSL https://github.com/danieldejager/phantom-mirage/releases/latest/download/get-mirage.sh | sudo sh -s -- --stable
+curl -fsSL https://github.com/danieldejager/phantom-mirage/releases/latest/download/get-mirage.sh | sudo bash
 ```
 
-`--stable` selects GitHub's Latest release. A release with no files is
-skipped. `--tag` can still name one. The script then downloads that
-release's `.run`, `SHA256SUMS` and `SHA256SUMS.sig`.
+With no channel flag this selects GitHub's Latest release. `--stable` is
+the same. A release with no files is skipped. `--prerelease` takes the
+newest release that has files, including prereleases. `--tag` can still
+name one. The script then downloads that release's `.run`, `SHA256SUMS`
+and `SHA256SUMS.sig`.
 
 Ubuntu 24.04 is not a Mark 1 installer. The heavy systemd jobs run on
 Ubuntu 24.04 GitHub runners, which is the runner image, not a shipped
