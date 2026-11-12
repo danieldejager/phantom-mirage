@@ -24,9 +24,11 @@
 #
 # Before it enables or starts anything it prints the interface, subnet,
 # gateway and /29 it will use (and that farpd claims those 8 addresses on
-# the LAN over ARP) and asks [Y/n] on the terminal, on every run. Without
-# a terminal it writes the config but starts nothing, unless --yes (-y)
-# is given: the explicit opt in for unattended installs, e.g.
+# the LAN over ARP) and asks [Y/n] on a terminal, on every run. With no
+# terminal (the one-line install) it enables and starts the sensor, farpd
+# when it is installed, the console firewall, the web console and the
+# decoy-helper socket. --yes (-y) does the same when you want to skip the
+# question on a terminal, e.g.
 #   sudo phantom-mirage-setup --yes -i eth1 -n 10.0.0.248/29
 set -eu
 
@@ -209,8 +211,9 @@ pm_enable() {
 	return 0
 }
 
-# Ask before enabling or starting anything (every run, re-runs too).
-# $1 is the plan already printed. Without a terminal, only --yes starts.
+# Ask before enabling or starting anything when a person is at a terminal.
+# $1 is the plan already printed. With no terminal, start: that is the
+# one-line install, which has nowhere to ask.
 confirm_start() {
 	if [ -n "$YES" ]; then
 		say "--yes given: starting without asking"
@@ -222,11 +225,11 @@ confirm_start() {
 		read -r _a || _a=n
 		case $_a in ''|y|Y|yes|YES) return 0 ;; esac
 		say "not starting anything (answered no); the config is written"
-	else
-		say "not starting anything: no terminal to confirm (pass --yes to start without asking); the config is written"
+		say "to start it, run on a terminal: sudo phantom-mirage-setup"
+		exit 0
 	fi
-	say "to start it, run on a terminal: sudo phantom-mirage-setup"
-	exit 0
+	say "no terminal: enabling and starting without asking"
+	return 0
 }
 
 console_setup

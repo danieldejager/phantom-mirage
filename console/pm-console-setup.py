@@ -25,6 +25,7 @@ import ipaddress
 import os
 import pwd
 import re
+import secrets
 import subprocess
 import sys
 
@@ -417,8 +418,57 @@ def first_run(argv):
         if o.get("time_source") == "ntp" and "ntp_server" not in o:
             die("--time-source ntp needs --ntp-server ADDRESS (an NTP host on your network); "
                 "there is no default", 2)
-        say("console: NOT set up (no terminal). Run on the sensor: sudo phantom-mirage-setup --console")
-        return 3
+        vals = {
+            "sensor_name": o.get("sensor_name") or "mirage",
+            "admin_user": o.get("admin_user") or "admin",
+            "port": str(o.get("port") or 8443),
+            "time_source": o.get("time_source") or "browser",
+            "timezone": o.get("timezone") or "UTC",
+            "alert_retention_days": str(o.get("alert_retention_days") or 90),
+        }
+        vals["ntp_server"] = o.get("ntp_server") or ""
+        if vals["time_source"] != "ntp":
+            vals["ntp_server"] = ""
+        for key, chk in (("sensor_name", chk_name), ("admin_user", chk_user),
+                         ("port", chk_port), ("time_source", chk_ts),
+                         ("timezone", chk_tz), ("alert_retention_days", chk_ret)):
+            err = chk(vals[key])
+            if err:
+                die("%s: %s" % (key.replace("_", "-"), err), 2)
+        if vals["time_source"] == "ntp":
+            err = chk_ntp(vals["ntp_server"])
+            if err:
+                die("ntp-server: " + err, 2)
+        pw = secrets.token_urlsafe(18)
+        say("console: no terminal, so the console is set up with defaults")
+        say("console: admin user: %s" % vals["admin_user"])
+        say("console: admin password: %s" % pw)
+        say("console: change it on the sensor with: sudo phantom-mirage-setup --reset-admin")
+        if dry:
+            say("dry run: console would be set up for sensor %s, admin %s, https://127.0.0.1:%s"
+                % (vals["sensor_name"], vals["admin_user"], vals["port"]))
+            apply_time(vals, True)
+            return 0
+        os.makedirs(pmstore.STATE_DIR, mode=0o770, exist_ok=True)
+        cfg.update(sensor_name=vals["sensor_name"], port=int(vals["port"]),
+                   time_source=vals["time_source"], ntp_server=vals["ntp_server"],
+                   timezone=vals["timezone"],
+                   alert_retention_days=int(vals["alert_retention_days"]))
+        pmstore.save_config(cfg)
+        h = pmauth.hash_password(pw)
+        del pw
+        pmstore.save_admin(vals["admin_user"], h)
+        pmauth.Lockout(pmstore.path("lockout.json")).reset()
+        pmstore.audit("setup", "first-run", "sensor %s, admin %s, port %s, time %s, hash %s" % (
+            cfg["sensor_name"], vals["admin_user"], cfg["port"], cfg["time_source"],
+            pmauth.hash_scheme(h)))
+        fp = ensure_cert(cfg["sensor_name"])
+        apply_time(cfg, False)
+        fix_perms()
+        say("console: admin %s set (password stored as a salted %s hash)" % (
+            vals["admin_user"], pmauth.hash_scheme(h)))
+        say("console certificate SHA-256 fingerprint: " + fp)
+        return 0
     checks = [("sensor_name", "Sensor name (required)", None, chk_name),
               ("admin_user", "Admin username", (adm or {}).get("username") or "", chk_user),
               ("port", "Console port (on 127.0.0.1 only)", cfg.get("port", 8443), chk_port),

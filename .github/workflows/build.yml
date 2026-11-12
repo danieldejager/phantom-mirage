@@ -271,6 +271,54 @@ jobs:
         if: always()
         run: sudo journalctl -u phantom-mirage -u farpd --no-pager | tail -n 40
 
+  autostart:
+    name: Ubuntu 26.04 / units start on install
+    # Builds this commit and runs setup with no terminal and no --yes,
+    # which is the one-line install. Nothing in this job runs
+    # systemctl start. The package leaves units disabled; setup must
+    # enable and start them.
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and install the package
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential devscripts equivs
+          sudo mk-build-deps -i -r -t 'apt-get -y --no-install-recommends' debian/control
+          dpkg-buildpackage -us -uc -b
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ../phantom-mirage_*.deb ../phantom-mirage-common_*.deb farpd iproute2
+          systemctl is-active phantom-mirage && exit 1 || true
+          systemctl is-enabled phantom-mirage && exit 1 || true
+
+      - name: veth pair (host veth-h 10.77.0.1/24, netns client 10.77.0.2/24)
+        run: |
+          sudo ip netns add client
+          sudo ip link add veth-h type veth peer name veth-c
+          sudo ip link set veth-c netns client
+          sudo ip addr add 10.77.0.1/24 dev veth-h
+          sudo ip link set veth-h up
+          sudo ip netns exec client ip addr add 10.77.0.2/24 dev veth-c
+          sudo ip netns exec client ip link set veth-c up
+          sudo ip netns exec client ip link set lo up
+
+      - name: Setup with no terminal and no --yes
+        run: |
+          set -o pipefail
+          sudo phantom-mirage-setup -i veth-h -n 10.77.0.248/29 < /dev/null | tee setup.txt
+          grep -q 'no terminal: enabling and starting without asking' setup.txt
+          for u in phantom-mirage phantom-mirage-console phantom-mirage-firewall pm-decoyd.socket farpd; do
+            systemctl is-active --quiet "$u"
+            systemctl is-enabled --quiet "$u"
+          done
+
+      - name: Journal
+        if: always()
+        run: sudo journalctl -u phantom-mirage -u phantom-mirage-console -u phantom-mirage-firewall -u pm-decoyd.socket -u farpd --no-pager | tail -n 40
+
   sanitizers:
     name: Debian 13 / ASan + UBSan
     needs: gate
