@@ -2,9 +2,22 @@
 # piped into sudo, and script(1) is the desktop terminal.
 set timeout 40
 log_user 1
-expect_before {
-    timeout { puts "\nexpect timeout\n"; exit 1 }
+
+proc must {pat} {
+    global spawn_id timeout
+    expect {
+        -ex $pat {}
+        timeout {
+            puts "\nexpect timeout waiting for: $pat\n"
+            exit 1
+        }
+        eof {
+            puts "\nsetup exited before: $pat\n"
+            exit 1
+        }
+    }
 }
+
 set iface [lindex $argv 0]
 set network [lindex $argv 1]
 set driver "/tmp/pm-pty-driver.sh"
@@ -14,24 +27,34 @@ puts $f "export PM_SETUP_TRACE=1"
 puts $f "exec /usr/sbin/phantom-mirage-setup -i $iface -n $network"
 close $f
 spawn script -qfec "cat $driver | sudo bash" /dev/null
-expect "Sensor name (required):"
+must "Sensor name (required):"
 send "sensor1\r"
-expect "Admin username:"
+must "Admin username:"
 send "admin\r"
-expect "\\\[8443\\\]:"
+must "\[8443\]:"
 send "\r"
-expect "\\\[browser\\\]:"
+must "\[browser\]:"
 send "\r"
-expect "\\\[UTC\\\]:"
+must "\[UTC\]:"
 send "\r"
-expect "\\\[90\\\]:"
+must "\[90\]:"
 send "\r"
-expect "Admin password"
+must "Admin password"
 send "Ci-console-pass-1\r"
-expect "Repeat password:"
+must "Repeat password:"
 send "Ci-console-pass-1\r"
-expect "\\\[Y/n\\\]"
+must "\[Y/n\]"
 send "y\r"
-expect eof
+expect {
+    eof {}
+    timeout {
+        puts "\nsetup did not finish\n"
+        exit 1
+    }
+}
 catch wait result
-exit [lindex $result 3]
+set code [lindex $result 3]
+if {$code eq ""} {
+    exit 1
+}
+exit $code

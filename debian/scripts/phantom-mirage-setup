@@ -25,8 +25,9 @@
 # Before it enables or starts anything it prints the interface, subnet,
 # gateway and /29 it will use (and that farpd claims those 8 addresses on
 # the LAN over ARP) and asks [Y/n] on a terminal. The one-line install is
-# a pipe into sudo. sudo's own pty is not the keyboard, so questions are
-# read from the terminal sudo was started on. With no terminal it does not ask:
+# a pipe into sudo. sudo keeps the foreground on the pty it created, so a
+# read there never completes until this program takes that foreground;
+# that is where the typed answers arrive. With no terminal it does not ask:
 # it uses the defaults, writes the console admin login to a root-only
 # file, and enables and starts the sensor, farpd when it is installed,
 # the console firewall, the web console, and the decoy helper.
@@ -231,27 +232,34 @@ pm_enable() {
 
 # Ask before enabling or starting anything when a person is at a terminal.
 # $1 is the plan already printed. A pipe is not a terminal: with no
-# /dev/tty the one-line install starts with the defaults.
+# keyboard at all the one-line install starts with the defaults. Piped
+# sudo still has a keyboard; PM_HAVE_TTY asks on it without assuming
+# /dev/tty is that keyboard.
 confirm_start() {
 	if [ -n "$YES" ]; then
 		say "--yes given: starting without asking"
 		return 0
 	fi
+	_a=
 	if [ -t 0 ]; then
 		printf 'phantom-mirage-setup: %s? [Y/n] ' "$1"
-		_a=
 		read -r _a || _a=n
-		case $_a in ''|y|Y|yes|YES) return 0 ;; esac
-		say "not starting anything (answered no); the config is written"
-		exit 0
+	elif [ -n "${PM_HAVE_TTY:-}" ]; then
+		_a=$(/usr/bin/python3 -I "$CONSOLE" read-tty "phantom-mirage-setup: $1? [Y/n] ") || _a=n
+	else
+		say "no terminal: enabling and starting with the defaults"
+		return 0
 	fi
-	say "no terminal: enabling and starting with the defaults"
-	return 0
+	case $_a in ''|y|Y|yes|YES) return 0 ;; esac
+	say "not starting anything (answered no); the config is written"
+	exit 0
 }
 
-# Console setup may discover which terminal is actually receiving
-# keystrokes (piped sudo does not deliver them on /dev/tty). It records
-# the path here so the later [Y/n] question uses the same keyboard.
+# Console setup records the keyboard it actually read (piped sudo does
+# not deliver keystrokes on /dev/tty). The later [Y/n] uses that fact
+# and asks through the same listener, still on this process's stdout,
+# which sudo copies to the screen.
+PM_HAVE_TTY=
 if [ "${PM_TESTING:-}" != 1 ]; then
 	PM_TTY_FILE=$(mktemp)
 	export PM_TTY_FILE
@@ -259,14 +267,10 @@ fi
 
 console_setup
 if [ -n "${PM_TTY_FILE:-}" ] && [ -s "$PM_TTY_FILE" ]; then
-	_ut=$(cat "$PM_TTY_FILE")
+	PM_HAVE_TTY=1
 	rm -f "$PM_TTY_FILE"
 	PM_TTY_FILE=
-	if [ -n "$_ut" ] && [ -c "$_ut" ]; then
-		say "the install was piped; continuing on this terminal"
-		exec <> "$_ut"
-		exec >&0 2>&0
-	fi
+	say "the install was piped; continuing on this terminal"
 fi
 if [ -n "$CONLY" ]; then
 	[ -n "$DRY" ] && exit 0
