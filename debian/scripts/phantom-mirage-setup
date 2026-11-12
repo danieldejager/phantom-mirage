@@ -25,8 +25,8 @@
 # Before it enables or starts anything it prints the interface, subnet,
 # gateway and /29 it will use (and that farpd claims those 8 addresses on
 # the LAN over ARP) and asks [Y/n] on a terminal. The one-line install is
-# a pipe, so its standard input is the script; questions are read from
-# /dev/tty when that terminal exists. With no terminal it does not ask:
+# a pipe into sudo. sudo's own pty is not the keyboard, so questions are
+# read from the terminal sudo was started on. With no terminal it does not ask:
 # it uses the defaults, writes the console admin login to a root-only
 # file, and enables and starts the sensor, farpd when it is installed,
 # the console firewall, the web console, and the decoy helper.
@@ -44,7 +44,7 @@ if [ "${PM_TESTING:-}" = 1 ]; then
 	DEFAULT=${PM_DEFAULT:-$DEFAULT} FDEFAULT=${PM_FDEFAULT:-$FDEFAULT}
 fi
 
-usage() { sed -n '2,33s/^# \{0,1\}//p' "$0"; exit "${1:-0}"; }
+usage() { sed -n '2,34s/^# \{0,1\}//p' "$0"; exit "${1:-0}"; }
 die() { echo "phantom-mirage-setup: $*" >&2; exit 1; }
 say() { echo "phantom-mirage-setup: $*"; }
 
@@ -249,13 +249,50 @@ confirm_start() {
 	return 0
 }
 
-# The one-line install is piped into sh, so stdin is the script. The
-# person's keyboard is still /dev/tty when this process has a controlling
-# terminal. [ -r /dev/tty ] is true even when open() returns ENXIO.
-# Tests set PM_TESTING=1 and must not take over the terminal.
-if [ ! -t 0 ] && [ "${PM_TESTING:-}" != 1 ] && (: </dev/tty) 2>/dev/null; then
-	say "the install was piped; continuing on this terminal"
-	exec < /dev/tty
+# The one-line install is piped into sudo. sudo's use_pty (Ubuntu's
+# default) puts this process on an inner pty, so /dev/tty is not the
+# keyboard and reading it hangs. The keyboard is the terminal sudo is
+# using. Tests set PM_TESTING=1 and must not take over a terminal.
+user_tty() {
+	ctty=
+	if (: </dev/tty) 2>/dev/null; then
+		ctty=$(tty </dev/tty 2>/dev/null || true)
+		case $ctty in /dev/*) ;; *) ctty= ;; esac
+	fi
+	p=${PPID:-}
+	i=0
+	first=1
+	while [ "$i" -lt 8 ] && [ -n "$p" ] && [ "$p" != 1 ]; do
+		comm=$(cat "/proc/$p/comm" 2>/dev/null || true)
+		take=0
+		[ "$first" = 1 ] && take=1
+		case $comm in sudo|sudo.*) take=1 ;; esac
+		if [ "$take" = 1 ]; then
+			for n in 1 2 0; do
+				t=$(readlink "/proc/$p/fd/$n" 2>/dev/null || true)
+				case $t in
+					/dev/pts/*|/dev/tty[0-9]*|/dev/ttyS*|/dev/ttyUSB*)
+						if [ "$t" != "$ctty" ] && [ -r "$t" ] && [ -w "$t" ]; then
+							printf '%s\n' "$t"
+							return 0
+						fi
+						;;
+				esac
+			done
+		fi
+		case $comm in sudo|sudo.*) return 1 ;; esac
+		first=0
+		p=$(sed -n 's/^PPid:[[:space:]]*//p' "/proc/$p/status" 2>/dev/null || true)
+		i=$((i+1))
+	done
+	return 1
+}
+if [ ! -t 0 ] && [ "${PM_TESTING:-}" != 1 ]; then
+	_ut=$(user_tty || true)
+	if [ -n "$_ut" ]; then
+		say "the install was piped; continuing on this terminal"
+		exec < "$_ut" > "$_ut" 2>&1
+	fi
 fi
 
 console_setup

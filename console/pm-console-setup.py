@@ -21,7 +21,6 @@ it to a root-only file (the path is printed; the password is not).
 Test-only: PM_TEST_STDIN=1 reads the answers (including the password,
 twice) from stdin lines instead of the terminal.
 """
-import getpass
 import grp
 import ipaddress
 import os
@@ -30,6 +29,7 @@ import re
 import secrets
 import subprocess
 import sys
+import termios
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pmauth  # noqa: E402
@@ -56,16 +56,82 @@ def die(msg, code=1):
     sys.exit(code)
 
 
+def _controlling_tty():
+    try:
+        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+    except OSError:
+        return ""
+    try:
+        return os.ttyname(fd)
+    except OSError:
+        return ""
+    finally:
+        os.close(fd)
+
+
+def _fd_tty(pid, n):
+    try:
+        t = os.readlink("/proc/%d/fd/%d" % (pid, n))
+    except OSError:
+        return ""
+    if t.startswith("/dev/pts/") or t.startswith("/dev/ttyS") or t.startswith("/dev/ttyUSB"):
+        return t
+    if len(t) > 8 and t.startswith("/dev/tty") and t[8].isdigit():
+        return t
+    return ""
+
+
+def open_user_tty():
+    """The keyboard when stdin is a pipe into sudo.
+
+    sudo's use_pty puts this process on an inner pty, so /dev/tty is not
+    where keystrokes arrive. Returns an fd, or None when there is no
+    separate terminal (setup then uses its defaults)."""
+    ctty = _controlling_tty()
+    pid = os.getppid()
+    first = True
+    for _ in range(8):
+        if pid <= 1:
+            break
+        try:
+            comm = open("/proc/%d/comm" % pid).read().strip()
+        except OSError:
+            comm = ""
+        if first or comm == "sudo" or comm.startswith("sudo."):
+            for n in (1, 2, 0):
+                t = _fd_tty(pid, n)
+                if t and t != ctty:
+                    try:
+                        return os.open(t, os.O_RDWR | os.O_NOCTTY)
+                    except OSError:
+                        pass
+        if comm == "sudo" or comm.startswith("sudo."):
+            break
+        first = False
+        try:
+            ppid = None
+            with open("/proc/%d/status" % pid) as f:
+                for line in f:
+                    if line.startswith("PPid:"):
+                        ppid = int(line.split()[1])
+                        break
+            if ppid is None:
+                break
+            pid = ppid
+        except (OSError, ValueError):
+            break
+    return None
+
+
 def interactive():
-    """True when a person can answer. The one-line install is a pipe, so
-    stdin is the script; the keyboard is /dev/tty."""
+    """True when a person can answer. A piped sudo does not make /dev/tty
+    the keyboard; open_user_tty() finds the terminal sudo was started on."""
     if TEST:
         return True
-    if sys.stdin.isatty() and sys.stdout.isatty():
+    if sys.stdin.isatty():
         return True
-    try:
-        tty = os.open("/dev/tty", os.O_RDWR)
-    except OSError:
+    tty = open_user_tty()
+    if tty is None:
         return False
     try:
         os.dup2(tty, 0)
@@ -77,6 +143,31 @@ def interactive():
     sys.stdout = open(1, "w", buffering=1, closefd=False)
     sys.stderr = open(2, "w", buffering=1, closefd=False)
     return True
+
+
+def _hidden(prompt):
+    """Password from the same terminal as the other prompts.
+
+    getpass opens /dev/tty first, which under piped sudo is the inner pty
+    and never receives what the person types."""
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    new = old[:]
+    new[3] &= ~termios.ECHO
+    try:
+        termios.tcsetattr(fd, termios.TCSAFLUSH, new)
+        sys.stderr.write(prompt)
+        sys.stderr.flush()
+        line = sys.stdin.readline()
+    finally:
+        termios.tcsetattr(fd, termios.TCSAFLUSH, old)
+    sys.stderr.write("\n")
+    sys.stderr.flush()
+    if not line:
+        raise EOFError
+    if line[-1] == "\n":
+        line = line[:-1]
+    return line
 
 
 def ask(prompt, default=None, check=None):
@@ -105,8 +196,8 @@ def ask_password(user):
             p1 = sys.stdin.readline().rstrip("\n")
             p2 = sys.stdin.readline().rstrip("\n")
         else:
-            p1 = getpass.getpass("Admin password (hidden, %d+ characters): " % pmauth.MIN_PASSWORD)
-            p2 = getpass.getpass("Repeat password: ")
+            p1 = _hidden("Admin password (hidden, %d+ characters): " % pmauth.MIN_PASSWORD)
+            p2 = _hidden("Repeat password: ")
         if p1 != p2:
             print("  passwords do not match")
             continue
