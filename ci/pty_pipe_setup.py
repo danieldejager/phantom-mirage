@@ -6,24 +6,28 @@
 The installer is piped into sudo, like `curl | sudo bash`, and sudo's
 use_pty is left on. Answers are written to the pty as each prompt appears.
 """
+import fcntl
 import os
 import pty
 import select
+import struct
 import sys
 import termios
 import time
 
 
+# The marker is the end of the question, so the answer is not sent while
+# the prompt is still being drawn.
 PROMPTS = (
-    ("Sensor name (required):", "sensor1"),
-    ("Admin username:", "admin"),
-    ("Console port", "8443"),
-    ("Time source:", "browser"),
-    ("Time zone", "UTC"),
-    ("Alert retention", "90"),
-    ("Admin password", "Ci-console-pass-1"),
-    ("Repeat password:", "Ci-console-pass-1"),
-    ("[Y/n]", "y"),
+    ("Sensor name (required): ", "sensor1"),
+    ("Admin username: ", "admin"),
+    ("[8443]: ", ""),
+    ("[browser]: ", ""),
+    ("[UTC]: ", ""),
+    ("[90]: ", ""),
+    ("Admin password (hidden, 12+ characters): ", "Ci-console-pass-1"),
+    ("Repeat password: ", "Ci-console-pass-1"),
+    ("[Y/n] ", "y"),
 )
 
 
@@ -43,6 +47,7 @@ def main():
         attr[0] |= termios.ICRNL
         attr[3] |= termios.ICANON | termios.ECHO | termios.ECHOE | termios.ISIG
         termios.tcsetattr(0, termios.TCSANOW, attr)
+        fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 160, 0, 0))
         os.execvp("bash", ["bash", "-c", "cat %s | sudo bash" % driver])
     buf = b""
     step = 0
