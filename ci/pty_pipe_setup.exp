@@ -1,0 +1,34 @@
+# Drive phantom-mirage-setup the way the one-liner runs: the script is
+# piped into sudo, and script(1) is the desktop terminal.
+set timeout 180
+log_user 1
+set iface [lindex $argv 0]
+set network [lindex $argv 1]
+set driver "/tmp/pm-pty-driver.sh"
+set f [open $driver w]
+puts $f "#!/bin/sh"
+puts $f "export PM_SETUP_TRACE=1"
+puts $f "exec /usr/sbin/phantom-mirage-setup -i $iface -n $network"
+close $f
+spawn script -qfec "cat $driver | sudo bash" /dev/null
+expect "Sensor name (required):"
+send "sensor1\r"
+expect "Admin username:"
+send "admin\r"
+expect "\\\[8443\\\]:"
+send "\r"
+expect "\\\[browser\\\]:"
+send "\r"
+expect "\\\[UTC\\\]:"
+send "\r"
+expect "\\\[90\\\]:"
+send "\r"
+expect "Admin password"
+send "Ci-console-pass-1\r"
+expect "Repeat password:"
+send "Ci-console-pass-1\r"
+expect "\\\[Y/n\\\]"
+send "y\r"
+expect eof
+catch wait result
+exit [lindex $result 3]

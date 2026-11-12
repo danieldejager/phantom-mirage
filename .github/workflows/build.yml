@@ -378,7 +378,8 @@ jobs:
 
       - name: Piped install on a pty answers every prompt and starts the units
         run: |
-          python3 ci/pty_pipe_setup.py veth-h 10.77.0.248/29
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends expect
+          expect ci/pty_pipe_setup.exp veth-h 10.77.0.248/29
           for u in phantom-mirage.service phantom-mirage-firewall.service phantom-mirage-console.service pm-decoyd.socket pm-decoyd.service farpd.service; do
             systemctl is-active --quiet "$u"
             systemctl is-enabled --quiet "$u"
