@@ -331,6 +331,11 @@ jobs:
             systemctl is-active --quiet "$u"
             systemctl is-enabled --quiet "$u"
           done
+          systemctl is-active --quiet phantom-mirage
+          systemctl is-active --quiet farpd
+          grep -q 'NETWORK="10.77.0.248/29"' /etc/default/farpd
+          ! grep -q 'NETWORK="unconfigured"' /etc/default/farpd
+          sudo ip netns exec client ping -c 3 -W 3 10.77.0.248
 
       - name: Journal
         if: always()
@@ -379,11 +384,17 @@ jobs:
       - name: Piped install on a pty answers every prompt and starts the units
         run: |
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends expect
-          expect ci/pty_pipe_setup.exp veth-h 10.77.0.248/29
+          expect ci/pty_pipe_setup.exp veth-h 10.77.0.248/29 | tee pty.txt
+          grep -q '\[Y/n\]' pty.txt
+          ! grep -q 'not starting anything' pty.txt
           for u in phantom-mirage.service phantom-mirage-firewall.service phantom-mirage-console.service pm-decoyd.socket pm-decoyd.service farpd.service; do
             systemctl is-active --quiet "$u"
             systemctl is-enabled --quiet "$u"
           done
+          systemctl is-active --quiet phantom-mirage
+          systemctl is-active --quiet farpd
+          grep -q 'NETWORK="10.77.0.248/29"' /etc/default/farpd
+          sudo ip netns exec client ping -c 3 -W 3 10.77.0.248
 
       - name: Journal
         if: always()

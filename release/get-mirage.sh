@@ -148,6 +148,10 @@ main() {
 	say "checksum OK; running: sh $run $*"
 	# Leave stdin as the pipe. phantom-mirage-setup reads whichever terminal
 	# actually receives keystrokes (sudo's pty is not always that terminal).
+	# PM_FROM_GET_MIRAGE tells setup that this command is the user's
+	# request to install and start: with no keyboard it starts anyway.
+	PM_FROM_GET_MIRAGE=1
+	export PM_FROM_GET_MIRAGE
 	sh "$tmp/$run" "$@"
 }
 main "$@"

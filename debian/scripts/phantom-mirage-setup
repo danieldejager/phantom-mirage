@@ -24,10 +24,11 @@
 #
 # Before it enables or starts anything it prints the interface, subnet,
 # gateway and /29 it will use (and that farpd claims those 8 addresses on
-# the LAN over ARP) and asks [Y/n] on a terminal. The one-line install is
-# a pipe into sudo. sudo keeps the foreground on the pty it created, so a
-# read there never completes until this program takes that foreground;
-# that is where the typed answers arrive. With no terminal it does not ask:
+# the LAN over ARP) and asks [Y/n] on the same terminal as the console
+# questions. The one-line install is a pipe into sudo. sudo keeps the
+# foreground on the pty it created, so a read there never completes until
+# this program takes that foreground; that is where the typed answers
+# arrive. With no terminal it does not ask:
 # it uses the defaults, writes the console admin login to a root-only
 # file, and enables and starts the sensor, farpd when it is installed,
 # the console firewall, the web console, and the decoy helper.
@@ -231,28 +232,39 @@ pm_enable() {
 }
 
 # Ask before enabling or starting anything when a person is at a terminal.
-# $1 is the plan already printed. A pipe is not a terminal: with no
-# keyboard at all the one-line install starts with the defaults. Piped
-# sudo still has a keyboard; PM_HAVE_TTY asks on it without assuming
-# /dev/tty is that keyboard.
+# $1 is the plan already printed. Piped sudo does not make stdin the
+# keyboard (its own pty is not where the keystrokes arrive), so this
+# uses the same discovery as the console prompts. A failed discovery is
+# not an answer of "no". With no keyboard at all the one-line install
+# (PM_FROM_RUN / PM_FROM_GET_MIRAGE) and a plain setup both start.
 confirm_start() {
 	if [ -n "$YES" ]; then
 		say "--yes given: starting without asking"
 		return 0
 	fi
 	_a=
-	if [ -t 0 ]; then
-		printf 'phantom-mirage-setup: %s? [Y/n] ' "$1"
-		read -r _a || _a=n
-	elif [ -n "${PM_HAVE_TTY:-}" ]; then
-		_a=$(/usr/bin/python3 -I "$CONSOLE" read-tty "phantom-mirage-setup: $1? [Y/n] ") || _a=n
-	else
-		say "no terminal: enabling and starting with the defaults"
-		return 0
+	_asked=
+	if [ "${PM_TESTING:-}" != 1 ] && [ -x /usr/bin/python3 ] && [ -e "$CONSOLE" ]; then
+		if _a=$(/usr/bin/python3 -I "$CONSOLE" read-tty "phantom-mirage-setup: $1? [Y/n] "); then
+			_asked=1
+		fi
 	fi
-	case $_a in ''|y|Y|yes|YES) return 0 ;; esac
-	say "not starting anything (answered no); the config is written"
-	exit 0
+	if [ -z "$_asked" ] && [ -t 0 ]; then
+		printf 'phantom-mirage-setup: %s? [Y/n] ' "$1"
+		_a=
+		read -r _a || _a=n
+		_asked=1
+	fi
+	if [ -n "$_asked" ]; then
+		case $_a in ''|y|Y|yes|YES) return 0 ;; esac
+		say "not starting anything (answered no); the config is written"
+		exit 0
+	fi
+	if [ -n "${PM_FROM_RUN:-}${PM_FROM_GET_MIRAGE:-}" ]; then
+		say "no terminal: the one-line install is starting the sensor without asking"
+	fi
+	say "no terminal: enabling and starting with the defaults"
+	return 0
 }
 
 # Console setup takes the foreground on sudo's pty, which is where the
@@ -291,6 +303,15 @@ if [ -n "$CONLY" ]; then
 	[ -n "$CONSOLE_OK" ] && confirm_start "start the phantom-mirage-firewall and phantom-mirage-console services now"
 	console_start
 	finish_summary
+	if [ "${PM_TESTING:-}" != 1 ]; then
+		if ! systemctl is-active --quiet phantom-mirage 2>/dev/null; then
+			say "warning: the decoy daemon is not running, so nothing answers on the network"
+			say "start the sensor and farpd with: sudo phantom-mirage-setup"
+		elif ! systemctl is-active --quiet farpd 2>/dev/null; then
+			say "warning: farpd is not running, so the decoys do not answer ARP"
+			say "start the sensor and farpd with: sudo phantom-mirage-setup"
+		fi
+	fi
 	exit 0
 fi
 
@@ -472,6 +493,9 @@ if [ -n "$FARPD" ]; then
 	if [ -e "$FDEFAULT" ] && ! grep -q "^$FMARK" "$FDEFAULT" && [ ! -e "$FDEFAULT.phantom-mirage-orig" ]; then
 		cp -p "$FDEFAULT" "$FDEFAULT.phantom-mirage-orig"
 		say "original farpd config kept as $FDEFAULT.phantom-mirage-orig"
+	fi
+	if [ -e "$FDEFAULT" ] && grep -Eq '^NETWORK="?unconfigured"?[[:space:]]*$' "$FDEFAULT"; then
+		say "farpd package left NETWORK=unconfigured; writing $NET so ARP answers for the decoys"
 	fi
 	printf '%s\n' "$FNEW" > "$FDEFAULT.new" && mv "$FDEFAULT.new" "$FDEFAULT"
 	say "wrote $FDEFAULT (farpd answers ARP for $NET on $IFACE)"
