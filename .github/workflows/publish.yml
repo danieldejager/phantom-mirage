@@ -49,6 +49,10 @@ env:
 jobs:
   image:
     name: Build, push, sign (amd64 + arm64)
+    # Cleanup-only dispatch (push left off) skips the build and still
+    # runs the retention job as a dry run. A publish still requires a
+    # v* tag or a dispatch from master with push ticked.
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push && github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -226,19 +230,29 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # GHCR retention (#20): keep edge, every release tag (v*, X.Y.Z, X.Y, X)
-  # and the 3 newest other tagged images (sha-*). Untagged per-platform
-  # manifests, cosign sha256-*.sig tags and attestation manifests of kept
-  # images are kept; only those of deleted images (orphans) are removed.
-  # Runs only after the image job (push, visibility, signature and
-  # attestation checks) succeeded. Dry run unless dispatched with
-  # cleanup=delete or the repo variable GHCR_CLEANUP is "delete".
+  # and the 3 newest other tagged images (sha-<hex> only). Cosign
+  # sha256-<digest>.sig / .att / .sbom tags and attestation manifests of a
+  # kept image (the index and every descriptor in it) are excluded by exact
+  # tag name, tied to a digest that is actually being kept. They are removed
+  # only as orphans of a deleted image. keep-n-tagged is restricted to
+  # sha-<hex> tags so referrer tags cannot fill those three slots.
+  # Runs after a successful publish, or on a cleanup-only dispatch (push
+  # left off; always a dry run unless cleanup=delete on master). Dry run
+  # unless dispatched with cleanup=delete or, for v* tag pushes, the repo
+  # variable GHCR_CLEANUP is "delete".
   cleanup:
     name: GHCR retention
     needs: image
-    if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push && github.ref == 'refs/heads/master')) && (github.event_name != 'workflow_dispatch' || inputs.cleanup != 'skip')
+    if: >-
+      !cancelled() && (
+        (github.event_name == 'push' && needs.image.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && inputs.cleanup != 'skip' &&
+          (needs.image.result == 'success' || needs.image.result == 'skipped'))
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      contents: read
       packages: write
     steps:
       - name: Mode
@@ -247,19 +261,54 @@ jobs:
           INPUT: ${{ inputs.cleanup }}
           VAR: ${{ vars.GHCR_CLEANUP }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then m=$INPUT; else m=${VAR:-dry-run}; fi
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            m=$INPUT
+            # delete only from master; a branch dispatch stays a dry run
+            if [ "$m" = delete ] && [ "$GITHUB_REF" != refs/heads/master ]; then
+              echo "::warning::cleanup=delete is ignored off master; staying in dry-run"
+              m=dry-run
+            fi
+          else
+            m=${VAR:-dry-run}
+          fi
           [ "$m" = delete ] && dry=false || dry=true
           echo "dry=$dry" >> "$GITHUB_OUTPUT"
           echo "GHCR retention: dry-run=$dry" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Exact referrer tags of kept images
+        id: referrers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 ci/ghcr_kept_referrers.py \
+            --owner danieldejager \
+            --package phantom-mirage \
+            --out-excludes referrer-excludes.txt
+          extra=$(cat referrer-excludes.txt)
+          # base globs: edge, v*, and semver 1 / 1.7 / 1.7.0 (majors up to 99).
+          # Referrer tags are appended as exact names (sha256-<digest>.sig
+          # and .att / .sbom), never as a prefix glob, so a renamed tag
+          # cannot slip through and signatures of deleted images are not
+          # kept. wildcard-match syntax: * and ?; a dot is literal.
+          base='edge,v*,?,??,?.*,??.*'
+          if [ -n "$extra" ]; then tags="${base},${extra}"; else tags="$base"; fi
+          {
+            echo "tags<<EOF"
+            echo "$tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
       - uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           owner: danieldejager
           package: phantom-mirage
-          # wildcard-match globs (no regex: the action rejects nested
-          # quantifiers as ReDoS-prone): edge, v*, and semver tags
-          # 1 / 1.7 / 1.7.0 (majors up to 99). sha-* is left to keep-n-tagged.
-          exclude-tags: 'edge,v*,?,??,?.*,??.*'
+          exclude-tags: ${{ steps.referrers.outputs.tags }}
+          # Restrict keep-n-tagged to sha-<hex> image tags only (the
+          # metadata-action short SHA is 7 hex digits; 8-12 are listed
+          # in case that format grows). This must not use sha-*, which
+          # would also match sha256-<digest>.sig.
+          delete-tags: 'sha-???????,sha-????????,sha-?????????,sha-??????????,sha-???????????,sha-????????????'
           keep-n-tagged: 3
           delete-untagged: true
           delete-orphaned-images: true

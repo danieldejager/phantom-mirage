@@ -188,21 +188,31 @@ docker exec -it <container> phantom-mirage-ctl
 After a successful publish (push, private-visibility check, signature and
 attestation checks), the `GHCR retention` job in `publish.yml` prunes
 `ghcr.io/danieldejager/phantom-mirage` with
-[dataaxiom/ghcr-cleanup-action](https://github.com/dataaxiom/ghcr-cleanup-action),
-which understands multi-arch indexes and OCI referrers. It uses
-`GITHUB_TOKEN` (`packages: write`) only.
+[dataaxiom/ghcr-cleanup-action](https://github.com/dataaxiom/ghcr-cleanup-action).
+It uses `GITHUB_TOKEN` (`packages: write`) only.
+
+The job can also be run on its own: Actions → publish → Run workflow, leave
+**push** unticked (the default) and **cleanup** at `dry-run`. That does not
+publish an image. `cleanup=delete` is honoured only from `master`; a dispatch
+from any other branch stays a dry run.
 
 * Kept: `edge`, every release tag (`v*`, `X.Y.Z`, `X.Y`, `X`), and the
-  3 newest other tagged images (the `sha-*` tags).
-* Never deleted on their own: the untagged per-platform manifests, cosign
-  `sha256-<digest>.sig` tags and attestation (SBOM/provenance) manifests of a
-  kept image. They are removed only as orphans of a deleted image.
+  3 newest other `sha-<hex>` images. `keep-n-tagged` is restricted to those
+  `sha-<hex>` tags, not to every tagged version.
+* Never deleted on their own: the untagged per-platform manifests, buildx
+  attestation (SBOM/provenance) manifests, and cosign
+  `sha256-<digest>.sig` (and `.att` / `.sbom`, if present) tags of a kept
+  image. `ci/ghcr_kept_referrers.py` lists those referrer tags by the exact
+  name `sha256-<digest>.sig` (or `.att` / `.sbom`), only when `<digest>` is
+  the kept image itself or a descriptor in its index, and only if that tag
+  already exists. They are removed only as orphans of a deleted image
+  (`delete-orphaned-images`).
 * Ghost/partial multi-arch images are cleaned, and the result is validated.
 
 Mode: a **dry run** (it only logs what it would delete) unless the workflow is
-dispatched with `cleanup=delete`, or for `v*` tag pushes the repository
-variable `GHCR_CLEANUP` is `delete`. `cleanup=skip` skips it. Do the first
-dispatch as a dry run and review the log before enabling deletes.
+dispatched from `master` with `cleanup=delete`, or for `v*` tag pushes the
+repository variable `GHCR_CLEANUP` is `delete`. `cleanup=skip` skips it. Do
+the first dispatch as a dry run and review the log before enabling deletes.
 
 ### Signing (cosign, private key)
 
