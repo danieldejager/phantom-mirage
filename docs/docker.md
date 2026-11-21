@@ -186,23 +186,48 @@ docker exec -it <container> phantom-mirage-ctl
 ### Retention (cleanup)
 
 After a successful publish (push, private-visibility check, signature and
-attestation checks), the `GHCR retention` job in `publish.yml` prunes
-`ghcr.io/danieldejager/phantom-mirage` with
-[dataaxiom/ghcr-cleanup-action](https://github.com/dataaxiom/ghcr-cleanup-action),
-which understands multi-arch indexes and OCI referrers. It uses
-`GITHUB_TOKEN` (`packages: write`) only.
+attestation checks), the `publish` workflow calls `ghcr-retention.yml`,
+which prunes `ghcr.io/danieldejager/phantom-mirage` with
+[dataaxiom/ghcr-cleanup-action](https://github.com/dataaxiom/ghcr-cleanup-action).
+Signing secrets are not passed to that workflow. The verify and dry-run
+job uses `GITHUB_TOKEN` with `packages: read`; the delete job, which
+runs only after verification passes and only when delete is authorised,
+uses `packages: write`.
+
+The retention workflow can also be run on its own (Actions →
+ghcr-retention → Run workflow, **cleanup** at `dry-run`), or via
+Actions → publish → Run workflow with **push** left off (the default)
+and **cleanup** at `dry-run`. That does not publish an image.
+`cleanup=delete` is honoured only from `master`; a dispatch from any
+other branch or tag stays a dry run.
 
 * Kept: `edge`, every release tag (`v*`, `X.Y.Z`, `X.Y`, `X`), and the
-  3 newest other tagged images (the `sha-*` tags).
-* Never deleted on their own: the untagged per-platform manifests, cosign
-  `sha256-<digest>.sig` tags and attestation (SBOM/provenance) manifests of a
-  kept image. They are removed only as orphans of a deleted image.
+  3 newest other `sha-<hex>` images. `keep-n-tagged` is restricted to those
+  `sha-<hex>` tags, not to every tagged version.
+* Never deleted on their own: the untagged per-platform manifests, buildx
+  attestation (SBOM/provenance) manifests, and cosign
+  `sha256-<digest>.sig` (and `.att` / `.sbom`, if present) tags of a kept
+  image. `ci/ghcr_kept_referrers.py` lists those referrer tags by the exact
+  name `sha256-<digest>.sig` (or `.att` / `.sbom`), only when `<digest>` is
+  the kept image itself or a descriptor in its index, and only if that tag
+  already exists. Referrer tags of an image that is being deleted are
+  passed as exact `delete-tags` so they go in the same run as their
+  parent, and `delete-orphaned-images` still catches any leftover.
+* Before the cleanup action runs, the verify job logs in to GHCR and
+  runs `cosign verify --key cosign.pub` against every kept image digest
+  produced by the same `ci/ghcr_kept_referrers.py` run that feeds
+  `exclude-tags`. `cosign.pub` is the committed public key (the same
+  key as `release/SHA256SUMS.pub`). The job has no signing secrets.
+  It fails before any deletion if a signature does not verify. This
+  repository signs with `cosign sign`, not `cosign attest`; the
+  in-toto SBOM and provenance next to the image are from buildx, so
+  `cosign verify-attestation` is skipped unless a `sha256-<digest>.att`
+  tag is present.
 * Ghost/partial multi-arch images are cleaned, and the result is validated.
 
 Mode: a **dry run** (it only logs what it would delete) unless the workflow is
-dispatched with `cleanup=delete`, or for `v*` tag pushes the repository
-variable `GHCR_CLEANUP` is `delete`. `cleanup=skip` skips it. Do the first
-dispatch as a dry run and review the log before enabling deletes.
+dispatched from `master` with `cleanup=delete`. `cleanup=skip` skips it. Do
+the first dispatch as a dry run and review the log before enabling deletes.
 
 ### Signing (cosign, private key)
 
@@ -235,8 +260,9 @@ gh secret set COSIGN_PRIVATE_KEY -R danieldejager/phantom-mirage < cosign.key
 gh secret set COSIGN_PASSWORD   -R danieldejager/phantom-mirage   # paste the password
 ```
 
-Keep `cosign.key` offline (or delete it once the secret is set). Verify an
-image with the public key:
+Keep `cosign.key` offline (or delete it once the secret is set). The
+public key is committed at the repository root as `cosign.pub` (the same
+key as `release/SHA256SUMS.pub`). Verify an image with it:
 
 ```sh
 cosign verify --key cosign.pub --insecure-ignore-tlog=true ghcr.io/danieldejager/phantom-mirage:edge

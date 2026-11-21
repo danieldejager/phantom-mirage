@@ -163,6 +163,7 @@ jobs:
           ci/test_script_droppriv.sh
           ci/test_columbo_connect.sh
           ci/test_check_attestations.sh
+          ci/test_ghcr_kept_referrers.sh
           python3 ci/test_scripts.py
           ci/test_check_default.sh
           PM_REAL_DAEMON=$PWD/phantom-mirage python3 -W ignore -m unittest -v decoyd.tests.test_decoyd.TestRealVerify
@@ -593,6 +594,7 @@ jobs:
         run: |
           python3 ci/test_webserver.py
           ci/test_check_attestations.sh
+          ci/test_ghcr_kept_referrers.sh
           ci/python_service.sh
 
       - name: Python 3 service scripts under scripts/ (#36)

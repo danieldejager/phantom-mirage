@@ -15,6 +15,9 @@ name: publish
 #   transparency log. A missing key fails the job.
 # * The package must be private: checked through the API after every
 #   push (also the very first one, which creates the package).
+# * GHCR retention lives in ghcr-retention.yml and is called from here
+#   after a successful publish (or a cleanup-only dispatch). Signing
+#   secrets are not passed to that workflow.
 
 # CI minutes: only v* tags and manual dispatch (push=true to publish
 # edge/sha from master); the build is checked by the nightly Docker job.
@@ -49,6 +52,10 @@ env:
 jobs:
   image:
     name: Build, push, sign (amd64 + arm64)
+    # Cleanup-only dispatch (push left off) skips the build and still
+    # runs the retention job as a dry run. A publish still requires a
+    # v* tag or a dispatch from master with push ticked.
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push && github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -174,13 +181,14 @@ jobs:
       - name: Verify the signature; no public log entry
         if: env.PUSH == 'true'
         env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          # the public half only, written to a file, never printed
-          cosign public-key --key env://COSIGN_PRIVATE_KEY > cosign.pub 2>/dev/null
+          # use the committed public key, not a copy derived from the secret
+          if ! [ -s cosign.pub ]; then
+            echo "::error::cosign.pub is missing from the repository"
+            exit 1
+          fi
           cosign verify --key cosign.pub --insecure-ignore-tlog=true \
             "$IMAGE@$DIGEST" > verify.json
           echo "signature verified for $IMAGE@$DIGEST"
@@ -223,47 +231,26 @@ jobs:
             echo "push: $PUSH"
             echo "digest: \`${DIGEST:-none}\`"
             echo '```'; echo "$TAGS"; echo '```'
+
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # GHCR retention (#20): keep edge, every release tag (v*, X.Y.Z, X.Y, X)
-  # and the 3 newest other tagged images (sha-*). Untagged per-platform
-  # manifests, cosign sha256-*.sig tags and attestation manifests of kept
-  # images are kept; only those of deleted images (orphans) are removed.
-  # Runs only after the image job (push, visibility, signature and
-  # attestation checks) succeeded. Dry run unless dispatched with
-  # cleanup=delete or the repo variable GHCR_CLEANUP is "delete".
-  cleanup:
+  # GHCR retention is a separate workflow with no signing secrets.
+  # Called here after a successful publish, or on a cleanup-only
+  # dispatch (push left off). Delete is honoured only from master
+  # (refs/heads/master) with cleanup=delete; a branch or tag dispatch
+  # stays a dry run. Signing secrets are not inherited.
+  retention:
     name: GHCR retention
     needs: image
-    if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push && github.ref == 'refs/heads/master')) && (github.event_name != 'workflow_dispatch' || inputs.cleanup != 'skip')
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    if: >-
+      !cancelled() && (
+        (github.event_name == 'push' && needs.image.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && inputs.cleanup != 'skip' &&
+          (needs.image.result == 'success' || needs.image.result == 'skipped'))
+      )
+    uses: ./.github/workflows/ghcr-retention.yml
+    with:
+      cleanup: ${{ github.event_name == 'workflow_dispatch' && inputs.cleanup || 'dry-run' }}
     permissions:
+      contents: read
       packages: write
-    steps:
-      - name: Mode
-        id: mode
-        env:
-          INPUT: ${{ inputs.cleanup }}
-          VAR: ${{ vars.GHCR_CLEANUP }}
-        run: |
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then m=$INPUT; else m=${VAR:-dry-run}; fi
-          [ "$m" = delete ] && dry=false || dry=true
-          echo "dry=$dry" >> "$GITHUB_OUTPUT"
-          echo "GHCR retention: dry-run=$dry" >> "$GITHUB_STEP_SUMMARY"
-      - uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          owner: danieldejager
-          package: phantom-mirage
-          # wildcard-match globs (no regex: the action rejects nested
-          # quantifiers as ReDoS-prone): edge, v*, and semver tags
-          # 1 / 1.7 / 1.7.0 (majors up to 99). sha-* is left to keep-n-tagged.
-          exclude-tags: 'edge,v*,?,??,?.*,??.*'
-          keep-n-tagged: 3
-          delete-untagged: true
-          delete-orphaned-images: true
-          delete-ghost-images: true
-          delete-partial-images: true
-          validate: true
-          dry-run: ${{ steps.mode.outputs.dry }}
