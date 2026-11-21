@@ -236,8 +236,8 @@ jobs:
 
   # GHCR retention is a separate workflow with no signing secrets.
   # Called here after a successful publish, or on a cleanup-only
-  # dispatch (push left off). Delete is honoured only from master, or
-  # for a v* tag push when GHCR_CLEANUP is "delete"; a branch dispatch
+  # dispatch (push left off). Delete is honoured only from master
+  # (refs/heads/master) with cleanup=delete; a branch or tag dispatch
   # stays a dry run. Signing secrets are not inherited.
   retention:
     name: GHCR retention
@@ -250,7 +250,7 @@ jobs:
       )
     uses: ./.github/workflows/ghcr-retention.yml
     with:
-      cleanup: ${{ github.event_name == 'workflow_dispatch' && inputs.cleanup || (vars.GHCR_CLEANUP == 'delete' && 'delete' || 'dry-run') }}
+      cleanup: ${{ github.event_name == 'workflow_dispatch' && inputs.cleanup || 'dry-run' }}
     permissions:
       contents: read
       packages: write

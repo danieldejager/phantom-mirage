@@ -15,9 +15,8 @@ name: ghcr-retention
 #
 # Triggers: called from the publish workflow after a successful push,
 # or run on its own via workflow_dispatch. Delete mode is only honoured
-# from master (or a v* tag after a publish), and only when cleanup=delete
-# is passed; a branch dispatch stays a dry run. For v* tag publishes the
-# caller passes delete only if GHCR_CLEANUP is "delete".
+# from master (refs/heads/master) when cleanup=delete is passed; a
+# branch or tag dispatch stays a dry run.
 
 on:
   workflow_dispatch:
@@ -184,7 +183,7 @@ jobs:
     if: >-
       needs.verify.result == 'success' &&
       inputs.cleanup == 'delete' &&
-      (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+      github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

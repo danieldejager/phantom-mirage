@@ -198,8 +198,8 @@ The retention workflow can also be run on its own (Actions →
 ghcr-retention → Run workflow, **cleanup** at `dry-run`), or via
 Actions → publish → Run workflow with **push** left off (the default)
 and **cleanup** at `dry-run`. That does not publish an image.
-`cleanup=delete` is honoured only from `master` (or a `v*` tag after a
-publish); a dispatch from any other branch stays a dry run.
+`cleanup=delete` is honoured only from `master`; a dispatch from any
+other branch or tag stays a dry run.
 
 * Kept: `edge`, every release tag (`v*`, `X.Y.Z`, `X.Y`, `X`), and the
   3 newest other `sha-<hex>` images. `keep-n-tagged` is restricted to those
@@ -226,8 +226,7 @@ publish); a dispatch from any other branch stays a dry run.
 * Ghost/partial multi-arch images are cleaned, and the result is validated.
 
 Mode: a **dry run** (it only logs what it would delete) unless the workflow is
-dispatched from `master` with `cleanup=delete`, or for `v*` tag pushes the
-repository variable `GHCR_CLEANUP` is `delete`. `cleanup=skip` skips it. Do
+dispatched from `master` with `cleanup=delete`. `cleanup=skip` skips it. Do
 the first dispatch as a dry run and review the log before enabling deletes.
 
 ### Signing (cosign, private key)
