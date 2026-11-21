@@ -205,8 +205,9 @@ from any other branch stays a dry run.
   image. `ci/ghcr_kept_referrers.py` lists those referrer tags by the exact
   name `sha256-<digest>.sig` (or `.att` / `.sbom`), only when `<digest>` is
   the kept image itself or a descriptor in its index, and only if that tag
-  already exists. They are removed only as orphans of a deleted image
-  (`delete-orphaned-images`).
+  already exists. Referrer tags of an image that is being deleted are
+  passed as exact `delete-tags` so they go in the same run as their
+  parent, and `delete-orphaned-images` still catches any leftover.
 * Ghost/partial multi-arch images are cleaned, and the result is validated.
 
 Mode: a **dry run** (it only logs what it would delete) unless the workflow is

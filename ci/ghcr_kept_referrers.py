@@ -10,9 +10,8 @@ This script lists the images the retention job will keep (edge, release
 tags, and the N newest sha-<hex> images that are not already kept) and
 emits only the referrer tags whose subject digest is one of those images
 or a descriptor in that image's index. The tags are meant to be appended
-to the action's exclude-tags input. A signature or attestation of a
-deleted image is not listed, so delete-orphaned-images can still remove
-it with its parent.
+to the action's exclude-tags input. A signature or attestation of a deleted image is written to
+--out-deletes instead, so it is removed in the same run as its parent.
 
 Usage:
   ghcr_kept_referrers.py --owner USER --package NAME [options]
@@ -224,7 +223,7 @@ def extra_exclude_tags(kept: dict[str, list[str]],
     return tags
 
 
-def summarise(static, extra, excludes, older_sha) -> str:
+def summarise(static, extra, excludes, older_sha, deletes) -> str:
     lines = ["### GHCR referrer excludes"]
     lines.append("statically kept images: %d" % len(static))
     for v in static:
@@ -233,12 +232,15 @@ def summarise(static, extra, excludes, older_sha) -> str:
     for v in extra:
         lines.append("- `%s`  %s" % (digest_of(v)[:19], " ".join(tags_of(v))))
     if older_sha:
-        lines.append("older sha images (their referrers are not excluded): %d"
+        lines.append("older sha images (their referrers are staged for delete): %d"
                      % len(older_sha))
         for v in older_sha:
             lines.append("- `%s`  %s" % (digest_of(v)[:19], " ".join(tags_of(v))))
     lines.append("exact referrer tags excluded: %d" % len(excludes))
     for t in excludes:
+        lines.append("- `%s`" % t)
+    lines.append("exact referrer tags staged for delete: %d" % len(deletes))
+    for t in deletes:
         lines.append("- `%s`" % t)
     return "\n".join(lines) + "\n"
 
@@ -252,7 +254,9 @@ def parse_args(argv):
                    help="directory of <sha256_hex>.json index fixtures")
     p.add_argument("--static-excludes", default=DEFAULT_EXCLUDES)
     p.add_argument("--keep-n-tagged", type=int, default=3)
-    p.add_argument("--out-excludes", help="write the tag list to this file too")
+    p.add_argument("--out-excludes", help="write kept referrer tags to this file")
+    p.add_argument("--out-deletes",
+                   help="write referrer tags of images that will be deleted")
     p.add_argument("--out-json", help="write a machine-readable summary")
     return p.parse_args(argv)
 
@@ -301,25 +305,33 @@ def main(argv=None) -> int:
 
     try:
         kept = kept_digests(images, load_index)
+        going = kept_digests(older_sha, load_index)
     except FileNotFoundError as e:
-        print("error: missing index manifest for a kept image: %s" % e,
-              file=sys.stderr)
+        print("error: missing index manifest: %s" % e, file=sys.stderr)
         return 1
     except urllib.error.HTTPError as e:
-        print("error: fetching a kept image manifest failed: %s %s"
+        print("error: fetching an image manifest failed: %s %s"
               % (e.code, e.reason), file=sys.stderr)
         return 1
 
-    excludes = extra_exclude_tags(kept, existing_referrer_tags(versions))
+    referrers = existing_referrer_tags(versions)
+    excludes = extra_exclude_tags(kept, referrers)
+    deletes = extra_exclude_tags(going, referrers)
     text = ",".join(excludes)
     if args.out_excludes:
         with open(args.out_excludes, "w") as f:
             f.write(text)
             if text:
                 f.write("\n")
+    if args.out_deletes:
+        dtext = ",".join(deletes)
+        with open(args.out_deletes, "w") as f:
+            f.write(dtext)
+            if dtext:
+                f.write("\n")
     print(text)
 
-    summary = summarise(static, sha_kept, excludes, older_sha)
+    summary = summarise(static, sha_kept, excludes, older_sha, deletes)
     sys.stderr.write(summary)
     step = os.environ.get("GITHUB_STEP_SUMMARY")
     if step:
@@ -336,6 +348,7 @@ def main(argv=None) -> int:
             "older_sha": brief(older_sha),
             "kept_digests": {k: v for k, v in kept.items()},
             "exclude_tags": excludes,
+            "delete_tags": deletes,
         }
         with open(args.out_json, "w") as f:
             json.dump(payload, f, indent=2)

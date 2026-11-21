@@ -5,13 +5,13 @@ cd "$(dirname "$0")"
 fx=$PWD/fixtures/ghcr-retention
 out=$(mktemp)
 json=$(mktemp)
-trap 'rm -f "$out" "$json"' EXIT
+trap 'rm -f "$out" "$out.deletes" "$json"' EXIT
 
 python3 ghcr_kept_referrers.py \
   --owner danieldejager --package phantom-mirage \
   --versions-json "$fx/versions.json" \
   --manifests-dir "$fx/manifests" \
-  --out-excludes "$out" --out-json "$json" \
+  --out-excludes "$out" --out-deletes "$out.deletes" --out-json "$json" \
   >/dev/null
 
 python3 - "$json" "$out" << 'PY'
@@ -88,6 +88,17 @@ older_sigs = [
 for t in older_sigs:
     if t in tags:
         raise SystemExit("signature of a deleted image was excluded: %s" % t)
+deletes = d["delete_tags"]
+if len(deletes) != 10:
+    raise SystemExit("expected 10 delete referrer tags, got %d" % len(deletes))
+for t in older_sigs:
+    if t not in deletes:
+        raise SystemExit("signature of a deleted image not staged for delete: %s" % t)
+for t in deletes:
+    if t in tags:
+        raise SystemExit("a tag is both excluded and staged for delete: %s" % t)
+    if not REF.fullmatch(t):
+        raise SystemExit("delete tag is not an exact referrer tag: %s" % t)
 
 # Loose / renamed tags must not slip through.
 banned = [

@@ -284,18 +284,25 @@ jobs:
           python3 ci/ghcr_kept_referrers.py \
             --owner danieldejager \
             --package phantom-mirage \
-            --out-excludes referrer-excludes.txt
+            --out-excludes referrer-excludes.txt \
+            --out-deletes referrer-deletes.txt
           extra=$(cat referrer-excludes.txt)
+          going=$(cat referrer-deletes.txt)
           # base globs: edge, v*, and semver 1 / 1.7 / 1.7.0 (majors up to 99).
           # Referrer tags are appended as exact names (sha256-<digest>.sig
           # and .att / .sbom), never as a prefix glob, so a renamed tag
           # cannot slip through and signatures of deleted images are not
           # kept. wildcard-match syntax: * and ?; a dot is literal.
           base='edge,v*,?,??,?.*,??.*'
-          if [ -n "$extra" ]; then tags="${base},${extra}"; else tags="$base"; fi
+          sha='sha-???????,sha-????????,sha-?????????,sha-??????????,sha-???????????,sha-????????????'
+          if [ -n "$extra" ]; then excl="${base},${extra}"; else excl="$base"; fi
+          if [ -n "$going" ]; then del="${sha},${going}"; else del="$sha"; fi
           {
-            echo "tags<<EOF"
-            echo "$tags"
+            echo "exclude<<EOF"
+            echo "$excl"
+            echo "EOF"
+            echo "delete<<EOF"
+            echo "$del"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
       - uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
@@ -303,12 +310,14 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           owner: danieldejager
           package: phantom-mirage
-          exclude-tags: ${{ steps.referrers.outputs.tags }}
-          # Restrict keep-n-tagged to sha-<hex> image tags only (the
+          exclude-tags: ${{ steps.referrers.outputs.exclude }}
+          # Restrict keep-n-tagged to sha-<hex> image tags (the
           # metadata-action short SHA is 7 hex digits; 8-12 are listed
           # in case that format grows). This must not use sha-*, which
-          # would also match sha256-<digest>.sig.
-          delete-tags: 'sha-???????,sha-????????,sha-?????????,sha-??????????,sha-???????????,sha-????????????'
+          # would also match sha256-<digest>.sig. Exact referrer tags of
+          # images that are being deleted are appended so they go in the
+          # same run as their parent, not only as later orphans.
+          delete-tags: ${{ steps.referrers.outputs.delete }}
           keep-n-tagged: 3
           delete-untagged: true
           delete-orphaned-images: true
