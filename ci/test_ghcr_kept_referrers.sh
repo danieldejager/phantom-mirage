@@ -5,16 +5,18 @@ cd "$(dirname "$0")"
 fx=$PWD/fixtures/ghcr-retention
 out=$(mktemp)
 json=$(mktemp)
-trap 'rm -f "$out" "$out.deletes" "$json"' EXIT
+kept=$(mktemp)
+trap 'rm -f "$out" "$out.deletes" "$json" "$kept"' EXIT
 
 python3 ghcr_kept_referrers.py \
   --owner danieldejager --package phantom-mirage \
   --versions-json "$fx/versions.json" \
   --manifests-dir "$fx/manifests" \
   --out-excludes "$out" --out-deletes "$out.deletes" --out-json "$json" \
+  --out-kept-digests "$kept" \
   >/dev/null
 
-python3 - "$json" "$out" << 'PY'
+python3 - "$json" "$out" "$kept" << 'PY'
 import json, re, sys
 
 REF = re.compile(r"^sha256-([0-9a-f]{64})\.(sig|att|sbom)$")
@@ -25,6 +27,13 @@ with open(sys.argv[2]) as f:
 tags = text.split(",") if text else []
 if tags != d["exclude_tags"]:
     raise SystemExit("stdout/file tag list does not match --out-json")
+
+with open(sys.argv[3]) as f:
+    kept_lines = [ln.strip() for ln in f if ln.strip()]
+if kept_lines != list(d["kept_digests"]):
+    raise SystemExit("kept digest list does not match --out-json")
+if len(kept_lines) != 10:
+    raise SystemExit("expected 10 kept digests, got %d" % len(kept_lines))
 
 # Static keeps from the 7 Nov dry run, plus the 3 newest sha-only images.
 want_static = {

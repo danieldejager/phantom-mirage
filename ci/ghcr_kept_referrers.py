@@ -258,6 +258,8 @@ def parse_args(argv):
     p.add_argument("--out-deletes",
                    help="write referrer tags of images that will be deleted")
     p.add_argument("--out-json", help="write a machine-readable summary")
+    p.add_argument("--out-kept-digests",
+                   help="write kept image digests, one per line, in the same order used for exclude-tags")
     return p.parse_args(argv)
 
 
@@ -313,6 +315,11 @@ def main(argv=None) -> int:
         print("error: fetching an image manifest failed: %s %s"
               % (e.code, e.reason), file=sys.stderr)
         return 1
+
+    if args.out_kept_digests:
+        with open(args.out_kept_digests, "w") as f:
+            for digest in kept:
+                f.write(digest + "\n")
 
     referrers = existing_referrer_tags(versions)
     excludes = extra_exclude_tags(kept, referrers)

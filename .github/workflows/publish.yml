@@ -236,6 +236,10 @@ jobs:
   # tag name, tied to a digest that is actually being kept. They are removed
   # only as orphans of a deleted image. keep-n-tagged is restricted to
   # sha-<hex> tags so referrer tags cannot fill those three slots.
+  # Before the cleanup action (dry-run or delete) the job derives the
+  # public key from COSIGN_PRIVATE_KEY and verifies every kept image
+  # digest from the same run that produced exclude-tags. A failed
+  # signature stops the job before anything is deleted.
   # Runs after a successful publish, or on a cleanup-only dispatch (push
   # left off; always a dry run unless cleanup=delete on master). Dry run
   # unless dispatched with cleanup=delete or, for v* tag pushes, the repo
@@ -253,6 +257,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      # write includes read, and is required by the cleanup action when
+      # cleanup=delete runs from master. The verify step only needs read.
       packages: write
     steps:
       - name: Mode
@@ -285,7 +291,8 @@ jobs:
             --owner danieldejager \
             --package phantom-mirage \
             --out-excludes referrer-excludes.txt \
-            --out-deletes referrer-deletes.txt
+            --out-deletes referrer-deletes.txt \
+            --out-kept-digests kept-digests.txt
           extra=$(cat referrer-excludes.txt)
           going=$(cat referrer-deletes.txt)
           # base globs: edge, v*, and semver 1 / 1.7 / 1.7.0 (majors up to 99).
@@ -305,6 +312,88 @@ jobs:
             echo "$del"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+      - name: Log in to GHCR with GITHUB_TOKEN
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+      - name: Verify signatures of every kept image
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$COSIGN_PRIVATE_KEY" ]; then
+            echo "::error title=No signing key::Repository secret COSIGN_PRIVATE_KEY is not set; cannot verify kept images."
+            exit 1
+          fi
+          if [ -z "${COSIGN_PASSWORD+x}" ] || [ -z "$COSIGN_PASSWORD" ]; then
+            echo "::error title=No key password::Repository secret COSIGN_PASSWORD is not set; cannot derive the public key."
+            exit 1
+          fi
+          # public half only, written to a file, never printed
+          cosign public-key --key env://COSIGN_PRIVATE_KEY > cosign.pub 2>/dev/null
+          unset COSIGN_PRIVATE_KEY COSIGN_PASSWORD
+          trap 'rm -f cosign.pub' EXIT
+          if ! grep -q -- "-----BEGIN " cosign.pub; then
+            echo "::error::failed to derive the public key from COSIGN_PRIVATE_KEY"
+            exit 1
+          fi
+          if [ ! -s kept-digests.txt ]; then
+            echo "::error::no kept image digests from the referrer computation"
+            exit 1
+          fi
+          failed=0
+          n=0
+          while IFS= read -r digest || [ -n "$digest" ]; do
+            [ -n "$digest" ] || continue
+            n=$((n + 1))
+            err=verify-$n.err
+            out=verify-$n.json
+            # signatures were never logged to Rekor
+            if cosign verify --key cosign.pub --insecure-ignore-tlog=true \
+                "$IMAGE@$digest" > "$out" 2> "$err"; then
+              echo "signature verified for $IMAGE@$digest"
+            else
+              echo "::error::signature verification failed for $IMAGE@$digest"
+              cat "$err" >&2 || true
+              failed=1
+            fi
+          done < kept-digests.txt
+          if [ "$n" -eq 0 ]; then
+            echo "::error::kept digest list was empty"
+            exit 1
+          fi
+          echo "verified $n kept image(s)"
+          echo "kept images verified: $n" >> "$GITHUB_STEP_SUMMARY"
+          # This repo signs with `cosign sign`, not `cosign attest`.
+          # The in-toto SBOM and provenance next to the image are from
+          # buildx, not cosign, so verify-attestation applies only if a
+          # sha256-<digest>.att tag is actually present.
+          att_subjects=$(tr ',' '\n' < referrer-excludes.txt | sed -n 's/^sha256-\([0-9a-f]\{64\}\)\.att$/sha256:\1/p' || true)
+          if [ -z "$att_subjects" ]; then
+            echo "no cosign attestations among kept referrer tags (buildx in-toto SBOM and provenance manifests are not cosign); skipping cosign verify-attestation"
+          else
+            a=0
+            for digest in $att_subjects; do
+              a=$((a + 1))
+              err=att-$a.err
+              out=att-$a.json
+              if cosign verify-attestation --key cosign.pub --insecure-ignore-tlog=true \
+                  "$IMAGE@$digest" > "$out" 2> "$err"; then
+                echo "attestation verified for $IMAGE@$digest"
+              else
+                echo "::error::attestation verification failed for $IMAGE@$digest"
+                cat "$err" >&2 || true
+                failed=1
+              fi
+            done
+          fi
+          [ "$failed" = 0 ] || exit 1
       - uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
