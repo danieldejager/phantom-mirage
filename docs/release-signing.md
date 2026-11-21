@@ -23,6 +23,8 @@ Signatures use no transparency log (`--tlog-upload=false`) and are
 verified with `--insecure-ignore-tlog=true`.
 
 The public key is committed in `release/SHA256SUMS.pub`; v1.7.0-6 is the first signed release.
+The same public key is committed at the repository root as `cosign.pub`
+and is used to verify signed GHCR images.
 
 ### Adding the key (one-off, by the repo owner)
 
